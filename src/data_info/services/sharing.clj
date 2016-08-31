@@ -148,7 +148,7 @@
 (defn anon-file-url
   [p]
   (let [aurl (url/url (cfg/anon-files-base))]
-    (str (-> aurl (assoc :path (ft/path-join (:path aurl) (string/replace p #"^\/" "")))))))
+    (str (-> aurl (assoc :path (apply ft/path-join (:path aurl) (map url/url-encode (string/split (string/replace p #"^\/" "") #"\/"))))))))
 
 (defn- anon-files-urls
   [paths]
