@@ -43,9 +43,17 @@
                  [org.iplantc/metadata-client "5.2.8.0"]
                  [org.iplantc/service-logging "5.2.8.0"]
                  [org.iplantc/tree-urls-client "5.2.8.0"]]
+  :eastwood {:exclude-namespaces [data-info.routes.schemas.exists
+                                  data-info.routes.schemas.tickets
+                                  data-info.routes.schemas.stats
+                                  data-info.routes.schemas.sharing
+                                  data-info.routes.schemas.trash
+                                  :test-paths]
+             :linters [:wrong-arity :wrong-ns-form :wrong-pre-post :wrong-tag :misplaced-docstrings]}
   :plugins [[lein-ring "0.9.6"]
             [swank-clojure "1.4.2"]
-            [test2junit "1.1.3"]]
+            [test2junit "1.1.3"]
+            [jonase/eastwood "0.2.3"]]
   :profiles {:dev     {:resource-paths ["conf/test"]}
              ;; compojure-api route macros should not be AOT compiled:
              ;; https://github.com/metosin/compojure-api/issues/135#issuecomment-121388539
