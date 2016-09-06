@@ -7,8 +7,11 @@
       (string/trim (:out (sh "git" "rev-parse" "HEAD")))
       ""))
 
-(defproject org.iplantc/data-info "5.2.8.0"
-  :description "provides the data information HTTP API"
+(defproject org.cyverse/data-info "2.8.1-SNAPSHOT"
+  :description "provides an HTTP API for interacting with iRODS"
+  :url "https://github.com/cyverse-de/data-info"
+  :license {:name "BSD"
+            :url "http://iplantcollaborative.org/sites/default/files/iPLANT-LICENSE.txt"}
   :manifest {"Git-Ref" ~(git-ref)}
   :uberjar-name "data-info-standalone.jar"
   :dependencies [[org.clojure/clojure "1.8.0"]
@@ -28,21 +31,21 @@
                  [net.sf.opencsv/opencsv "2.3"]
                  [de.ubercode.clostache/clostache "1.4.0" :exclusions [org.clojure/core.incubator]]
                  [slingshot "0.12.2"]
-                 [org.iplantc/clj-icat-direct "5.2.8.0"
+                 [org.cyverse/clj-icat-direct "2.8.0"
                    :exclusions [[org.slf4j/slf4j-log4j12]
                                 [log4j]]]
-                 [org.iplantc/clj-jargon "5.2.8.0"
+                 [org.cyverse/clj-jargon "2.8.0"
                    :exclusions [[org.slf4j/slf4j-log4j12]
                                 [log4j]]]
-                 [org.iplantc/clojure-commons "5.2.8.0"]
-                 [org.iplantc/common-cli "5.2.8.0"]
-                 [org.iplantc/common-cfg "5.2.8.0"]
-                 [org.iplantc/common-swagger-api "5.2.8.0"]
-                 [org.iplantc/heuristomancer "5.2.8.0"]
-                 [org.iplantc/kameleon "5.2.8.0"]
-                 [org.iplantc/metadata-client "5.2.8.0"]
-                 [org.iplantc/service-logging "5.2.8.0"]
-                 [org.iplantc/tree-urls-client "5.2.8.0"]]
+                 [org.cyverse/clojure-commons "2.8.0"]
+                 [org.cyverse/common-cli "2.8.0"]
+                 [org.cyverse/common-cfg "2.8.0"]
+                 [org.cyverse/common-swagger-api "2.8.0"]
+                 [org.cyverse/heuristomancer "2.8.0"]
+                 [org.cyverse/kameleon "2.8.0"]
+                 [org.cyverse/metadata-client "2.8.0"]
+                 [org.cyverse/service-logging "2.8.0"]
+                 [org.cyverse/tree-urls-client "2.8.0"]]
   :eastwood {:exclude-namespaces [data-info.routes.schemas.exists
                                   data-info.routes.schemas.tickets
                                   data-info.routes.schemas.stats
