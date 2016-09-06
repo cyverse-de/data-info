@@ -1,5 +1,8 @@
 FROM clojure:alpine
 
+RUN apk add --update git && \
+    rm -rf /var/cache/apk
+
 VOLUME ["/etc/iplant/de"]
 
 ARG git_commit=unknown
@@ -11,9 +14,6 @@ COPY . /usr/src/app
 COPY conf/main/logback.xml /usr/src/app/logback.xml
 
 WORKDIR /usr/src/app
-
-RUN apk add --update git && \
-    rm -rf /var/cache/apk
 
 RUN lein uberjar && \
     cp target/data-info-standalone.jar .
