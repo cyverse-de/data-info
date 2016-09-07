@@ -11,7 +11,7 @@
 (def svc-info
   {:desc     "DE service for data information logic and iRODS interactions."
    :app-name "data-info"
-   :group-id "org.iplantc"
+   :group-id "org.cyverse"
    :art-id   "data-info"
    :service  "data-info"})
 
