@@ -6,12 +6,12 @@
             [data-info.util.service :as svc]))
 
 
-(defroutes* ticket-routes
+(defroutes ticket-routes
 
-  (context* "/tickets" []
+  (context "/tickets" []
     :tags ["tickets"]
 
-    (POST* "/" [:as {uri :uri}]
+    (POST "/" [:as {uri :uri}]
       :query [params AddTicketQueryParams]
       :body [body Paths]
       :return AddTicketResponse
@@ -21,7 +21,7 @@
 (get-error-code-block "ERR_NOT_A_USER, ERR_DOES_NOT_EXIST, ERR_NOT_WRITEABLE, ERR_TOO_MANY_RESULTS"))
       (svc/trap uri tickets/do-add-tickets params body)))
 
-  (POST* "/ticket-lister" [:as {uri :uri}]
+  (POST "/ticket-lister" [:as {uri :uri}]
     :tags ["bulk"]
     :query [params StandardUserQueryParams]
     :body [body Paths]
@@ -32,7 +32,7 @@
 (get-error-code-block "ERR_NOT_A_USER, ERR_DOES_NOT_EXIST, ERR_NOT_READABLE, ERR_TOO_MANY_RESULTS"))
     (svc/trap uri tickets/do-list-tickets params body))
 
-  (POST* "/ticket-deleter" [:as {uri :uri}]
+  (POST "/ticket-deleter" [:as {uri :uri}]
     :tags ["bulk"]
     :query [params StandardUserQueryParams]
     :body [body Tickets]

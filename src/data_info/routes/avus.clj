@@ -7,15 +7,15 @@
   (:require [data-info.services.metadata :as meta]
             [data-info.util.service :as svc]))
 
-(defroutes* avus-routes
-  (context* "/admin/data/:data-id" []
+(defroutes avus-routes
+  (context "/admin/data/:data-id" []
     :path-params [data-id :- DataIdPathParam]
     :tags ["data-by-id"]
 
-    (GET* "/metadata" [:as {uri :uri}]
+    (GET "/metadata" [:as {uri :uri}]
       :query [{:keys [user]} StandardUserQueryParams]
       :return AVUGetResult
-      :middlewares [wrap-metadata-base-url]
+      :middleware [wrap-metadata-base-url]
       :summary "List AVUs (administrative)"
       :description
           (str "List all AVUs associated with a data item. Include administrative/system iRODS AVUs.
@@ -28,11 +28,11 @@
 "Please see the metadata service for additional response information.")
       (svc/trap uri meta/admin-metadata-get data-id))
 
-    (PATCH* "/metadata" [:as {uri :uri}]
+    (PATCH "/metadata" [:as {uri :uri}]
       :query [{:keys [user]} StandardUserQueryParams]
       :body [body (describe AddMetadataRequest "The iRODS and Metadata AVUs to add")]
       :return AVUChangeResult
-      :middlewares [wrap-metadata-base-url]
+      :middleware [wrap-metadata-base-url]
       :summary "Add AVUs (administrative)"
       :description
             (str "Associate iRODS and Metadata AVUs with a data item. Allow adding any AVU.
@@ -45,14 +45,14 @@
 "Please see the metadata service for additional request information.")
       (svc/trap uri meta/admin-metadata-add data-id body)))
 
-  (context* "/data/:data-id" []
+  (context "/data/:data-id" []
     :path-params [data-id :- DataIdPathParam]
     :tags ["data-by-id"]
 
-    (GET* "/metadata" [:as {uri :uri}]
+    (GET "/metadata" [:as {uri :uri}]
       :query [{:keys [user]} StandardUserQueryParams]
       :return AVUGetResult
-      :middlewares [wrap-metadata-base-url]
+      :middleware [wrap-metadata-base-url]
       :summary "List AVUs"
       :description
           (str "List all AVUs associated with a data item.
@@ -65,11 +65,11 @@
 "Please see the metadata service for additional response information.")
       (svc/trap uri meta/metadata-get user data-id :system false))
 
-    (PATCH* "/metadata" [:as {uri :uri}]
+    (PATCH "/metadata" [:as {uri :uri}]
       :query [{:keys [user]} StandardUserQueryParams]
       :body [body (describe AddMetadataRequest "The iRODS and Metadata AVUs to add")]
       :return AVUChangeResult
-      :middlewares [wrap-metadata-base-url]
+      :middleware [wrap-metadata-base-url]
       :summary "Add AVUs"
       :description
             (str "Associate iRODS and Metadata AVUs with a data item.
@@ -83,13 +83,13 @@
 "Please see the metadata service for additional request information.")
       (svc/trap uri meta/metadata-add user data-id body))
 
-    (PUT* "/metadata" [:as {uri :uri}]
+    (PUT "/metadata" [:as {uri :uri}]
       :query [{:keys [user]} StandardUserQueryParams]
       :body [body (describe MetadataListing
                             "A list of AVUs to set for this file.
                              May not include administrative AVUs, and will not delete them.")]
       :return AVUChangeResult
-      :middlewares [wrap-metadata-base-url]
+      :middleware [wrap-metadata-base-url]
       :summary "Set AVUs"
       :description
            (str "Set the iRODS and metadata AVUS for a data item to a provided set.
@@ -104,11 +104,11 @@
 "Please see the metadata service for additional request information.")
       (svc/trap uri meta/metadata-set user data-id body))
 
-    (POST* "/metadata/copy" [:as {uri :uri}]
+    (POST "/metadata/copy" [:as {uri :uri}]
       :query [{:keys [user]} StandardUserQueryParams]
       :body [{:keys [destination_ids]} (describe MetadataCopyRequest "The destination data items.")]
       :return MetadataCopyResult
-      :middlewares [wrap-metadata-base-url]
+      :middleware [wrap-metadata-base-url]
       :summary "Copy Metadata"
       :description
            (str "Copies all IRODS AVUs visible to the client and Metadata AVUs from the data
@@ -119,10 +119,10 @@
   "POST /avus/{target-type}/{target-id}/copy"))
       (svc/trap uri meta/metadata-copy user data-id destination_ids))
 
-    (POST* "/metadata/csv-parser" [:as {uri :uri}]
+    (POST "/metadata/csv-parser" [:as {uri :uri}]
       :query [params MetadataCSVParseParams]
       :return MetadataCSVParseResult
-      :middlewares [wrap-metadata-base-url]
+      :middleware [wrap-metadata-base-url]
       :summary "Add Batch Metadata from CSV File"
       :description
            (str "This endpoint will parse a CSV/TSV file of metadata to apply to data items.

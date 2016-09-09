@@ -5,8 +5,8 @@
   (:require [data-info.services.trash :as trash]
             [data-info.util.service :as svc]))
 
-(defroutes* trash
-    (DELETE* "/trash" [:as {uri :uri}]
+(defroutes trash
+    (DELETE "/trash" [:as {uri :uri}]
       :tags ["data"]
       :query [params StandardUserQueryParams]
       :return Trash
@@ -15,7 +15,7 @@
   "Empty the trash of the user provided.")
       (svc/trap uri trash/do-delete-trash params))
 
-    (POST* "/deleter" [:as {uri :uri}]
+    (POST "/deleter" [:as {uri :uri}]
       :tags ["bulk"]
       :query [params StandardUserQueryParams]
       :body [body (describe Paths "The paths to move to the trash")]
@@ -27,7 +27,7 @@
     "ERR_NOT_A_FOLDER, ERR_DOES_NOT_EXIST, ERR_NOT_WRITEABLE, ERR_TOO_MANY_PATHS, ERR_NOT_A_USER"))
       (svc/trap uri trash/do-delete params body))
 
-    (POST* "/restorer" [:as {uri :uri}]
+    (POST "/restorer" [:as {uri :uri}]
       :tags ["bulk"]
       :query [params StandardUserQueryParams]
       :body [body (describe OptionalPaths "The paths to restore, or an empty or missing list to restore the whole trash")]
@@ -39,11 +39,11 @@
     "ERR_NOT_A_FOLDER, ERR_EXISTS, ERR_DOES_NOT_EXIST, ERR_NOT_A_USER, ERR_NOT_WRITEABLE, ERR_TOO_MANY_PATHS"))
       (svc/trap uri trash/do-restore params body))
 
-    (context* "/data/:data-id" []
+    (context "/data/:data-id" []
       :path-params [data-id :- DataIdPathParam]
       :tags ["data-by-id"]
 
-      (DELETE* "/" [:as {uri :uri}]
+      (DELETE "/" [:as {uri :uri}]
         :query [params StandardUserQueryParams]
         :return TrashPaths
         :summary "Delete Data Item"
@@ -53,7 +53,7 @@
     "ERR_NOT_A_FOLDER, ERR_DOES_NOT_EXIST, ERR_NOT_WRITEABLE, ERR_TOO_MANY_PATHS, ERR_NOT_A_USER"))
         (svc/trap uri trash/do-delete-uuid params data-id))
 
-      (DELETE* "/children" [:as {uri :uri}]
+      (DELETE "/children" [:as {uri :uri}]
         :query [params StandardUserQueryParams]
         :return TrashPaths
         :summary "Delete Data Item Contents"

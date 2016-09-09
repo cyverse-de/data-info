@@ -6,12 +6,12 @@
             [data-info.util.service :as svc]))
 
 
-(defroutes* existence-marker
+(defroutes existence-marker
 
-  (context* "/existence-marker" []
+  (context "/existence-marker" []
     :tags ["bulk"]
 
-    (POST* "/" [:as {uri :uri}]
+    (POST "/" [:as {uri :uri}]
       :query [params StandardUserQueryParams]
       :body [body (describe Paths "The paths to check for existence.")]
       :return (doc-only ExistenceInfo ExistenceResponse)

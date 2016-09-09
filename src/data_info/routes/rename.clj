@@ -5,8 +5,8 @@
   (:require [data-info.services.rename :as rename]
             [data-info.util.service :as svc]))
 
-(defroutes* rename-routes
-  (POST* "/mover" [:as {uri :uri}]
+(defroutes rename-routes
+  (POST "/mover" [:as {uri :uri}]
     :tags ["bulk"]
     :query [params StandardUserQueryParams]
     :body [body (describe MultiRenameRequest "The paths to rename and their destination.")]
@@ -17,11 +17,11 @@
 (get-error-code-block "ERR_NOT_A_FOLDER, ERR_DOES_NOT_EXIST, ERR_NOT_WRITEABLE, ERR_EXISTS, ERR_TOO_MANY_PATHS, ERR_NOT_A_USER"))
     (svc/trap uri rename/do-move params body))
 
-  (context* "/data/:data-id" []
+  (context "/data/:data-id" []
     :path-params [data-id :- DataIdPathParam]
     :tags ["data-by-id"]
 
-    (PUT* "/name" [:as {uri :uri}]
+    (PUT "/name" [:as {uri :uri}]
       :query [params StandardUserQueryParams]
       :body [body (describe Filename "The new name of the data item.")]
       :return RenameResult
@@ -32,7 +32,7 @@
   "ERR_NOT_A_FOLDER, ERR_DOES_NOT_EXIST, ERR_NOT_WRITEABLE, ERR_EXISTS, ERR_INCOMPLETE_RENAME, ERR_NOT_A_USER, ERR_TOO_MANY_PATHS"))
       (svc/trap uri rename/do-rename-uuid params body data-id))
 
-    (PUT* "/dir" [:as {uri :uri}]
+    (PUT "/dir" [:as {uri :uri}]
       :query [params StandardUserQueryParams]
       :body [body (describe Dirname "The new directory name of the data item.")]
       :return RenameResult
@@ -43,7 +43,7 @@
   "ERR_NOT_A_FOLDER, ERR_DOES_NOT_EXIST, ERR_NOT_WRITEABLE, ERR_EXISTS, ERR_INCOMPLETE_RENAME, ERR_NOT_A_USER, ERR_TOO_MANY_PATHS"))
       (svc/trap uri rename/do-move-uuid params body data-id))
 
-    (PUT* "/children/dir" [:as {uri :uri}]
+    (PUT "/children/dir" [:as {uri :uri}]
       :query [params StandardUserQueryParams]
       :body [body (describe Dirname "The new directory name of the data items.")]
       :return MultiRenameResult
