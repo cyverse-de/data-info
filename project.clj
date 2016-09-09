@@ -17,7 +17,7 @@
   :dependencies [[org.clojure/clojure "1.8.0"]
                  [org.clojure/data.codec "0.1.0"]
                  [org.clojure/tools.nrepl "0.2.10"]
-                 [cheshire "5.5.0"
+                 [cheshire "5.6.3"
                    :exclusions [[com.fasterxml.jackson.dataformat/jackson-dataformat-cbor]
                                 [com.fasterxml.jackson.dataformat/jackson-dataformat-smile]
                                 [com.fasterxml.jackson.core/jackson-annotations]
@@ -26,7 +26,7 @@
                  [com.cemerick/url "0.1.1"]
                  [dire "0.5.3"]
                  [me.raynes/fs "1.4.6"]
-                 [metosin/compojure-api "0.24.5"]
+                 [metosin/compojure-api "1.1.8"]
                  [org.apache.tika/tika-core "1.11"]
                  [net.sf.opencsv/opencsv "2.3"]
                  [de.ubercode.clostache/clostache "1.4.0" :exclusions [org.clojure/core.incubator]]
@@ -54,7 +54,6 @@
                                   :test-paths]
              :linters [:wrong-arity :wrong-ns-form :wrong-pre-post :wrong-tag :misplaced-docstrings]}
   :plugins [[lein-ring "0.9.6"]
-            [swank-clojure "1.4.2"]
             [test2junit "1.1.3"]
             [jonase/eastwood "0.2.3"]]
   :profiles {:dev     {:resource-paths ["conf/test"]}
