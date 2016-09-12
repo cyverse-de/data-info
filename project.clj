@@ -53,10 +53,11 @@
                                   data-info.routes.schemas.trash
                                   :test-paths]
              :linters [:wrong-arity :wrong-ns-form :wrong-pre-post :wrong-tag :misplaced-docstrings]}
-  :plugins [[lein-ring "0.9.6"]
-            [test2junit "1.1.3"]
+  :plugins [[test2junit "1.1.3"]
             [jonase/eastwood "0.2.3"]]
-  :profiles {:dev     {:resource-paths ["conf/test"]}
+  :profiles {:dev     {:dependencies   [[ring "1.5.0"]] ;; required for lein-ring with compojure-api 1.1.8+
+                       :plugins        [[lein-ring "0.9.7"]]
+                       :resource-paths ["conf/test"]}
              ;; compojure-api route macros should not be AOT compiled:
              ;; https://github.com/metosin/compojure-api/issues/135#issuecomment-121388539
              ;; https://github.com/metosin/compojure-api/issues/102
