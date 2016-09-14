@@ -58,10 +58,7 @@
   :profiles {:dev     {:dependencies   [[ring "1.5.0"]] ;; required for lein-ring with compojure-api 1.1.8+
                        :plugins        [[lein-ring "0.9.7"]]
                        :resource-paths ["conf/test"]}
-             ;; compojure-api route macros should not be AOT compiled:
-             ;; https://github.com/metosin/compojure-api/issues/135#issuecomment-121388539
-             ;; https://github.com/metosin/compojure-api/issues/102
-             :uberjar {:aot [#"data-info.(?!routes).*"]}}
+             :uberjar {:aot :all}}
   :main ^:skip-aot data-info.core
   :ring {:handler data-info.routes/app
          :init data-info.core/lein-ring-init
