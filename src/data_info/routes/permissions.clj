@@ -6,12 +6,12 @@
             [data-info.services.permissions :as perms]
             [data-info.util.service :as svc]))
 
-(defroutes* permissions-routes
+(defroutes permissions-routes
 
-  (context* "/permissions-gatherer" []
+  (context "/permissions-gatherer" []
     :tags ["bulk"]
 
-    (POST* "/" [:as {uri :uri}]
+    (POST "/" [:as {uri :uri}]
       :query [params StandardUserQueryParams]
       :body [body (describe Paths "The paths to gather permissions information on.")]
       :return PermissionsResponse
@@ -24,13 +24,13 @@
   "ERR_NOT_A_USER, ERR_DOES_NOT_EXIST, ERR_NOT_OWNER, ERR_NOT_READABLE"))
       (svc/trap uri users/do-user-permissions params body)))
 
-  (context* "/data/:data-id" []
+  (context "/data/:data-id" []
     :path-params [data-id :- DataIdPathParam]
     :tags ["data-by-id"]
 
-    (context* "/permissions" []
+    (context "/permissions" []
 
-      (GET* "/" [:as {uri :uri}]
+      (GET "/" [:as {uri :uri}]
         :query [params StandardUserQueryParams]
         :return DataItemPermissionsResponse
         :summary "List Data Item Permissions"
@@ -39,7 +39,7 @@
 (get-error-code-block "ERR_DOES_NOT_EXIST, ERR_NOT_READABLE, ERR_NOT_A_USER"))
         (svc/trap uri perms/list-permissions params data-id))
 
-      (PUT* "/:share-with/:permission" [:as {uri :uri}]
+      (PUT "/:share-with/:permission" [:as {uri :uri}]
         :path-params [share-with :- (describe NonBlankString "The user to grant permissions to.")
                       permission :- (describe PermissionEnum "The permission level to grant.")]
         :query [params StandardUserQueryParams]
@@ -50,7 +50,7 @@
 (get-error-code-block "ERR_DOES_NOT_EXIST, ERR_NOT_OWNER, ERR_NOT_A_USER"))
         (svc/trap uri perms/add-permission params data-id share-with permission))
 
-      (DELETE* "/:unshare-with" [:as {uri :uri}]
+      (DELETE "/:unshare-with" [:as {uri :uri}]
         :path-params [unshare-with :- (describe NonBlankString "The user whose permissions will be revoked.")]
         :query [params StandardUserQueryParams]
         :return DataItemPermissionsResponse

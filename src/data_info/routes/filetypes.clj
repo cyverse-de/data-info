@@ -5,15 +5,15 @@
   (:require [data-info.services.filetypes :as filetypes]
             [data-info.util.service :as svc]))
 
-(defroutes* filetypes-operations
-  (GET* "/file-types" [:as {uri :uri}]
+(defroutes filetypes-operations
+  (GET "/file-types" [:as {uri :uri}]
     :tags ["filetypes"]
     :return TypesList
     :summary "List File Types"
     :description "Lists available file types supported by the underlying library heuristomancer."
     (svc/trap uri filetypes/do-type-list))
 
-  (PUT* "/data/:data-id/type" [:as {uri :uri}]
+  (PUT "/data/:data-id/type" [:as {uri :uri}]
     :tags ["data-by-id"]
     :query [params StandardUserQueryParams]
     :path-params [data-id :- DataIdPathParam]

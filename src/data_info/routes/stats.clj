@@ -6,14 +6,14 @@
             [data-info.util.service :as svc]))
 
 
-(defroutes* stat-gatherer
+(defroutes stat-gatherer
 
             ; FIXME Update apps exception handling when data-info excptn hndlg updated
             ; apps catches exceptions thrown from this EP.
-  (context* "/stat-gatherer" []
+  (context "/stat-gatherer" []
     :tags ["bulk"]
 
-    (POST* "/" [:as {uri :uri}]
+    (POST "/" [:as {uri :uri}]
       :query [params StatQueryParams]
       :body [body (describe OptionalPathsOrDataIds "The path or data ids of the data objects to gather status information on.")]
       :return (doc-only StatusInfo StatResponse)

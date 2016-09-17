@@ -2,6 +2,7 @@
   (:gen-class)
   (:require [clojure.java.io :as io]
             [clojure.tools.logging :as log]
+            [data-info.routes :as routes]
             [data-info.util.config :as config]
             [clojure.tools.nrepl.server :as nrepl]
             [me.raynes.fs :as fs]
@@ -82,10 +83,9 @@
 
 (defn run-jetty
   []
-  (require 'data-info.routes
-           'ring.adapter.jetty)
+  (require 'ring.adapter.jetty)
   (log/warn "Started listening on" (config/listen-port))
-  ((eval 'ring.adapter.jetty/run-jetty) (eval 'data-info.routes/app) {:port (config/listen-port)}))
+  ((eval 'ring.adapter.jetty/run-jetty) routes/app {:port (config/listen-port)}))
 
 (defn -main
   [& args]

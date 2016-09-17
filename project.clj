@@ -17,7 +17,7 @@
   :dependencies [[org.clojure/clojure "1.8.0"]
                  [org.clojure/data.codec "0.1.0"]
                  [org.clojure/tools.nrepl "0.2.10"]
-                 [cheshire "5.5.0"
+                 [cheshire "5.6.3"
                    :exclusions [[com.fasterxml.jackson.dataformat/jackson-dataformat-cbor]
                                 [com.fasterxml.jackson.dataformat/jackson-dataformat-smile]
                                 [com.fasterxml.jackson.core/jackson-annotations]
@@ -26,7 +26,7 @@
                  [com.cemerick/url "0.1.1"]
                  [dire "0.5.3"]
                  [me.raynes/fs "1.4.6"]
-                 [metosin/compojure-api "0.24.5"]
+                 [metosin/compojure-api "1.1.8"]
                  [org.apache.tika/tika-core "1.11"]
                  [net.sf.opencsv/opencsv "2.3"]
                  [de.ubercode.clostache/clostache "1.4.0" :exclusions [org.clojure/core.incubator]]
@@ -37,10 +37,10 @@
                  [org.cyverse/clj-jargon "2.8.0"
                    :exclusions [[org.slf4j/slf4j-log4j12]
                                 [log4j]]]
-                 [org.cyverse/clojure-commons "2.8.0"]
+                 [org.cyverse/clojure-commons "2.8.1-SNAPSHOT"]
                  [org.cyverse/common-cli "2.8.0"]
                  [org.cyverse/common-cfg "2.8.0"]
-                 [org.cyverse/common-swagger-api "2.8.0"]
+                 [org.cyverse/common-swagger-api "2.8.1-SNAPSHOT"]
                  [org.cyverse/heuristomancer "2.8.0"]
                  [org.cyverse/kameleon "2.8.0"]
                  [org.cyverse/metadata-client "2.8.0"]
@@ -53,15 +53,12 @@
                                   data-info.routes.schemas.trash
                                   :test-paths]
              :linters [:wrong-arity :wrong-ns-form :wrong-pre-post :wrong-tag :misplaced-docstrings]}
-  :plugins [[lein-ring "0.9.6"]
-            [swank-clojure "1.4.2"]
-            [test2junit "1.1.3"]
+  :plugins [[test2junit "1.1.3"]
             [jonase/eastwood "0.2.3"]]
-  :profiles {:dev     {:resource-paths ["conf/test"]}
-             ;; compojure-api route macros should not be AOT compiled:
-             ;; https://github.com/metosin/compojure-api/issues/135#issuecomment-121388539
-             ;; https://github.com/metosin/compojure-api/issues/102
-             :uberjar {:aot [#"data-info.(?!routes).*"]}}
+  :profiles {:dev     {:dependencies   [[ring "1.5.0"]] ;; required for lein-ring with compojure-api 1.1.8+
+                       :plugins        [[lein-ring "0.9.7"]]
+                       :resource-paths ["conf/test"]}
+             :uberjar {:aot :all}}
   :main ^:skip-aot data-info.core
   :ring {:handler data-info.routes/app
          :init data-info.core/lein-ring-init

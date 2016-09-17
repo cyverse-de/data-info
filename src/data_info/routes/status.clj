@@ -9,8 +9,8 @@
             [ring.util.http-response :refer [ok internal-server-error]]
             [schema.core :as s]))
 
-(defroutes* status
-    (GET* "/" [:as {:keys [uri server-name server-port]}]
+(defroutes status
+    (GET "/" [:as {:keys [uri server-name server-port]}]
       :query [{:keys [expecting]} StatusParams]
       :return DataInfoStatusResponse
       :tags ["service-info"]
@@ -21,7 +21,7 @@
            (assoc (commons-service/get-docs-status config/svc-info server-name server-port config/docs-uri expecting)
                   :iRODS (status/irods-running?)))))
 
-    (GET* "/admin/config" [:as {:keys [uri]}]
+    (GET "/admin/config" [:as {:keys [uri]}]
       :return (describe s/Any "A map of configuration keys to values.")
       :tags ["service-info"]
       :summary "Configuration Information"
