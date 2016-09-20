@@ -196,7 +196,9 @@
         mod-date     (:date-modified stat)
         zone         (cfg/irods-zone)
         name         (fs/base-name path)
-        page         (icat/paged-folder-listing
+        total        (future (icat/number-of-items-in-folder user zone path entity-type info-types))
+        total-bad    (future (total-bad user zone path entity-type info-types bad-indicator))
+        page         (future (icat/paged-folder-listing
                        :user           user
                        :zone           zone
                        :folder-path    path
@@ -205,11 +207,11 @@
                        :sort-column    sfield
                        :sort-direction sord
                        :limit          limit
-                       :offset         offset)]
+                       :offset         offset))]
     (merge (fmt-entry id date-created mod-date bad? nil path name perm 0)
-           (page->map (partial is-bad? bad-indicator) page)
-           {:total    (icat/number-of-items-in-folder user zone path entity-type info-types)
-            :totalBad (total-bad user zone path entity-type info-types bad-indicator)})))
+           (page->map (partial is-bad? bad-indicator) @page)
+           {:total    @total
+            :totalBad @total-bad})))
 
 
 (defn- folder-entry
