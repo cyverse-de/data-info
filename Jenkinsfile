@@ -8,36 +8,43 @@ node {
         stage "Build"
         checkout scm
 
-        sh 'git rev-parse HEAD > GIT_COMMIT'
-        git_commit = readFile('GIT_COMMIT').trim()
+        git_commit = sh(returnStdout: true, script: "git rev-parse HEAD").trim()
         echo git_commit
 
-        sh 'grep "(defproject" project.clj | sed -E \'s/^[^"]*"([^"]+)".*$/\\1/\' > VERSION'
-        version = readFile('VERSION').trim()
+        version = sh(returnStdout: true, script: 'grep "(defproject" project.clj | sed -E \'s/^[^"]*"([^"]+)".*$/\\1/\'').trim()
         echo version
 
-        dockerRepo = "${dockerUser}/${repo}:${env.BRANCH_NAME}"
+        dockerRepo = "test-${env.BUILD_TAG}"
 
         sh "docker build --rm --build-arg git_commit=${git_commit} --build-arg version=${version} -t ${dockerRepo} ."
 
 
         try {
             stage "Test"
-            dockerTestRunner = "test-${env.BUILD_TAG}"
-            sh "docker run --rm --name ${dockerTestRunner} --entrypoint 'lein' ${dockerRepo} test"
+            try {
+                dockerTestRunner = "test-${env.BUILD_TAG}"
+                sh "docker run --rm --name ${dockerTestRunner} -v \$(pwd)/test2junit:/usr/src/app/test2junit --entrypoint 'lein' ${dockerRepo} test2junit"
+            } finally {
+                junit 'test2junit/xml/*.xml'
+
+                dockerTestCleanup = "test-cleanup-${env.BUILD_TAG}"
+                sh "docker run --rm --name ${dockerTestCleanup} -v \$(pwd):/build -w /build alpine rm -r test2junit"
+            }
+
+            stage "Docker Push"
+            dockerPushRepo = "${dockerUser}/${repo}:${env.BRANCH_NAME}"
+            sh "docker tag ${dockerRepo} ${dockerPushRepo}"
+            sh "docker push ${dockerPushRepo}"
         } finally {
             sh returnStatus: true, script: "docker kill ${dockerTestRunner}"
             sh returnStatus: true, script: "docker rm ${dockerTestRunner}"
+
+            sh returnStatus: true, script: "docker kill ${dockerTestCleanup}"
+            sh returnStatus: true, script: "docker rm ${dockerTestCleanup}"
+
+            sh returnStatus: true, script: "docker rmi ${dockerRepo}"
         }
-
-
-        stage "Docker Push"
-        sh "docker push ${dockerRepo}"
     } catch (InterruptedException e) {
-        currentBuild.result = "ABORTED"
-        slackSend color: 'warning', message: "ABORTED: ${slackJobDescription}"
-        throw e
-    } catch (hudson.AbortException e) {
         currentBuild.result = "ABORTED"
         slackSend color: 'warning', message: "ABORTED: ${slackJobDescription}"
         throw e
