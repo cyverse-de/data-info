@@ -1,12 +1,11 @@
 #!groovy
-def repo = "data-info"
-def dockerUser = "discoenv"
-
-node {
+node('docker') {
     slackJobDescription = "job '${env.JOB_NAME} [${env.BUILD_NUMBER}]' (${env.BUILD_URL})"
     try {
         stage "Build"
         checkout scm
+
+        service = readProperties file: 'service.properties'
 
         git_commit = sh(returnStdout: true, script: "git rev-parse HEAD").trim()
         echo git_commit
@@ -19,28 +18,41 @@ node {
         sh "docker build --rm --build-arg git_commit=${git_commit} --build-arg version=${version} -t ${dockerRepo} ."
 
 
+        dockerTestRunner = "test-${env.BUILD_TAG}"
+        dockerTestCleanup = "test-cleanup-${env.BUILD_TAG}"
+        dockerPusher = "push-${env.BUILD_TAG}"
         try {
             stage "Test"
             try {
-                dockerTestRunner = "test-${env.BUILD_TAG}"
                 sh "docker run --rm --name ${dockerTestRunner} -v \$(pwd)/test2junit:/usr/src/app/test2junit --entrypoint 'lein' ${dockerRepo} test2junit"
             } finally {
                 junit 'test2junit/xml/*.xml'
 
-                dockerTestCleanup = "test-cleanup-${env.BUILD_TAG}"
                 sh "docker run --rm --name ${dockerTestCleanup} -v \$(pwd):/build -w /build alpine rm -r test2junit"
             }
 
             stage "Docker Push"
-            dockerPushRepo = "${dockerUser}/${repo}:${env.BRANCH_NAME}"
+            dockerPushRepo = "${service.dockerUser}/${service.repo}:${env.BRANCH_NAME}"
             sh "docker tag ${dockerRepo} ${dockerPushRepo}"
-            sh "docker push ${dockerPushRepo}"
+            withCredentials([[$class: 'UsernamePasswordMultiBinding', credentialsId: 'jenkins-docker-credentials', passwordVariable: 'DOCKER_PASSWORD', usernameVariable: 'DOCKER_USERNAME']]) {
+                sh """docker run -e DOCKER_USERNAME -e DOCKER_PASSWORD \\
+                                 -v /var/run/docker.sock:/var/run/docker.sock \\
+                                 --rm --name ${dockerPusher} \\
+                                 docker:\$(docker version --format '{{ .Server.Version }}') \\
+                                 sh -e -c \\
+                      'docker login -u \"\$DOCKER_USERNAME\" -p \"\$DOCKER_PASSWORD\" && \\
+                       docker push ${dockerPushRepo} && \\
+                       docker logout'"""
+            }
         } finally {
             sh returnStatus: true, script: "docker kill ${dockerTestRunner}"
             sh returnStatus: true, script: "docker rm ${dockerTestRunner}"
 
             sh returnStatus: true, script: "docker kill ${dockerTestCleanup}"
             sh returnStatus: true, script: "docker rm ${dockerTestCleanup}"
+
+            sh returnStatus: true, script: "docker kill ${dockerPusher}"
+            sh returnStatus: true, script: "docker rm ${dockerPusher}"
 
             sh returnStatus: true, script: "docker rmi ${dockerRepo}"
         }
