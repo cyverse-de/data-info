@@ -37,10 +37,10 @@
                  [org.cyverse/clj-jargon "2.8.0"
                    :exclusions [[org.slf4j/slf4j-log4j12]
                                 [log4j]]]
-                 [org.cyverse/clojure-commons "2.8.1-SNAPSHOT"]
+                 [org.cyverse/clojure-commons "2.8.1"]
                  [org.cyverse/common-cli "2.8.0"]
                  [org.cyverse/common-cfg "2.8.0"]
-                 [org.cyverse/common-swagger-api "2.8.1-SNAPSHOT"]
+                 [org.cyverse/common-swagger-api "2.8.1"]
                  [org.cyverse/heuristomancer "2.8.0"]
                  [org.cyverse/kameleon "2.8.0"]
                  [org.cyverse/metadata-client "2.8.0"]
