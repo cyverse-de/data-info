@@ -43,7 +43,7 @@
 (defn- end-pos
   [^String chunk page pages]
   (if (= page (dec pages))
-    (dec (.length chunk))
+    (.length chunk)
     (seek-prev-line chunk (dec (.length chunk)))))
 
 (defn- trim-chunk
