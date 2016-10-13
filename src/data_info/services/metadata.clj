@@ -326,7 +326,7 @@
     (validators/user-exists cm user)
     (let [dest-dir (:path (get-readable-data-item cm user dest-id))
           csv (get-csv cm src-path separator)
-          attrs (set (-> csv first rest))
+          attrs (-> csv first rest)
           csv-path-values (rest csv)]
       {:path-metadata
        (bulk-add-avus cm user dest-dir attrs csv-path-values)})))
