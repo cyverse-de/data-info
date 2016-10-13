@@ -31,18 +31,22 @@ node('docker') {
                 sh "docker run --rm --name ${dockerTestCleanup} -v \$(pwd):/build -w /build alpine rm -r test2junit"
             }
 
+            milestone 100
             stage "Docker Push"
             dockerPushRepo = "${service.dockerUser}/${service.repo}:${env.BRANCH_NAME}"
-            sh "docker tag ${dockerRepo} ${dockerPushRepo}"
-            withCredentials([[$class: 'UsernamePasswordMultiBinding', credentialsId: 'jenkins-docker-credentials', passwordVariable: 'DOCKER_PASSWORD', usernameVariable: 'DOCKER_USERNAME']]) {
-                sh """docker run -e DOCKER_USERNAME -e DOCKER_PASSWORD \\
-                                 -v /var/run/docker.sock:/var/run/docker.sock \\
-                                 --rm --name ${dockerPusher} \\
-                                 docker:\$(docker version --format '{{ .Server.Version }}') \\
-                                 sh -e -c \\
-                      'docker login -u \"\$DOCKER_USERNAME\" -p \"\$DOCKER_PASSWORD\" && \\
-                       docker push ${dockerPushRepo} && \\
-                       docker logout'"""
+            lock("docker-push-${dockerPushRepo}") {
+              milestone 101
+              sh "docker tag ${dockerRepo} ${dockerPushRepo}"
+              withCredentials([[$class: 'UsernamePasswordMultiBinding', credentialsId: 'jenkins-docker-credentials', passwordVariable: 'DOCKER_PASSWORD', usernameVariable: 'DOCKER_USERNAME']]) {
+                  sh """docker run -e DOCKER_USERNAME -e DOCKER_PASSWORD \\
+                                   -v /var/run/docker.sock:/var/run/docker.sock \\
+                                   --rm --name ${dockerPusher} \\
+                                   docker:\$(docker version --format '{{ .Server.Version }}') \\
+                                   sh -e -c \\
+                        'docker login -u \"\$DOCKER_USERNAME\" -p \"\$DOCKER_PASSWORD\" && \\
+                         docker push ${dockerPushRepo} && \\
+                         docker logout'"""
+              }
             }
         } finally {
             sh returnStatus: true, script: "docker kill ${dockerTestRunner}"
