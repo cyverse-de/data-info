@@ -4,6 +4,8 @@
             [clojure.tools.logging :as log]
             [data-info.routes :as routes]
             [data-info.util.config :as config]
+            [data-info.amqp :as amqp]
+            [data-info.events :as events]
             [clojure.tools.nrepl.server :as nrepl]
             [me.raynes.fs :as fs]
             [common-cli.core :as ccli]
@@ -74,6 +76,13 @@
   (icat/configure-icat))
 
 
+(defn listen-for-events
+  []
+  (let [exchange-cfg (events/exchange-config)
+        queue-cfg    (events/queue-config)]
+    (amqp/connect exchange-cfg queue-cfg {"events.data-info.ping" events/ping-handler})))
+
+
 (defn- cli-options
   []
   [["-c" "--config PATH" "Path to the config file"
@@ -99,4 +108,5 @@
         (ccli/exit 1 "The config file is not readable."))
       (load-configuration-from-file (:config options))
       (icat/configure-icat)
+      (.start (Thread. listen-for-events))
       (run-jetty))))
