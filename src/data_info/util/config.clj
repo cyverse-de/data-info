@@ -220,6 +220,42 @@
 ; End of type detection configuration
 
 
+(cc/defprop-optstr amqp-uri
+  "The URI to use for connections to the AMQP broker."
+  [props config-valid configs]
+  "data-info.amqp.uri" "amqp://guest:guest@rabbit:5672/")
+
+(cc/defprop-optstr exchange-name
+  "The name of the exchange to connect to on the AMQP host."
+  [props config-valid configs]
+  "data-info.amqp.exchange.name" "de")
+
+(cc/defprop-optboolean exchange-durable?
+  "Whether or not the exchange is durable."
+  [props config-valid configs]
+  "data-info.amqp.exchange.durable" true)
+
+(cc/defprop-optboolean exchange-auto-delete?
+  "Whether or not to automatically delete the exchange."
+  [props config-valid configs]
+  "data-info.amqp.exchange.auto-delete" false)
+
+(cc/defprop-optstr queue-name
+  "The name of the queue to connect to on the AMQP exchange."
+  [props config-valid configs]
+  "data-info.amqp.queue.name" "events.data-info.queue")
+
+(cc/defprop-optboolean queue-durable?
+  "Whether or not the queue is durable."
+  [props config-valid configs]
+  "data-info.amqp.queue.durable" true)
+
+(cc/defprop-optboolean queue-auto-delete?
+  "Whether or not the queue is automatically deleted."
+  [props config-valid configs]
+  "data-info.amqp.queue.auto-delete" false)
+
+
 (defn- validate-config
   "Validates the configuration settings after they've been loaded."
   []
