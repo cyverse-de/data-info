@@ -12,7 +12,7 @@
            [clojure.lang IPersistentMap]))
 
 
-(defn ^IPersistentMap path-for-uuid
+(defn path-for-uuid
   "Resolves a path for the entity with a given UUID.
 
    Params:
@@ -22,7 +22,9 @@
    Returns:
      It returns a path."
   ([^IPersistentMap cm ^String user ^UUID uuid]
-   (uuid/get-path cm uuid))
+   (if-let [path (uuid/get-path cm uuid)]
+     path
+     (throw+ {:error_code error/ERR_DOES_NOT_EXIST :uuid uuid})))
   ([^String user ^UUID uuid]
    (irods/with-jargon-exceptions [cm]
        (path-for-uuid cm user uuid))))
