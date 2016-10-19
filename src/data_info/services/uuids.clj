@@ -39,9 +39,7 @@
    Returns:
      It returns a path-stat map containing an additional UUID field."
   ([^IPersistentMap cm ^String user ^UUID uuid]
-    (if-let [path (uuid/get-path cm uuid)]
-      (assoc (stat/path-stat cm user path) :uuid uuid)
-      (throw+ {:error_code error/ERR_DOES_NOT_EXIST :uuid uuid})))
+    (assoc (stat/path-stat cm user (path-for-uuid cm user uuid)) :uuid uuid))
 
   ([^String user ^UUID uuid]
    (irods/with-jargon-exceptions [cm]
