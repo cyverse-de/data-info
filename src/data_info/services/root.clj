@@ -13,6 +13,12 @@
             [data-info.util.validators :as validators]
             [dire.core :refer [with-pre-hook! with-post-hook!]]))
 
+(defn- get-base-paths
+  [user]
+  {:user_home_path  (paths/user-home-dir user)
+   :user_trash_path (paths/user-trash-path user)
+   :base_trash_path (paths/base-trash-path)})
+
 (defn- get-root
   [cm user root-path]
   (validators/path-readable cm user root-path) ;; CORE-7638; otherwise a 'nil' permission can pop up and cause issues
@@ -33,18 +39,18 @@
 
 (defn root-listing
   [user]
-  (let [uhome          (paths/user-home-dir user)
-        utrash         (paths/user-trash-path user)
+  (let [{home-path :user_home_path trash-path :user_trash_path :as base-paths} (get-base-paths user)
         community-data (ft/rm-last-slash (cfg/community-data))
         irods-home     (ft/rm-last-slash (cfg/irods-home))]
     (log/debug "[root-listing]" "for" user)
     (irods/with-jargon-exceptions [cm]
       (validators/user-exists cm user)
       {:roots (remove nil?
-                [(get-root cm user uhome)
+                [(get-root cm user home-path)
                  (get-root cm user community-data)
                  (get-root cm user irods-home)
-                 (make-root cm user utrash)])})))
+                 (make-root cm user trash-path)])
+       :base-paths base-paths})))
 
 (defn do-root-listing
   [user]
@@ -55,3 +61,9 @@
     (dul/log-call "do-root-listing" user)))
 
 (with-post-hook! #'do-root-listing (dul/log-func "do-root-listing"))
+
+(defn user-base-paths
+  [user]
+  (irods/with-jargon-exceptions [cm]
+    (validators/user-exists cm user)
+    (get-base-paths user)))
