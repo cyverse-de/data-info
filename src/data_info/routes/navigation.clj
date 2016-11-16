@@ -13,6 +13,16 @@
   (context "/navigation" []
     :tags ["navigation"]
 
+    (GET "/base-paths" [:as {uri :uri}]
+      :query [{:keys [user]} StandardUserQueryParams]
+      :return UserBasePaths
+      :summary "Get User's Base Paths"
+      :description (str
+"This endpoint returns the base paths of the user's home directory, trash, and the base trash path."
+(get-error-code-block
+  "ERR_NOT_A_USER"))
+      (svc/trap uri root/user-base-paths user))
+
     (GET "/home" [:as {uri :uri}]
       :query [params StandardUserQueryParams]
       :return RootListing
