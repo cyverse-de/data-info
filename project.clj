@@ -43,7 +43,7 @@
                  [org.cyverse/common-swagger-api "2.8.1"]
                  [org.cyverse/heuristomancer "2.8.0"]
                  [org.cyverse/kameleon "3.0.0"]
-                 [org.cyverse/metadata-client "2.8.1"]
+                 [org.cyverse/metadata-client "2.8.2-SNAPSHOT"]
                  [org.cyverse/service-logging "2.8.0"]
                  [org.cyverse/tree-urls-client "2.8.1"]
                  [org.cyverse/event-messages "0.0.1"]

@@ -1,7 +1,6 @@
 (ns data-info.routes.avus
   (:use [common-swagger-api.routes]
         [common-swagger-api.schema]
-        [data-info.routes.middleware :only [wrap-metadata-base-url]]
         [data-info.routes.schemas.common]
         [data-info.routes.schemas.avus])
   (:require [data-info.services.metadata :as meta]
@@ -15,7 +14,6 @@
     (GET "/metadata" [:as {uri :uri}]
       :query [{:keys [user]} StandardUserQueryParams]
       :return AVUGetResult
-      :middleware [wrap-metadata-base-url]
       :summary "List AVUs (administrative)"
       :description
           (str "List all AVUs associated with a data item. Include administrative/system iRODS AVUs.
@@ -32,7 +30,6 @@
       :query [{:keys [user]} StandardUserQueryParams]
       :body [body (describe AddMetadataRequest "The iRODS and Metadata AVUs to add")]
       :return AVUChangeResult
-      :middleware [wrap-metadata-base-url]
       :summary "Add AVUs (administrative)"
       :description
             (str "Associate iRODS and Metadata AVUs with a data item. Allow adding any AVU.
@@ -52,7 +49,6 @@
     (GET "/metadata" [:as {uri :uri}]
       :query [{:keys [user]} StandardUserQueryParams]
       :return AVUGetResult
-      :middleware [wrap-metadata-base-url]
       :summary "List AVUs"
       :description
           (str "List all AVUs associated with a data item.
@@ -69,7 +65,6 @@
       :query [{:keys [user]} StandardUserQueryParams]
       :body [body (describe AddMetadataRequest "The iRODS and Metadata AVUs to add")]
       :return AVUChangeResult
-      :middleware [wrap-metadata-base-url]
       :summary "Add AVUs"
       :description
             (str "Associate iRODS and Metadata AVUs with a data item.
@@ -89,7 +84,6 @@
                             "A list of AVUs to set for this file.
                              May not include administrative AVUs, and will not delete them.")]
       :return AVUChangeResult
-      :middleware [wrap-metadata-base-url]
       :summary "Set AVUs"
       :description
            (str "Set the iRODS and metadata AVUS for a data item to a provided set.
@@ -108,7 +102,6 @@
       :query [{:keys [user]} StandardUserQueryParams]
       :body [{:keys [destination_ids]} (describe MetadataCopyRequest "The destination data items.")]
       :return MetadataCopyResult
-      :middleware [wrap-metadata-base-url]
       :summary "Copy Metadata"
       :description
            (str "Copies all IRODS AVUs visible to the client and Metadata AVUs from the data
@@ -122,7 +115,6 @@
     (POST "/metadata/csv-parser" [:as {uri :uri}]
       :query [params MetadataCSVParseParams]
       :return MetadataCSVParseResult
-      :middleware [wrap-metadata-base-url]
       :summary "Add Batch Metadata from CSV File"
       :description
            (str "This endpoint will parse a CSV/TSV file of metadata to apply to data items.

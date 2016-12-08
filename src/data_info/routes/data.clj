@@ -1,7 +1,6 @@
 (ns data-info.routes.data
   (:use [common-swagger-api.routes]
         [common-swagger-api.schema]
-        [data-info.routes.middleware :only [wrap-metadata-base-url]]
         [data-info.routes.schemas.common]
         [data-info.routes.schemas.data]
         [data-info.routes.schemas.stats])
@@ -145,7 +144,6 @@ with characters in a runtime-configurable parameter. Currently, this parameter l
         :query [params StandardUserQueryParams]
         :body [body (describe MetadataSaveRequest "The metadata save request.")]
         :return FileStat
-        :middleware [wrap-metadata-base-url]
         :summary "Exporting Metadata to a File"
         :description (str
   "Exports file/folder details in a JSON format (similar to the /stat-gatherer endpoint response),
