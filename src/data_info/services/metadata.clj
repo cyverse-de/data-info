@@ -10,7 +10,7 @@
             [clojure.set :as s]
             [clojure-commons.file-utils :as ft]
             [cheshire.core :as json]
-            [dire.core :refer [with-pre-hook! with-post-hook!]]
+            [data-info.clients.metadata :as metadata]
             [data-info.services.directory :as directory]
             [data-info.services.page-tabular :as csv]
             [data-info.services.stat :as stat]
@@ -19,7 +19,7 @@
             [data-info.util.irods :as irods]
             [data-info.util.paths :as paths]
             [data-info.util.validators :as validators]
-            [metadata-client.core :as metadata]))
+            [dire.core :refer [with-pre-hook! with-post-hook!]]))
 
 
 (defn- fix-unit
@@ -83,7 +83,7 @@
   (irods/with-jargon-exceptions [cm]
     (validators/user-exists cm user)
     (let [{:keys [path type]} (get-readable-data-item cm user data-id)
-          metadata-response   (metadata/list-avus user (resolve-data-type type) data-id :as :json)]
+          metadata-response   (metadata/list-avus user (resolve-data-type type) data-id)]
       (merge (:body metadata-response)
              {:irods-avus (list-path-metadata cm path :system system)
               :path       path}))))
@@ -245,7 +245,7 @@
    subfolders (plus all their files and subfolders) with their metadata in the resulting stat map."
   [cm user recursive? {:keys [id path type] :as data-item}]
   (let [irods-metadata (list-path-metadata cm path)
-        metadata-avus (-> (metadata/list-avus user (resolve-data-type type) (uuidify id) :as :json)
+        metadata-avus (-> (metadata/list-avus user (resolve-data-type type) (uuidify id))
                           :body
                           :avus)
         data-item (assoc data-item :metadata (concat irods-metadata metadata-avus))

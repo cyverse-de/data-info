@@ -4,7 +4,8 @@
             [clojure-commons.config :as cc]
             [clojure-commons.error-codes :as ce]
             [clojure.tools.logging :as log]
-            [common-cfg.cfg :as cfg]))
+            [common-cfg.cfg :as cfg]
+            [metadata-client.core :as metadata-client]))
 
 (def docs-uri "/docs")
 
@@ -266,6 +267,9 @@
 (defn- exception-filters
   []
   (remove nil? [(icat-password) (icat-user) (irods-password) (irods-user)]))
+
+(def metadata-client
+  (memoize #(metadata-client/new-metadata-client (metadata-base-url))))
 
 (def anon-files-base
   (memoize
