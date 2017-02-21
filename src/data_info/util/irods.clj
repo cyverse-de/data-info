@@ -26,9 +26,10 @@
          (throw+)))))
 
 (defmacro with-jargon-exceptions
-  [[cm-sym] & body]
-  `(catch-jargon-io-exceptions
-     (init/with-jargon (cfg/jargon-cfg) [~cm-sym] (do ~@body))))
+  [& params]
+  (let [[opts [[cm-sym] & body]] (split-with #(not (vector? %)) params)]
+    `(catch-jargon-io-exceptions
+       (init/with-jargon (cfg/jargon-cfg) ~@opts [~cm-sym] (do ~@body)))))
 
 (defn ^String abs-path
   "Resolves a path relative to a zone into its absolute path.
