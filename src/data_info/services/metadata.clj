@@ -267,7 +267,7 @@
   "Allows a user to export metadata from a file or folder with the given data-id to a file specified
    by dest."
   [user data-id dest recursive?]
-  (irods/with-jargon-exceptions [cm]
+  (irods/with-jargon-exceptions :client-user user [cm]
     (validators/user-exists cm user)
     (let [dest-dir (ft/dirname dest)
           src-data (uuids/path-stat-for-uuid cm user data-id)

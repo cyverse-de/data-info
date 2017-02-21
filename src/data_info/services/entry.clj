@@ -38,21 +38,21 @@
 ;; file specific
 
 (defn- get-file
-  [path]
-  (irods/with-jargon-exceptions [irods]
+  [user path]
+  (irods/with-jargon-exceptions :client-user user [irods]
     (if (zero? (item/file-size irods path))
       ""
       (ops/input-stream irods path))))
 
 (defn- file-entry
-  [path {:keys [attachment]}]
+  [path {:keys [user attachment]}]
   (let [filename    (str \" (file/basename path) \")
         disposition (if attachment
                       (str "attachment; filename=" filename)
                       (str "filename=" filename))
-        media-type  (irods/with-jargon-exceptions [cm]
+        media-type  (irods/with-jargon-exceptions :client-user user [cm]
                       (irods/detect-media-type cm path))]
-    (assoc (http-response/ok (get-file path))
+    (assoc (http-response/ok (get-file user path))
            :headers {"Content-Type"        media-type
                      "Content-Disposition" disposition})))
 
@@ -235,7 +235,7 @@
         sort-dir    (resolve-sort-dir sort-dir)
         offset      (if-not (nil? offset) offset 0)]
     (http-response/ok
-      (irods/with-jargon-exceptions [cm]
+      (irods/with-jargon-exceptions :client-user user [cm]
         (paged-dir-listing
            cm user path entity-type badies sort-field sort-dir offset limit info-type)))))
 

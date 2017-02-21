@@ -43,7 +43,7 @@
    ring.middleware.multipart-params/multipart-params-request which stores the file in iRODS."
   [user dest-dir {istream :stream filename :filename}]
   (validators/good-pathname filename)
-  (irods/with-jargon-exceptions [cm]
+  (irods/with-jargon-exceptions :client-user user [cm]
     (let [dest-path (ft/path-join dest-dir filename)]
       (create-at-path cm istream user dest-path))))
 
@@ -57,7 +57,7 @@
   "When partially applied, creates a storage handler for
    ring.middleware.multipart-params/multipart-params-request which overwrites the file in iRODS."
   [user data-id {istream :stream}]
-  (irods/with-jargon-exceptions [cm]
+  (irods/with-jargon-exceptions :client-user user [cm]
     (let [path (ft/rm-last-slash (uuids/path-for-uuid cm user data-id))]
       (overwrite-path cm istream user path))))
 

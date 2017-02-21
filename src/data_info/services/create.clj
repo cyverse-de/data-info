@@ -35,7 +35,7 @@
    new directories."
   [user paths]
   (log/debug (str "create " user " " paths))
-  (irods/with-jargon-exceptions [cm]
+  (irods/with-jargon-exceptions :client-user user [cm]
     (validators/validate-num-paths paths)
     (validators/user-exists cm user)
     (let [paths (set (map ft/rm-last-slash paths))
