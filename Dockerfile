@@ -23,6 +23,8 @@ CMD ["--help"]
 
 ARG git_commit=unknown
 ARG version=unknown
+ARG descriptive_version=unknown
 
 LABEL org.cyverse.git-ref="$git_commit"
 LABEL org.cyverse.version="$version"
+LABEL org.cyverse.descriptive-version="$descriptive_version"
