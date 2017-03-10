@@ -63,6 +63,11 @@ node('docker') {
             sh returnStatus: true, script: "docker rm ${dockerPusher}"
 
             sh returnStatus: true, script: "docker rmi ${dockerRepo}"
+
+            step([$class: 'hudson.plugins.jira.JiraIssueUpdater',
+                    issueSelector: [$class: 'hudson.plugins.jira.selector.DefaultIssueSelector'],
+                    scm: scm,
+                    labels: [ "${service.repo}-${descriptive_version}", "${env.BUILD_TAG}" ]])
         }
     } catch (InterruptedException e) {
         currentBuild.result = "ABORTED"
