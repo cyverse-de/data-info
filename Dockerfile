@@ -1,11 +1,6 @@
-FROM clojure:alpine
-
-RUN apk add --update git && \
-    rm -rf /var/cache/apk
+FROM discoenv/clojure-base:master
 
 VOLUME ["/etc/iplant/de"]
-
-WORKDIR /usr/src/app
 
 COPY project.clj /usr/src/app/
 RUN lein deps
