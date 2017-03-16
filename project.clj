@@ -23,7 +23,7 @@
                                 [com.fasterxml.jackson.core/jackson-annotations]
                                 [com.fasterxml.jackson.core/jackson-databind]
                                 [com.fasterxml.jackson.core/jackson-core]]]
-                 [com.cemerick/url "0.1.1"]
+                 [com.cemerick/url "0.1.1" :exclusions [org.clojure/clojurescript]]
                  [dire "0.5.3"]
                  [me.raynes/fs "1.4.6"]
                  [metosin/compojure-api "1.1.8"]
