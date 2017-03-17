@@ -20,6 +20,11 @@ node('docker') {
 
         sh "docker build --rm --build-arg git_commit=${git_commit} --build-arg version=${version} --build-arg descriptive_version=${descriptive_version} -t ${dockerRepo} ."
 
+        image_sha = sh(returnStdout: true, script: "docker inspect -f '{{ .Config.Image }}' ${dockerRepo}").trim()
+        echo image_sha
+
+        writeFile(file: "${dockerRepo}.docker-image-sha", text: "${image_sha}")
+        fingerprint "${dockerRepo}.docker-image-sha"
 
         dockerTestRunner = "test-${env.BUILD_TAG}"
         dockerTestCleanup = "test-cleanup-${env.BUILD_TAG}"
