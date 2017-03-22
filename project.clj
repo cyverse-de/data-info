@@ -37,7 +37,7 @@
                  [org.cyverse/clj-jargon "2.8.1"
                    :exclusions [[org.slf4j/slf4j-log4j12]
                                 [log4j]]]
-                 [org.cyverse/clojure-commons "2.8.1"]
+                 [org.cyverse/clojure-commons "2.8.3"]
                  [org.cyverse/common-cli "2.8.1"]
                  [org.cyverse/common-cfg "2.8.1"]
                  [org.cyverse/common-swagger-api "2.8.2"]
