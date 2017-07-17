@@ -19,6 +19,14 @@
   (:import [clojure.lang IPersistentMap]))
 
 
+(defn- is-dir?
+  [stat-map]
+  (= (:type stat-map) :dir))
+
+(defn- owns?
+  [stat-map]
+  (= (:permission stat-map) :own))
+
 (defn- get-types
   "Gets all of the filetypes associated with path."
   [cm user path]
@@ -39,7 +47,7 @@
 
 (defn- merge-counts
   [stat-map cm user path]
-  (if (info/is-dir? cm path)
+  (if (is-dir? stat-map)
     (assoc stat-map
       :file-count (icat/number-of-files-in-folder user (cfg/irods-zone) path)
       :dir-count  (icat/number-of-folders-in-folder user (cfg/irods-zone) path))
@@ -48,7 +56,7 @@
 
 (defn- merge-shares
   [stat-map cm user path]
-  (if (perm/owns? cm user path)
+  (if (owns? stat-map)
     (assoc stat-map :share-count (count-shares cm user path))
     stat-map))
 
@@ -61,7 +69,7 @@
 
 (defn- merge-type-info
   [stat-map cm user path]
-  (if-not (info/is-dir? cm path)
+  (if-not (is-dir? stat-map)
     (assoc stat-map
       :infoType     (get-types cm user path)
       :content-type (irods/detect-media-type cm path))
