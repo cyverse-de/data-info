@@ -9,14 +9,14 @@
 
 (defn- path-exists-for-user?
   [cm user path]
-  (let [path (ft/rm-last-slash path)]
-    (and (item/exists? cm path)
-         (perm/is-readable? cm user path))))
+  (item/exists? cm (ft/rm-last-slash path)))
 
 (defn do-exists
   [{user :user} {paths :paths}]
-  (irods/with-jargon-exceptions [cm]
-    (duv/user-exists cm user)
+  ;; The client user below ensures that iRODS won't show things the user doesn't have access to.
+  ;; Without it, an extra check needs to be added in path-exists-for-user? for that.
+  ;; Additionally, this checks that the user exists, which would otherwise need to be validated.
+  (irods/with-jargon-exceptions :client-user user [cm]
     {:paths (into {} (map (juxt keyword (partial path-exists-for-user? cm user)) (set paths)))}))
 
 (with-pre-hook! #'do-exists
