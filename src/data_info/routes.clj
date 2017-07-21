@@ -11,6 +11,7 @@
             [data-info.routes.data :as data-routes]
             [data-info.routes.exists :as exists-routes]
             [data-info.routes.filetypes :as filetypes-routes]
+            [data-info.routes.path-lists :as path-lists]
             [data-info.routes.permissions :as permission-routes]
             [data-info.routes.navigation :as navigation-routes]
             [data-info.routes.rename :as rename-routes]
@@ -56,6 +57,7 @@
     permission-routes/permissions-routes
     navigation-routes/navigation
     stat-routes/stat-gatherer
+    path-lists/path-list-creator
     sharing-routes/sharing-routes
     ticket-routes/ticket-routes
     trash-routes/trash
