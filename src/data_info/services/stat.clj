@@ -108,12 +108,20 @@
       (merge-counts cm user path included-keys)
       (select-keys included-keys))))
 
+(defn- get-filter-set
+  [filter-vec-or-string default]
+  (if (nil? filter-vec-or-string)
+    (set default)
+    (if (string? filter-vec-or-string)
+      (set (map keyword (string/split filter-vec-or-string #",")))
+      (set (map keyword filter-vec-or-string)))))
+
 (defn- process-filters
   "Process an include and an exclude string into just a list of keys to include"
   [include exclude]
   (let [all-keys #{:id :path :type :label :date-created :date-modified :permission :share-count :file-count :dir-count :file-size :content-type :infoType :md5}
-        includes-set (if (nil? include) all-keys (set (map keyword (string/split include #","))))
-        excludes-set (if (nil? exclude) (set []) (set (map keyword (string/split exclude #","))))]
+        includes-set (get-filter-set include all-keys)
+        excludes-set (get-filter-set exclude [])]
       (cset/intersection all-keys (cset/difference includes-set excludes-set))))
 
 (defn ^IPersistentMap path-stat
