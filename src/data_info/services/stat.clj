@@ -1,5 +1,6 @@
 (ns data-info.services.stat
   (:require [clojure.string :as string]
+            [clojure.set :as cset]
             [clojure.tools.logging :as log]
             [dire.core :refer [with-pre-hook! with-post-hook!]]
             [slingshot.slingshot :refer [throw+]]
@@ -27,6 +28,24 @@
   [stat-map]
   (= (:permission stat-map) :own))
 
+(defn- needs-key?
+  [included-keys needed-key?]
+  (if (contains? included-keys needed-key?)
+    true
+    (cond
+      (= needed-key? :permission)
+      (contains? included-keys :share-count)
+
+      (= needed-key? :type)
+      (not (empty? (cset/intersection #{:infoType :content-type :file-count :dir-count} included-keys)))
+
+      :else
+      false)))
+
+(defn- needs-any-key?
+  [included-keys & needed-keys]
+  (some #(needs-key? included-keys %) needed-keys))
+
 (defn- get-types
   "Gets all of the filetypes associated with path."
   [cm user path]
@@ -46,76 +65,99 @@
 
 
 (defn- merge-counts
-  [stat-map cm user path]
-  (if (is-dir? stat-map)
+  [stat-map cm user path included-keys]
+  (if (and (needs-any-key? included-keys :file-count :dir-count) (is-dir? stat-map))
     (assoc stat-map
-      :file-count (icat/number-of-files-in-folder user (cfg/irods-zone) path)
-      :dir-count  (icat/number-of-folders-in-folder user (cfg/irods-zone) path))
+      :file-count (if (needs-key? included-keys :file-count) (icat/number-of-files-in-folder user (cfg/irods-zone) path))
+      :dir-count  (if (needs-key? included-keys :dir-count)  (icat/number-of-folders-in-folder user (cfg/irods-zone) path)))
     stat-map))
 
 
 (defn- merge-shares
-  [stat-map cm user path]
-  (if (owns? stat-map)
+  [stat-map cm user path included-keys]
+  (if (and (needs-key? included-keys :share-count) (owns? stat-map))
     (assoc stat-map :share-count (count-shares cm user path))
     stat-map))
 
 
 (defn- merge-label
-  [stat-map user path]
-  (assoc stat-map
-         :label (paths/path->label user path)))
-
-
-(defn- merge-type-info
-  [stat-map cm user path]
-  (if-not (is-dir? stat-map)
+  [stat-map user path included-keys]
+  (if (needs-key? included-keys :label)
     (assoc stat-map
-      :infoType     (get-types cm user path)
-      :content-type (irods/detect-media-type cm path))
+           :label (paths/path->label user path))
     stat-map))
 
 
+(defn- merge-type-info
+  [stat-map cm user path included-keys]
+  (if (and (needs-any-key? included-keys :infoType :content-type) (not (is-dir? stat-map)))
+    (assoc stat-map
+      :infoType     (if (needs-key? included-keys :infoType) (get-types cm user path))
+      :content-type (if (needs-key? included-keys :content-type) (irods/detect-media-type cm path)))
+    stat-map))
+
 (defn ^IPersistentMap decorate-stat
-  [^IPersistentMap cm ^String user ^IPersistentMap stat]
+  [^IPersistentMap cm ^String user ^IPersistentMap stat included-keys]
   (let [path (:path stat)]
     (-> stat
-      (assoc :id         (-> (meta/get-attribute cm path uuid/uuid-attr) first :value)
-             :permission (perm/permission-for cm user path))
-      (merge-label user path)
-      (merge-type-info cm user path)
-      (merge-shares cm user path)
-      (merge-counts cm user path))))
+      (assoc :id         (if (needs-key? included-keys :id) (-> (meta/get-attribute cm path uuid/uuid-attr) first :value))
+             :permission (if (needs-key? included-keys :permission) (perm/permission-for cm user path)))
+      (merge-label user path included-keys)
+      (merge-type-info cm user path included-keys)
+      (merge-shares cm user path included-keys)
+      (merge-counts cm user path included-keys)
+      (select-keys included-keys))))
 
+(defn- process-filters
+  "Process an include and an exclude string into just a list of keys to include"
+  [include exclude]
+  (let [all-keys #{:id :path :type :label :date-created :date-modified :permission :share-count :file-count :dir-count :file-size :content-type :infoType :md5}
+        includes-set (if (nil? include) all-keys (set (map keyword (string/split include #","))))
+        excludes-set (if (nil? exclude) (set []) (set (map keyword (string/split exclude #","))))]
+      (cset/intersection all-keys (cset/difference includes-set excludes-set))))
 
 (defn ^IPersistentMap path-stat
-  [^IPersistentMap cm ^String user ^String path]
-  (let [path (ft/rm-last-slash path)]
+  [^IPersistentMap cm ^String user ^String path & {:keys [filter-include filter-exclude] :or {filter-include nil filter-exclude nil}}]
+  (let [path (ft/rm-last-slash path)
+        included-keys (process-filters filter-include filter-exclude)]
     (log/debug "[path-stat] user:" user "path:" path)
     (validators/path-exists cm path)
-    (decorate-stat cm user (info/stat cm path))))
+    (let [base-stat (if (needs-any-key? included-keys :type :date-created :date-modified :file-size :md5)
+                      (info/stat cm path)
+                      {:path path})]
+      (decorate-stat cm user base-stat included-keys))))
 
 (defn ^IPersistentMap uuid-stat
-  [^IPersistentMap cm ^String user uuid]
+  [^IPersistentMap cm ^String user uuid & {:keys [filter-include filter-exclude] :or {filter-include nil filter-exclude nil}}]
   (log/debug "[uuid-stat] user:" user "uuid:" uuid)
   (let [path (uuid/get-path cm uuid)]
-    (path-stat cm user path)))
+    (path-stat cm user path :filter-include filter-include :filter-exclude filter-exclude)))
 
 (defn do-stat
-  [{user :user validation :validation-behavior} {paths :paths uuids :ids}]
+  [{:keys [user validation-behavior filter-include filter-exclude] :or {filter-include nil filter-exclude nil}} {paths :paths uuids :ids}]
   (irods/with-jargon-exceptions [cm]
     (validators/user-exists cm user)
     (validators/all-uuids-exist cm uuids)
     (let [uuid-paths (map (juxt (comp keyword str) (partial uuid/get-path cm)) uuids)
           all-paths (into paths (map second uuid-paths))]
       (validators/all-paths-exist cm all-paths)
-      (case (keyword validation)
+      (case (keyword validation-behavior)
             :own (validators/user-owns-paths cm user all-paths)
             :write (validators/all-paths-writeable cm user all-paths)
             :read (validators/all-paths-readable cm user all-paths)
             (validators/all-paths-readable cm user all-paths))
-      {:paths (into {} (map (juxt keyword (partial path-stat cm user)) paths))
-       :ids (into {} (map (juxt first #(path-stat cm user (second %))) uuid-paths))})))
+      {:paths (into {}
+                    (map
+                      (juxt keyword
+                            (fn [path]
+                              (path-stat cm user path :filter-include filter-include :filter-exclude filter-exclude)))
+                      paths))
+       :ids   (into {}
+                    (map
+                      (juxt first
+                            (fn [path-vec]
+                              (path-stat cm user (:second path-vec) :filter-include filter-include :filter-exclude filter-exclude)))
+                      uuid-paths))})))
 
 (with-pre-hook! #'do-stat
   (fn [params body]
