@@ -1,5 +1,5 @@
 (ns data-info.routes.schemas.stats
-  (:use [common-swagger-api.schema :only [describe NonBlankString StandardUserQueryParams]]
+  (:use [common-swagger-api.schema :only [describe ->optional-param NonBlankString StandardUserQueryParams]]
         [data-info.routes.schemas.common])
   (:require [schema.core :as s])
   (:import [java.util UUID]))
@@ -12,6 +12,14 @@
   (assoc StandardUserQueryParams
          (s/optional-key :validation-behavior)
          (describe PermissionEnum "What level of permissions on the queried files should be validated?")))
+
+(s/defschema FilteredStatQueryParams
+  (assoc StatQueryParams
+         (s/optional-key :filter-include)
+         (describe String "Comma-separated list of keys to generate and return in each stat object. Defaults to all keys. If both this and filter-exclude are provided, includes are processed first, then excludes.")
+
+         (s/optional-key :filter-exclude)
+         (describe String "Comma-separated list of keys to exclude from each stat object. Defaults to no keys. If both this and filter-include are provided, includes are processed first, then excludes.")))
 
 (s/defschema DataStatInfo
   {:id
@@ -59,6 +67,22 @@
      :md5
      (describe String "The md5 hash of this file's contents, as calculated and saved by IRODS")}))
 
+(s/defschema FilteredStatInfo
+  (-> (merge DirStatInfo FileStatInfo)
+      (->optional-param :id)
+      (->optional-param :path)
+      (->optional-param :type)
+      (->optional-param :label)
+      (->optional-param :date-created)
+      (->optional-param :date-modified)
+      (->optional-param :permission)
+      (->optional-param :file-count)
+      (->optional-param :dir-count)
+      (->optional-param :file-size)
+      (->optional-param :content-type)
+      (->optional-param :infoType)
+      (->optional-param :md5)))
+
 (s/defschema FileStat
   {:file (describe FileStatInfo "File info")})
 
@@ -66,13 +90,25 @@
   {(describe s/Keyword "The iRODS data item's path")
    (describe (s/conditional #(contains? % :file-size) FileStatInfo :else DirStatInfo) "The data item's info")})
 
+(s/defschema FilteredPathsMap
+  {(describe s/Keyword "The iRODS data item's path")
+   (describe FilteredStatInfo "The data item's info")})
+
 (s/defschema DataIdsMap
   {(describe s/Keyword "The iRODS data item's ID")
    (describe (s/conditional #(contains? % :file-size) FileStatInfo :else DirStatInfo) "The data item's info")})
 
+(s/defschema FilteredDataIdsMap
+  {(describe s/Keyword "The iRODS data item's ID")
+   (describe FilteredStatInfo "The data item's info")})
+
 (s/defschema StatusInfo
   {(s/optional-key :paths) (describe PathsMap "Paths info")
    (s/optional-key :ids) (describe DataIdsMap "IDs info")})
+
+(s/defschema FilteredStatusInfo
+  {(s/optional-key :paths) (describe FilteredPathsMap "Paths info")
+   (s/optional-key :ids) (describe FilteredDataIdsMap "IDs info")})
 
 ;; Used only for display as documentation in Swagger UI
 (s/defschema StatResponsePathsMap
