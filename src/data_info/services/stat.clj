@@ -65,8 +65,8 @@
   [stat-map cm user path included-keys]
   (if (and (needs-any-key? included-keys :file-count :dir-count) (is-dir? stat-map))
     (assoc stat-map
-      :file-count (if (needs-key? included-keys :file-count) (icat/number-of-files-in-folder user (cfg/irods-zone) path))
-      :dir-count  (if (needs-key? included-keys :dir-count)  (icat/number-of-folders-in-folder user (cfg/irods-zone) path)))
+      :file-count (when (needs-key? included-keys :file-count) (icat/number-of-files-in-folder user (cfg/irods-zone) path))
+      :dir-count  (when (needs-key? included-keys :dir-count)  (icat/number-of-folders-in-folder user (cfg/irods-zone) path)))
     stat-map))
 
 
@@ -89,16 +89,16 @@
   [stat-map cm user path included-keys]
   (if (and (needs-any-key? included-keys :infoType :content-type) (not (is-dir? stat-map)))
     (assoc stat-map
-      :infoType     (if (needs-key? included-keys :infoType) (get-types cm user path))
-      :content-type (if (needs-key? included-keys :content-type) (irods/detect-media-type cm path)))
+      :infoType     (when (needs-key? included-keys :infoType) (get-types cm user path))
+      :content-type (when (needs-key? included-keys :content-type) (irods/detect-media-type cm path)))
     stat-map))
 
 (defn ^IPersistentMap decorate-stat
   [^IPersistentMap cm ^String user ^IPersistentMap stat included-keys]
   (let [path (:path stat)]
     (-> stat
-      (assoc :id         (if (needs-key? included-keys :id) (-> (meta/get-attribute cm path uuid/uuid-attr) first :value))
-             :permission (if (needs-key? included-keys :permission) (perm/permission-for cm user path)))
+      (assoc :id         (when (needs-key? included-keys :id) (-> (meta/get-attribute cm path uuid/uuid-attr) first :value))
+             :permission (when (needs-key? included-keys :permission) (perm/permission-for cm user path)))
       (merge-label user path included-keys)
       (merge-type-info cm user path included-keys)
       (merge-shares cm user path included-keys)
