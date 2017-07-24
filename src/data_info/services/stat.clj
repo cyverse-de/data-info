@@ -29,17 +29,13 @@
   (= (:permission stat-map) :own))
 
 (defn- needs-key?
-  [included-keys needed-key?]
-  (if (contains? included-keys needed-key?)
-    true
-    (cond
-      (= needed-key? :permission)
-      (contains? included-keys :share-count)
-
-      (= needed-key? :type)
-      (not (empty? (cset/intersection #{:infoType :content-type :file-count :dir-count} included-keys)))
-
-      :else
+  [requested-keys needed-key?]
+  (or (contains? requested-keys needed-key?)
+    (case needed-key?
+      ; :permission is needed by anything which uses `owns?`
+      :permission (contains? requested-keys :share-count)
+      ; :type is needed by anything which uses `is-dir?`
+      :type       (not (empty? (cset/intersection #{:infoType :content-type :file-count :dir-count} requested-keys)))
       false)))
 
 (defn- needs-any-key?
