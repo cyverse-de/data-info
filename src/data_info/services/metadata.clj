@@ -196,9 +196,10 @@
    :type (resolve-data-type type)})
 
 (defn- get-writable-data-items
+  "Gets the path, type, and id for data-ids and validates all the paths are writeable."
   [cm user data-ids]
   (validators/validate-num-paths data-ids)
-  (let [data-items (map (partial stat/uuid-stat cm user) data-ids)
+  (let [data-items (map #(stat/uuid-stat cm user % :filter-include [:path :type :id]) data-ids)
         paths (map :path data-items)]
     (validators/all-paths-writeable cm user paths)
     data-items))
