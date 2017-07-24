@@ -72,20 +72,8 @@
      (describe String "The md5 hash of this file's contents, as calculated and saved by IRODS")}))
 
 (s/defschema FilteredStatInfo
-  (-> (merge DirStatInfo FileStatInfo)
-      (->optional-param :id)
-      (->optional-param :path)
-      (->optional-param :type)
-      (->optional-param :label)
-      (->optional-param :date-created)
-      (->optional-param :date-modified)
-      (->optional-param :permission)
-      (->optional-param :file-count)
-      (->optional-param :dir-count)
-      (->optional-param :file-size)
-      (->optional-param :content-type)
-      (->optional-param :infoType)
-      (->optional-param :md5)))
+  (let [combined-stat (merge DirStatInfo FileStatInfo)]
+    (reduce ->optional-param combined-stat (remove s/optional-key? (keys combined-stat)))))
 
 (def AvailableStatFields (vec (map optional-key->keyword (keys FilteredStatInfo))))
 
