@@ -1,5 +1,5 @@
 (ns data-info.routes.schemas.stats
-  (:use [common-swagger-api.schema :only [describe ->optional-param NonBlankString StandardUserQueryParams]]
+  (:use [common-swagger-api.schema :only [describe ->optional-param optional-key->keyword NonBlankString StandardUserQueryParams]]
         [data-info.routes.schemas.common])
   (:require [schema.core :as s])
   (:import [java.util UUID]))
@@ -86,6 +86,8 @@
       (->optional-param :content-type)
       (->optional-param :infoType)
       (->optional-param :md5)))
+
+(def AvailableStatFields (vec (map optional-key->keyword (keys FilteredStatInfo))))
 
 (s/defschema FileStat
   {:file (describe FileStatInfo "File info")})

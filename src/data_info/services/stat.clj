@@ -12,6 +12,7 @@
             [clj-jargon.users :as users]
             [clojure-commons.file-utils :as ft]
             [clojure-commons.validators :as cv]
+            [data-info.routes.schemas.stats :refer [AvailableStatFields]]
             [data-info.util.config :as cfg]
             [data-info.util.logging :as dul]
             [data-info.util.irods :as irods]
@@ -115,7 +116,7 @@
 (defn- process-filters
   "Process an include and an exclude string into just a list of keys to include"
   [include exclude]
-  (let [all-keys #{:id :path :type :label :date-created :date-modified :permission :share-count :file-count :dir-count :file-size :content-type :infoType :md5}
+  (let [all-keys (set AvailableStatFields)
         includes-set (get-filter-set include all-keys)
         excludes-set (get-filter-set exclude [])]
       (cset/intersection all-keys (cset/difference includes-set excludes-set))))
