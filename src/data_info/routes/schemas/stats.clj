@@ -16,10 +16,14 @@
 (s/defschema FilteredStatQueryParams
   (assoc StatQueryParams
          (s/optional-key :filter-include)
-         (describe String "Comma-separated list of keys to generate and return in each stat object. Defaults to all keys. If both this and filter-exclude are provided, includes are processed first, then excludes.")
+         (describe String (str "Comma-separated list of keys to generate and return in each stat object. "
+                               "Defaults to all keys. If both this and filter-exclude are provided, "
+                               "includes are processed first, then excludes."))
 
          (s/optional-key :filter-exclude)
-         (describe String "Comma-separated list of keys to exclude from each stat object. Defaults to no keys. If both this and filter-include are provided, includes are processed first, then excludes.")))
+         (describe String (str "Comma-separated list of keys to exclude from each stat object. "
+                               "Defaults to no keys. If both this and filter-include are provided, "
+                               "includes are processed first, then excludes."))))
 
 (s/defschema DataStatInfo
   {:id

@@ -19,7 +19,8 @@
       :return (doc-only StatusInfo StatResponse)
       :summary "File and Folder Status Information"
       :description (str
-"This endpoint allows the caller to get information about many files and folders at once, potentially also validating permissions on the files/folders for the user provided."
+"This endpoint allows the caller to get information about many files and folders at once, potentially also "
+"validating permissions on the files/folders for the user provided."
 (get-error-code-block
   "ERR_DOES_NOT_EXIST, ERR_NOT_READABLE, ERR_NOT_WRITEABLE, ERR_NOT_OWNER, ERR_NOT_A_USER, ERR_TOO_MANY_RESULTS"))
       (svc/trap uri stat/do-stat params body)))
@@ -33,7 +34,9 @@
       :return (doc-only FilteredStatusInfo StatResponse)
       :summary "File and Folder Status Information (allowing filtering)"
       :description (str
-"This endpoint allows the caller to get information about many files and folders at once, potentially also validating permissions on the files/folders for the user provided. This endpoint allows specifying includes and excludes to reduce processing needs and/or data size."
+"This endpoint allows the caller to get information about many files and folders at once, potentially also validating "
+"permissions on the files/folders for the user provided. This endpoint allows specifying includes and excludes to "
+"reduce processing needs and/or data size."
 (get-error-code-block
   "ERR_DOES_NOT_EXIST, ERR_NOT_READABLE, ERR_NOT_WRITEABLE, ERR_NOT_OWNER, ERR_NOT_A_USER, ERR_TOO_MANY_RESULTS"))
       (svc/trap uri stat/do-stat params body))))
