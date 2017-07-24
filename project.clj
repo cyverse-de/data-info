@@ -34,7 +34,7 @@
                  [org.cyverse/clj-icat-direct "2.8.1"
                    :exclusions [[org.slf4j/slf4j-log4j12]
                                 [log4j]]]
-                 [org.cyverse/clj-jargon "2.8.4"
+                 [org.cyverse/clj-jargon "2.8.5"
                    :exclusions [[org.slf4j/slf4j-log4j12]
                                 [log4j]]]
                  [org.cyverse/clojure-commons "2.8.3"]
