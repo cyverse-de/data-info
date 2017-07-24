@@ -288,7 +288,7 @@
 (defn- bulk-add-file-avus
   "Applies metadata from a list of attributes and values to the given path."
   [cm user attrs path values]
-  (let [{:keys [type id]} (uuids/uuid-for-path cm user path)
+  (let [{:keys [type id]} (stat/path-stat cm user path :filter-include [:type :id])
         avus (map (partial zipmap [:attr :value :unit]) (map vector attrs values (repeat "")))
         metadata {:avus avus}]
     (when-not (empty? avus)
