@@ -164,7 +164,7 @@
                     (map
                       (juxt first
                             (fn [path-vec]
-                              (path-stat cm user (:second path-vec) :filter-include filter-include :filter-exclude filter-exclude)))
+                              (path-stat cm user (second path-vec) :filter-include filter-include :filter-exclude filter-exclude)))
                       uuid-paths))})))
 
 (with-pre-hook! #'do-stat
