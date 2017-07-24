@@ -29,22 +29,6 @@
    (irods/with-jargon-exceptions [cm]
        (path-for-uuid cm user uuid))))
 
-(defn ^IPersistentMap path-stat-for-uuid
-  "Resolves a stat info for the entity with a given UUID.
-
-   Params:
-     user - the user requesting the info
-     uuid - the UUID
-
-   Returns:
-     It returns a path-stat map containing an additional UUID field."
-  ([^IPersistentMap cm ^String user ^UUID uuid]
-    (assoc (stat/path-stat cm user (path-for-uuid cm user uuid)) :uuid uuid))
-
-  ([^String user ^UUID uuid]
-   (irods/with-jargon-exceptions [cm]
-     (path-stat-for-uuid cm user uuid))))
-
 
 (defn paths-for-uuids
   [user uuids]
