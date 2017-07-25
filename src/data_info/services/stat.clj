@@ -113,7 +113,7 @@
       (set (map keyword (string/split filter-vec-or-string #",")))
       (set (map keyword filter-vec-or-string)))))
 
-(defn- process-filters
+(defn process-filters
   "Process an include and an exclude string into just a list of keys to include"
   [include exclude]
   (let [all-keys (set AvailableStatFields)

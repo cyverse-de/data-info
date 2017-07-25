@@ -37,7 +37,7 @@
       (valid/user-exists cm user)
       (->> (concat (map (partial id-type :dir) (icat/select-folders-with-uuids uuids))
                    (map (partial id-type :file) (icat/select-files-with-uuids uuids)))
-        (mapv (partial stat/decorate-stat cm user))
+        (mapv #(stat/decorate-stat cm user % (stat/process-filters nil nil)))
         (remove #(nil? (:permission %)))))))
 
 (defn do-simple-uuid-for-path

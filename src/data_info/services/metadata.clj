@@ -278,7 +278,7 @@
         (validators/validate-num-paths-under-folder user src-path))
 
       (with-in-str (build-metadata-for-save cm user src-data recursive?)
-        {:file (stat/decorate-stat cm user (copy-stream cm *in* user dest))}))))
+        {:file (stat/decorate-stat cm user (copy-stream cm *in* user dest) (stat/process-filters nil nil))}))))
 
 (defn do-metadata-save
   "Entrypoint for the API. Calls (metadata-save)."
