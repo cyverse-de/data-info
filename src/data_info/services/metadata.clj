@@ -70,8 +70,9 @@
       type)))
 
 (defn- get-readable-data-item
+  "Gets a data-item's path and type and checks that it's readable"
   [cm user data-id]
-  (let [{:keys [path] :as data-item} (uuids/path-stat-for-uuid cm user data-id)]
+  (let [{:keys [path] :as data-item} (stat/uuid-stat cm user data-id :filter-include [:path :type])]
     (validators/path-readable cm user path)
     data-item))
 
@@ -107,8 +108,6 @@
         new-unit   (reserved-unit avu-map)
         attr       (:attr avu-map)
         value      (:value avu-map)]
-    (log/debug "Fixed Path:" fixed-path)
-    (log/debug "check" (true? (attr-value? cm fixed-path attr value)))
     (when-not (attr-value? cm fixed-path attr value)
       (log/debug "Adding " attr value "to" fixed-path)
       (add-metadata cm fixed-path attr value new-unit))
@@ -127,8 +126,6 @@
   (let [fixed-path (ft/rm-last-slash path)
         attr       (:attr avu-map)
         value      (:value avu-map)]
-    (log/debug "Fixed Path:" fixed-path)
-    (log/debug "check" (true? (attr-value? cm fixed-path attr value)))
     (when (attr-value? cm fixed-path attr value)
       (log/debug "Removing " attr value "from" fixed-path)
       (delete-metadata cm fixed-path attr value))
@@ -176,7 +173,7 @@
   [user data-id {:keys [irods-avus] :as metadata}]
   (irods/with-jargon-exceptions [cm]
     (validators/user-exists cm user)
-    (let [{:keys [path type]} (uuids/path-stat-for-uuid cm user data-id)
+    (let [{:keys [path type]} (stat/uuid-stat cm user data-id :filter-include [:path :type])
           irods-avus (set (map #(select-keys % [:attr :value :unit]) irods-avus))
           current-avus (set (list-path-metadata cm path :system false))
           delete-irods-avus (s/difference current-avus irods-avus)
@@ -199,9 +196,10 @@
    :type (resolve-data-type type)})
 
 (defn- get-writable-data-items
+  "Gets the path, type, and id for data-ids and validates all the paths are writeable."
   [cm user data-ids]
   (validators/validate-num-paths data-ids)
-  (let [data-items (map (partial stat/uuid-stat cm user) data-ids)
+  (let [data-items (map #(stat/uuid-stat cm user % :filter-include [:path :type :id]) data-ids)
         paths (map :path data-items)]
     (validators/all-paths-writeable cm user paths)
     data-items))
@@ -270,7 +268,7 @@
   (irods/with-jargon-exceptions :client-user user [cm]
     (validators/user-exists cm user)
     (let [dest-dir (ft/dirname dest)
-          src-data (uuids/path-stat-for-uuid cm user data-id)
+          src-data (stat/uuid-stat cm user data-id)
           src-path (:path src-data)]
       (validators/path-readable cm user src-path)
       (validators/path-exists cm dest-dir)
@@ -290,7 +288,7 @@
 (defn- bulk-add-file-avus
   "Applies metadata from a list of attributes and values to the given path."
   [cm user attrs path values]
-  (let [{:keys [type id]} (uuids/uuid-for-path cm user path)
+  (let [{:keys [type id]} (stat/path-stat cm user path :filter-include [:type :id])
         avus (map (partial zipmap [:attr :value :unit]) (map vector attrs values (repeat "")))
         metadata {:avus avus}]
     (when-not (empty? avus)

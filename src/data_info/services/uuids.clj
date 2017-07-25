@@ -29,22 +29,6 @@
    (irods/with-jargon-exceptions [cm]
        (path-for-uuid cm user uuid))))
 
-(defn ^IPersistentMap path-stat-for-uuid
-  "Resolves a stat info for the entity with a given UUID.
-
-   Params:
-     user - the user requesting the info
-     uuid - the UUID
-
-   Returns:
-     It returns a path-stat map containing an additional UUID field."
-  ([^IPersistentMap cm ^String user ^UUID uuid]
-    (assoc (stat/path-stat cm user (path-for-uuid cm user uuid)) :uuid uuid))
-
-  ([^String user ^UUID uuid]
-   (irods/with-jargon-exceptions [cm]
-     (path-stat-for-uuid cm user uuid))))
-
 
 (defn paths-for-uuids
   [user uuids]
@@ -55,29 +39,6 @@
                    (map (partial id-type :file) (icat/select-files-with-uuids uuids)))
         (mapv (partial stat/decorate-stat cm user))
         (remove #(nil? (:permission %)))))))
-
-(defn ^IPersistentMap uuid-for-path
-  "Retrieves the path stat info for a given entity. It attaches the UUID in a additional :uuid
-   field.
-
-   Parameters:
-     cm   - the open jargon context map
-     user - the user making the request
-     path - the absolute path to the entity
-
-   Returns:
-     It returns the modified path stat map."
-  [^IPersistentMap cm ^String user ^String path]
-  (assoc (stat/path-stat cm user path) :uuid (irods/lookup-uuid cm path)))
-
-
-(defn uuids-for-paths
-  [user paths]
-  (irods/with-jargon-exceptions [cm]
-    (valid/user-exists cm user)
-    (valid/all-paths-exist cm paths)
-    (valid/all-paths-readable cm user paths)
-    (remove nil? (mapv (partial uuid-for-path cm user) paths))))
 
 (defn do-simple-uuid-for-path
   [{:keys [user path]}]

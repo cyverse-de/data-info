@@ -7,7 +7,6 @@
             [dire.core :refer [with-pre-hook! with-post-hook!]]
             [data-info.util.validators :as validators]
             [data-info.services.stat :as stat]
-            [data-info.services.uuids :as uuids]
             [data-info.util.irods :as irods]
             [data-info.util.logging :as dul]
             [tree-urls-client.core :as tree]
@@ -68,7 +67,7 @@
 (defn do-manifest-uuid
   [user data-id]
   (irods/with-jargon-exceptions [cm]
-    (let [file (uuids/path-stat-for-uuid cm user data-id)]
+    (let [file (stat/uuid-stat cm user data-id :filter-include [:path :content-type :infoType])]
       (manifest cm user file))))
 
 (with-pre-hook! #'do-manifest-uuid

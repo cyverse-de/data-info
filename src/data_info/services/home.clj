@@ -15,8 +15,7 @@
       (validators/user-exists cm user)
       (when-not (exists? cm user-home)
         (mkdirs cm user-home))
-      (-> (stat/path-stat cm user user-home)
-          (select-keys [:id :label :path :date-created :date-modified :permission])))))
+      (stat/path-stat cm user user-home :filter-include [:id :label :path :date-created :date-modified :permission]))))
 
 (defn do-homedir
   [{user :user}]

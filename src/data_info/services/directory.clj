@@ -56,8 +56,7 @@
     (validators/path-exists cm path)
     (validators/path-readable cm user path)
     (validators/path-is-dir cm path)
-    (-> (stat/path-stat cm user path)
-        (select-keys [:id :label :path :date-created :date-modified :permission])
+    (-> (stat/path-stat cm user path :filter-include [:id :label :path :date-created :date-modified :permission])
         (assoc :folders (map (partial fmt-folder user)
                              (icat/list-folders-in-folder user (cfg/irods-zone) path))))))
 
