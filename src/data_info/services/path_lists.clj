@@ -7,6 +7,7 @@
             [clj-icat-direct.icat :as icat]
             [clj-jargon.item-info :as item-info]
             [clj-jargon.permissions :as perms]
+            [data-info.services.filetypes :as filetypes]
             [data-info.services.stat :as stat]
             [data-info.util.config :as cfg]
             [data-info.util.irods :as irods]
@@ -107,6 +108,16 @@
 
     (string/join "\n" (concat [(cfg/path-list-file-identifier)] filtered-paths))))
 
+(defn- validate-request-paths
+  [cm user dest paths]
+  (let [dest-dir (ft/dirname dest)]
+    (validators/path-exists cm dest-dir)
+    (validators/path-writeable cm user dest-dir)
+    (validators/path-not-exists cm dest)
+    (validators/all-paths-exist cm paths)
+    (doseq [path paths]
+      (validators/not-base-path user path))))
+
 (defn create-path-list
   "Creates an HT Path List file from the given set of paths and filtering params.
    The resulting HT Path List file will contain only file or only folder paths (depending on the `folders-only` param),
@@ -116,13 +127,9 @@
    Throws an error if the filtering params result in no matching paths."
   [{:keys [user dest name-pattern info-type folders-only recursive]} {:keys [paths]}]
   (irods/with-jargon-exceptions :client-user user [cm]
-    (let [dest-dir (ft/dirname dest)]
-      (validators/path-exists cm dest-dir)
-      (validators/path-writeable cm user dest-dir)
-      (validators/path-not-exists cm dest)
-      (validators/all-paths-exist cm paths)
-      (doseq [path paths]
-        (validators/not-base-path user path))
+    (validate-request-paths cm user dest paths)
 
-      (with-in-str (paths->ht-path-list cm user name-pattern info-type folders-only recursive paths)
-                   {:file (stat/decorate-stat cm user (copy-stream cm *in* user dest) (stat/process-filters nil nil))}))))
+    (let [path-list-contents  (paths->ht-path-list cm user name-pattern info-type folders-only recursive paths)
+          path-list-file-stat (with-in-str path-list-contents (copy-stream cm *in* user dest))]
+      (filetypes/add-type-to-validated-path cm dest (cfg/path-list-info-type))
+      {:file (stat/decorate-stat cm user path-list-file-stat (stat/process-filters nil nil))})))

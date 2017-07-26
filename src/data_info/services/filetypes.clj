@@ -16,6 +16,12 @@
   []
   {:types script-types})
 
+(defn add-type-to-validated-path
+  "Adds the type to a file in iRODS at a path that has already been validated as existing/writable/etc.
+   e.g. when setting a type to a file that has just been created."
+  [cm path type]
+  (set-metadata cm path (cfg/type-detect-type-attribute) type ""))
+
 (defn- add-type
   "Adds the type to a file in iRODS at path for the specified user."
   [user path type]
@@ -25,7 +31,7 @@
     (validators/user-owns-path cm user path)
     (validators/path-is-file cm path)
 
-    (set-metadata cm path (cfg/type-detect-type-attribute) type "")
+    (add-type-to-validated-path cm path type)
     {:path path
      :type type
      :user user}))

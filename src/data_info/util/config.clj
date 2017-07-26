@@ -226,6 +226,11 @@
   [props config-valid configs]
   "data-info.path-list.file-identifier" "# application/vnd.de.path-list+csv; version=1")
 
+(cc/defprop-optstr path-list-info-type
+  "The info-type of an HT Path List file."
+  [props config-valid configs]
+  "data-info.path-list.info-type" "ht-analysis-path-list")
+
 (cc/defprop-optstr amqp-uri
   "The URI to use for connections to the AMQP broker."
   [props config-valid configs]
