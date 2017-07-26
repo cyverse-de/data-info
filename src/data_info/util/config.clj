@@ -221,6 +221,16 @@
 ; End of type detection configuration
 
 
+(cc/defprop-optstr path-list-file-identifier
+  "The header line that identifies a file's contents as an HT Path List file."
+  [props config-valid configs]
+  "data-info.path-list.file-identifier" "# application/vnd.de.path-list+csv; version=1")
+
+(cc/defprop-optstr path-list-info-type
+  "The info-type of an HT Path List file."
+  [props config-valid configs]
+  "data-info.path-list.info-type" "ht-analysis-path-list")
+
 (cc/defprop-optstr amqp-uri
   "The URI to use for connections to the AMQP broker."
   [props config-valid configs]

@@ -11,7 +11,8 @@
             [clj-jargon.users :as user]
             [clj-jargon.by-uuid :as uuid]
             [clojure-commons.error-codes :as error]
-            [data-info.util.config :as cfg])
+            [data-info.util.config :as cfg]
+            [data-info.util.paths :as paths])
   (:import [clojure.lang IPersistentCollection]))
 
 
@@ -184,6 +185,13 @@
     (throw+ {:error_code error/ERR_NOT_A_FILE
              :path       (filterv #(not (item/is-file? cm %)) paths)})))
 
+(defn not-base-path
+  [user path]
+  (when (or (paths/user-trash-dir? user path)
+            (paths/base-trash-path? path)
+            (paths/sharing? path)   ;; currently the same as the base "home" path
+            (paths/community? path))
+    (throw+ {:error_code error/ERR_BAD_OR_MISSING_FIELD :path path})))
 
 (defn all-users-exist
   [cm users]
