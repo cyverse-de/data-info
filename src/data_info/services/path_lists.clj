@@ -121,6 +121,8 @@
       (validators/path-writeable cm user dest-dir)
       (validators/path-not-exists cm dest)
       (validators/all-paths-exist cm paths)
+      (doseq [path paths]
+        (validators/not-base-path user path))
 
       (with-in-str (paths->ht-path-list cm user name-pattern info-type folders-only recursive paths)
                    {:file (stat/decorate-stat cm user (copy-stream cm *in* user dest) (stat/process-filters nil nil))}))))
