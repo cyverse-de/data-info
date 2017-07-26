@@ -27,7 +27,7 @@
                  [dire "0.5.3"]
                  [me.raynes/fs "1.4.6"]
                  [metosin/compojure-api "1.1.8"]
-                 [org.apache.tika/tika-core "1.14"]
+                 [org.apache.tika/tika-core "1.16"]
                  [net.sf.opencsv/opencsv "2.3"]
                  [de.ubercode.clostache/clostache "1.4.0" :exclusions [org.clojure/core.incubator]]
                  [slingshot "0.12.2"]
