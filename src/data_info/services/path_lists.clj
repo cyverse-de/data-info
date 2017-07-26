@@ -82,13 +82,17 @@
          folders-only?
          (not folders-only?))))
 
+(defn- get-top-level-file-stats
+  [cm user path]
+  (stat/path-stat cm user path :filter-include [:path :infoType :label :permission :type]))
+
 (defn- paths->ht-path-list
   "Filters the given paths and returns a string of these paths appended to an HT Path List header.
    Throws an error if the filtering params result in no matching paths."
   [cm user name-pattern info-types folders-only? recursive? paths]
   (let [{folder-paths true file-paths false} (group-by (partial item-info/is-dir? cm) paths)
         files          (->> file-paths
-                            (map (partial stat/path-stat cm user))
+                            (map (partial get-top-level-file-stats cm user))
                             (filter (keep-top-level-file? info-types)))
         folders        (->> folder-paths
                             (mapcat (partial folder-listing user info-types folders-only? recursive?))
@@ -112,13 +116,11 @@
    Throws an error if the filtering params result in no matching paths."
   [{:keys [user dest name-pattern info-type folders-only recursive]} {:keys [paths]}]
   (irods/with-jargon-exceptions :client-user user [cm]
-    (validators/user-exists cm user)
     (let [dest-dir (ft/dirname dest)]
       (validators/path-exists cm dest-dir)
       (validators/path-writeable cm user dest-dir)
       (validators/path-not-exists cm dest)
       (validators/all-paths-exist cm paths)
-      (validators/all-paths-readable cm user paths)
 
       (with-in-str (paths->ht-path-list cm user name-pattern info-type folders-only recursive paths)
                    {:file (stat/decorate-stat cm user (copy-stream cm *in* user dest) (stat/process-filters nil nil))}))))
