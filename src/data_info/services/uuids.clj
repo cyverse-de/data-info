@@ -3,7 +3,6 @@
         [slingshot.slingshot :only [throw+]])
   (:require [clojure.tools.logging :as log]
             [clj-icat-direct.icat :as icat]
-            [data-info.services.stat :as stat]
             [clj-jargon.by-uuid :as uuid]
             [clojure-commons.error-codes :as error]
             [data-info.util.irods :as irods]
@@ -28,17 +27,6 @@
   ([^String user ^UUID uuid]
    (irods/with-jargon-exceptions [cm]
        (path-for-uuid cm user uuid))))
-
-
-(defn paths-for-uuids
-  [user uuids]
-  (letfn [(id-type [type entity] (merge entity {:id (:path entity) :type type}))]
-    (irods/with-jargon-exceptions [cm]
-      (valid/user-exists cm user)
-      (->> (concat (map (partial id-type :dir) (icat/select-folders-with-uuids uuids))
-                   (map (partial id-type :file) (icat/select-files-with-uuids uuids)))
-        (mapv #(stat/decorate-stat cm user % (stat/process-filters nil nil)))
-        (remove #(nil? (:permission %)))))))
 
 (defn do-simple-uuid-for-path
   [{:keys [user path]}]

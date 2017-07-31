@@ -17,6 +17,7 @@
             [data-info.util.logging :as dul]
             [data-info.util.irods :as irods]
             [data-info.util.paths :as paths]
+            [data-info.services.uuids :as uuids]
             [data-info.util.validators :as validators])
   (:import [clojure.lang IPersistentMap]))
 
@@ -135,7 +136,7 @@
 (defn ^IPersistentMap uuid-stat
   [^IPersistentMap cm ^String user uuid & {:keys [filter-include filter-exclude] :or {filter-include nil filter-exclude nil}}]
   (log/debug "[uuid-stat] user:" user "uuid:" uuid)
-  (let [path (uuid/get-path cm uuid)]
+  (let [path (uuids/path-for-uuid cm user uuid)]
     (path-stat cm user path :filter-include filter-include :filter-exclude filter-exclude)))
 
 (defn do-stat
