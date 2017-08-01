@@ -173,7 +173,7 @@
   [user data-id {:keys [irods-avus] :as metadata}]
   (irods/with-jargon-exceptions [cm]
     (validators/user-exists cm user)
-    (let [{:keys [path type]} (stat/uuid-stat cm user data-id :filter-include [:path :type])
+    (let [{:keys [path type]} (get-readable-data-item cm user data-id)
           irods-avus (set (map #(select-keys % [:attr :value :unit]) irods-avus))
           current-avus (set (list-path-metadata cm path :system false))
           delete-irods-avus (s/difference current-avus irods-avus)
