@@ -20,7 +20,7 @@
   "Adds the type to a file in iRODS at a path that has already been validated as existing/writable/etc.
    e.g. when setting a type to a file that has just been created."
   [cm path type]
-  (set-metadata cm path (cfg/type-detect-type-attribute) type ""))
+  (set-metadata cm path (cfg/type-detect-type-attribute) type "ipc-data-info"))
 
 (defn- add-type
   "Adds the type to a file in iRODS at path for the specified user."
