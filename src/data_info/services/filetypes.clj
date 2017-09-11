@@ -37,7 +37,7 @@
      :user user}))
 
 (defn- unset-types
-  "Removes all info-type associations from a path."
+  "Removes all info-type associations from a path by setting the type to 'unknown'."
   [user path]
 
   (irods/with-jargon-exceptions [cm]
@@ -45,10 +45,9 @@
     (validators/user-exists cm user)
     (validators/user-owns-path cm user path)
 
-    (if (attribute? cm path (cfg/type-detect-type-attribute))
-      (delete-metadata cm path (cfg/type-detect-type-attribute)))
+    (add-type-to-validated-path cm path "unknown")
     {:path path
-     :type ""
+     :type "unknown"
      :user user}))
 
 (defn- add-type-path
