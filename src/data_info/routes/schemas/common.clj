@@ -26,6 +26,6 @@
   (-> (merge DataIds OptionalPaths)
       (->optional-param :ids)))
 
-(def ValidInfoTypesEnum (apply s/enum (hm/supported-formats)))
-(def ValidInfoTypesEnumPlusBlank (apply s/enum (conj (hm/supported-formats) "")))
+(def ValidInfoTypesEnum (apply s/enum (conj (hm/supported-formats) "unknown")))
+(def ValidInfoTypesEnumPlusBlank (apply s/enum (conj (hm/supported-formats) "" "unknown")))
 (def PermissionEnum (s/enum :read :write :own))
