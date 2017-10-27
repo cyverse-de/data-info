@@ -1,10 +1,33 @@
 (ns data-info.services.users
   (:require [clojure.tools.logging :as log]
+            [clj-jargon.users :as users]
             [dire.core :refer [with-pre-hook! with-post-hook!]]
+            [data-info.util.config :as cfg]
             [data-info.services.permissions :as perms]
             [data-info.util.irods :as irods]
             [data-info.util.logging :as dul]
             [data-info.util.validators :as validators]))
+
+(defn list-user-groups
+  [cm username]
+  (validators/user-exists cm username)
+  (users/user-groups cm username))
+
+(defn qualify-username
+  [name]
+  (str name \# (cfg/irods-zone)))
+
+(defn do-list-qualified-user-groups
+  [user username]
+  (irods/with-jargon-exceptions :client-user user [cm]
+      {:groups (map qualify-username (list-user-groups cm username))
+       :user (qualify-username username)}))
+
+(with-pre-hook! #'do-list-qualified-user-groups
+  (fn [user username]
+    (dul/log-call "do-list-qualified-user-groups" user username)))
+
+(with-post-hook! #'do-list-qualified-user-groups (dul/log-func "do-list-qualified-user-groups"))
 
 (defn- list-perm
   [cm user abspath]

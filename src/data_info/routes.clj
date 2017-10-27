@@ -20,6 +20,7 @@
             [data-info.routes.stats :as stat-routes]
             [data-info.routes.tickets :as ticket-routes]
             [data-info.routes.trash :as trash-routes]
+            [data-info.routes.users :as users-routes]
             [data-info.util :as util]
             [data-info.util.config :as config]
             [data-info.util.service :as svc]
@@ -39,6 +40,7 @@
                    {:name "tickets", :description "Ticket Operations"}
                    {:name "bulk", :description "Bulk Operations"}
                    {:name "navigation", :description "Navigation"}
+                   {:name "users", :description "User Operations"}
                    {:name "filetypes", :description "File Type Metadata"}]}})
   (middleware
     [add-user-to-context
@@ -61,4 +63,5 @@
     sharing-routes/sharing-routes
     ticket-routes/ticket-routes
     trash-routes/trash
+    users-routes/users-routes
     (undocumented (route/not-found (svc/unrecognized-path-response)))))
