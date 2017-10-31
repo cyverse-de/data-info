@@ -16,5 +16,5 @@
       :return UserGroupsReturn
       :summary "Get a user's groups"
       :description (str "Get a list of a user's groups, if the requesting user is allowed to see them"
-(get-error-code-block "ERR_NOT_A_USER"))
+                        (get-error-code-block "ERR_NOT_A_USER"))
          (svc/trap uri users/do-list-qualified-user-groups user username))))
