@@ -221,15 +221,25 @@
 ; End of type detection configuration
 
 
-(cc/defprop-optstr path-list-file-identifier
+(cc/defprop-optstr ht-path-list-file-identifier
   "The header line that identifies a file's contents as an HT Path List file."
   [props config-valid configs]
-  "data-info.path-list.file-identifier" "# application/vnd.de.path-list+csv; version=1")
+  "data-info.path-list.ht.file-identifier" "# application/vnd.de.path-list+csv; version=1")
 
-(cc/defprop-optstr path-list-info-type
+(cc/defprop-optstr ht-path-list-info-type
   "The info-type of an HT Path List file."
   [props config-valid configs]
-  "data-info.path-list.info-type" "ht-analysis-path-list")
+  "data-info.path-list.ht.info-type" "ht-analysis-path-list")
+
+(cc/defprop-optstr multi-input-path-list-identifier
+  "The header line that identifies a file's contents as a Multi-Input Path List file."
+  [props config-valid configs]
+  "data-info.path-list.multi-input.file-identifier" "# application/vnd.de.multi-input-path-list+csv; version=1")
+
+(cc/defprop-optstr multi-input-path-list-info-type
+  "The info-type of a Multi-Input Path List file."
+  [props config-valid configs]
+  "data-info.path-list.multi-input.info-type" "multi-input-path-list")
 
 (cc/defprop-optstr amqp-uri
   "The URI to use for connections to the AMQP broker."

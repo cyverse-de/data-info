@@ -35,9 +35,11 @@
 # file typing configuration
 data-info.type-detect.type-attribute = {{ (key (printf "%s/data-info/type-detect-attribute" $base)) }}
 
-# HT Path List Files
-data-info.path-list.file-identifier = {{ key (printf "%s/de/file-identifier" $base) }}
-data-info.path-list.info-type       = {{ key (printf "%s/apps/path-list-info-type" $base) }}
+# Path List Files
+data-info.path-list.ht.file-identifier          = {{ key (printf "%s/data-info/ht-path-list-file-identifier" $base) }}
+data-info.path-list.ht.info-type                = {{ key (printf "%s/data-info/ht-path-list-info-type" $base) }}
+data-info.path-list.multi-input.file-identifier = {{ key (printf "%s/data-info/multi-input-path-list-file-identifier" $base) }}
+data-info.path-list.multi-input.info-type       = {{ key (printf "%s/data-info/multi-input-path-list-info-type" $base) }}
 
 # AMQP configuration
 {{ with $v := (key (printf "%s/amqp/uri" $base)) }}data-info.amqp.uri = {{ $v }}{{ end }}
