@@ -1,12 +1,19 @@
 (ns data-info.routes.schemas.path-lists
   (:use [common-swagger-api.schema :only [describe NonBlankString StandardUserQueryParams]]
         [data-info.routes.schemas.common])
-  (:require [schema.core :as s]))
+  (:require [data-info.util.config :as cfg]
+            [schema.core :as s]))
 
 (s/defschema PathListSaveQueryParams
   (merge StandardUserQueryParams
          {:dest
-          (describe NonBlankString "An IRODS path to a destination file where the HT Path List contents will be saved")
+          (describe NonBlankString "An IRODS path to a destination file where the Path List contents will be saved")
+
+          (s/optional-key :path-list-info-type)
+          (describe (s/enum (cfg/ht-path-list-info-type)
+                            (cfg/multi-input-path-list-info-type))
+                    "Specifies the type of Path List to create"
+                    :default (cfg/ht-path-list-info-type))
 
           (s/optional-key :name-pattern)
           (describe NonBlankString
