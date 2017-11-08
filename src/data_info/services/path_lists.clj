@@ -87,10 +87,10 @@
   [cm user path]
   (stat/path-stat cm user path :filter-include [:path :infoType :label :permission :type]))
 
-(defn- paths->ht-path-list
+(defn- paths->path-list
   "Filters the given paths and returns a string of these paths appended to an HT Path List header.
    Throws an error if the filtering params result in no matching paths."
-  [cm user name-pattern info-types folders-only? recursive? paths]
+  [cm user path-list-file-identifier name-pattern info-types folders-only? recursive? paths]
   (let [{folder-paths true file-paths false} (group-by (partial item-info/is-dir? cm) paths)
         files          (->> file-paths
                             (map (partial get-top-level-file-stats cm user))
@@ -106,7 +106,14 @@
       (throw+ {:error_code ERR_NOT_FOUND
                :reason "No paths matched the request."}))
 
-    (string/join "\n" (concat [(cfg/ht-path-list-file-identifier)] filtered-paths))))
+    (string/join "\n" (concat [path-list-file-identifier] filtered-paths))))
+
+(defn- info-type->file-identifier
+  "Returns the appropriate Path List file identifier for the given `path-list-info-type`."
+  [path-list-info-type]
+  (if (= path-list-info-type (cfg/ht-path-list-info-type))
+    (cfg/ht-path-list-file-identifier)
+    (cfg/multi-input-path-list-identifier)))
 
 (defn- validate-request-paths
   [cm user dest paths]
@@ -125,11 +132,20 @@
    If `recursive` is true, then all subfolders (plus all their files and subfolders)
    of any given folder paths are parsed and filtered as well.
    Throws an error if the filtering params result in no matching paths."
-  [{:keys [user dest name-pattern info-type folders-only recursive]} {:keys [paths]}]
+  [{:keys [user dest path-list-info-type name-pattern info-type folders-only recursive]
+    :or   {path-list-info-type (cfg/ht-path-list-info-type)}}
+   {:keys [paths]}]
   (irods/with-jargon-exceptions :client-user user [cm]
     (validate-request-paths cm user dest paths)
 
-    (let [path-list-contents  (paths->ht-path-list cm user name-pattern info-type folders-only recursive paths)
+    (let [path-list-contents  (paths->path-list cm
+                                                user
+                                                (info-type->file-identifier path-list-info-type)
+                                                name-pattern
+                                                info-type
+                                                folders-only
+                                                recursive
+                                                paths)
           path-list-file-stat (with-in-str path-list-contents (copy-stream cm *in* user dest))]
-      (filetypes/add-type-to-validated-path cm dest (cfg/ht-path-list-info-type))
+      (filetypes/add-type-to-validated-path cm dest path-list-info-type)
       {:file (stat/decorate-stat cm user path-list-file-stat (stat/process-filters nil nil))})))
