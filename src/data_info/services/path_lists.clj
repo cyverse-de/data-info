@@ -106,7 +106,7 @@
       (throw+ {:error_code ERR_NOT_FOUND
                :reason "No paths matched the request."}))
 
-    (string/join "\n" (concat [(cfg/path-list-file-identifier)] filtered-paths))))
+    (string/join "\n" (concat [(cfg/ht-path-list-file-identifier)] filtered-paths))))
 
 (defn- validate-request-paths
   [cm user dest paths]
@@ -131,5 +131,5 @@
 
     (let [path-list-contents  (paths->ht-path-list cm user name-pattern info-type folders-only recursive paths)
           path-list-file-stat (with-in-str path-list-contents (copy-stream cm *in* user dest))]
-      (filetypes/add-type-to-validated-path cm dest (cfg/path-list-info-type))
+      (filetypes/add-type-to-validated-path cm dest (cfg/ht-path-list-info-type))
       {:file (stat/decorate-stat cm user path-list-file-stat (stat/process-filters nil nil))})))
