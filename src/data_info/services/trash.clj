@@ -19,6 +19,8 @@
   (:import [org.irods.jargon.core.pub IRODSFileSystemAO]
            [org.irods.jargon.core.pub.io IRODSFile]))
 
+(def ^:private trash-attr "ipc-trash-origin")
+
 (def alphanums (concat (range 48 58) (range 65 91) (range 97 123)))
 
 (defn- rand-str
@@ -35,7 +37,7 @@
   [cm p user]
   (let [trash-path (randomized-trash-path user p)]
     (move cm p trash-path :user user :admin-users (cfg/irods-admins))
-    (set-metadata cm trash-path "ipc-trash-origin" p paths/IPCSYSTEM)
+    (set-metadata cm trash-path trash-attr p paths/IPCSYSTEM)
     trash-path))
 
 (defn- home-matcher
@@ -124,15 +126,15 @@
    This happens when the trash origin attribute is missing, or when the parent
    directory exists but is not writeable by the current user."
   [cm user p]
-  (or (not (attribute? cm p "ipc-trash-origin"))
-      (let [origin-parent (ft/dirname (:value (first (get-attribute cm p "ipc-trash-origin"))))]
+  (or (not (attribute? cm p trash-attr))
+      (let [origin-parent (ft/dirname (:value (first (get-attribute cm p trash-attr))))]
         (and (exists? cm origin-parent)
              (not (is-writeable? cm user origin-parent))))))
 
 (defn- trash-origin-path
   [cm user p]
   (if (not (restore-to-homedir? cm user p))
-    (:value (first (get-attribute cm p "ipc-trash-origin")))
+    (:value (first (get-attribute cm p trash-attr)))
     (ft/path-join (paths/user-home-dir user) (ft/basename p))))
 
 (defn- restoration-path
