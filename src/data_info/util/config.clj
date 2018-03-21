@@ -276,6 +276,10 @@
   [props config-valid configs]
   "data-info.amqp.queue.auto-delete" false)
 
+(cc/defprop-optstr commons-base
+  "The base URL for the Data Commons web application."
+  [props config-valid configs]
+  "data-info.commons.base" "http://datacommons.cyverse.org")
 
 (defn- validate-config
   "Validates the configuration settings after they've been loaded."
