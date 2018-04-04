@@ -22,7 +22,7 @@
       (svc/trap uri tickets/do-add-tickets params body)))
 
   (POST "/ticket-lister" [:as {uri :uri}]
-    :tags ["bulk"]
+    :tags ["tickets"]
     :query [params StandardUserQueryParams]
     :body [body Paths]
     :return (doc-only ListTicketsResponse ListTicketsDocumentation)
@@ -33,7 +33,7 @@
     (svc/trap uri tickets/do-list-tickets params body))
 
   (POST "/ticket-deleter" [:as {uri :uri}]
-    :tags ["bulk"]
+    :tags ["tickets"]
     :query [params StandardUserQueryParams]
     :body [body Tickets]
     :return DeleteTicketsResponse
