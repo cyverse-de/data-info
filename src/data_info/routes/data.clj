@@ -156,4 +156,17 @@ with characters in a runtime-configurable parameter. Currently, this parameter l
   (get-endpoint-delegate-block
     "metadata"
     "GET /avus/{target-type}/{target-id}"))
-        (svc/trap uri meta/do-metadata-save data-id params body)))))
+        (svc/trap uri meta/do-metadata-save data-id params body))
+
+      (POST "/ore/save" [:as {uri :uri}]
+        :query [params StandardUserQueryParams]
+        :summary "Generating an OAI-ORE File for a Data Set"
+        :description (str
+  "Generates an OAI-ORE file serialized as RDF/XML for a the data set and saves it in the data
+  data set folder. The user must have write access to the data set folder."
+  (get-error-code-block
+   "ERR_NOT_A_USER, ERR_DOES_NOT_EXIST, ERR_NOT_A_FOLDER, ERR_NOT_WRITEABLE, ERR_BAD_PATH_LENGTH")
+  (get-endpoint-delegate-block
+   "metadata"
+   "GET /avus/{target-type}/{target-id}"))
+        (svc/trap uri meta/do-ore-save data-id params)))))

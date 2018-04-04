@@ -172,6 +172,13 @@
              :path path})))
 
 
+(defn stat-is-dir
+  [{:keys [path type]}]
+  (when-not (= :dir type)
+    (throw+ {:error_code error/ERR_NOT_A_FOLDER
+             :path path})))
+
+
 (defn path-is-file
   [cm path]
   (when-not (item/is-file? cm path)

@@ -1,11 +1,13 @@
 (ns data-info.services.metadata
   (:use [clojure-commons.error-codes]
         [clojure-commons.validators]
-        [clj-jargon.item-ops :only [copy-stream input-stream]]
+        [clj-jargon.item-ops :only [copy-stream input-stream output-stream]]
         [clj-jargon.metadata]
         [kameleon.uuids :only [uuidify]]
         [slingshot.slingshot :only [try+ throw+]])
-  (:require [clojure.tools.logging :as log]
+  (:require [clj-icat-direct.icat :as icat]
+            [clojure.data.xml :as xml]
+            [clojure.tools.logging :as log]
             [clojure.string :as string]
             [clojure.set :as s]
             [clojure-commons.file-utils :as ft]
@@ -19,8 +21,10 @@
             [data-info.util.irods :as irods]
             [data-info.util.paths :as paths]
             [data-info.util.validators :as validators]
-            [dire.core :refer [with-pre-hook! with-post-hook!]]))
-
+            [dire.core :refer [with-pre-hook! with-post-hook!]]
+            [cemerick.url :as curl]
+            [org.cyverse.oai-ore :as ore])
+  (:import [java.io OutputStreamWriter]))
 
 (defn- fix-unit
   "Used to replace the IPCRESERVED unit with an empty string."
@@ -284,6 +288,42 @@
   "Entrypoint for the API. Calls (metadata-save)."
   [data-id {:keys [user]} {:keys [dest recursive]}]
   (metadata-save user (uuidify data-id) (ft/rm-last-slash dest) (boolean recursive)))
+
+(defn- build-ore-uri
+  "Creates a URI for an ORE aggregation from an iRODS path."
+  [path]
+  (str (curl/url (cfg/commons-base) "browse" (string/replace path #"^/+" ""))))
+
+(defn- build-ore [writer agg-path ore-path files avus]
+  (xml/emit (ore/to-rdf (ore/build-ore
+                         (build-ore-uri agg-path)
+                         (build-ore-uri ore-path)
+                         (mapv build-ore-uri (remove (partial = ore-path) files))
+                         avus))
+            writer))
+
+(defn- ore-save
+  "Allows a data commons administrator to save an OAI-ORE file for a data set."
+  [user data-id]
+  (irods/with-jargon-exceptions :client-user user [cm]
+    (validators/user-exists cm user)
+    (let [{:keys [path] :as dir-stat} (stat/uuid-stat cm user data-id)
+          ore-path                    (ft/path-join path "ore.xml")]
+      (validators/stat-is-dir dir-stat)
+      (validators/path-writeable cm user path)
+      (with-open [out (OutputStreamWriter. (output-stream cm ore-path))]
+        (build-ore
+         out
+         path
+         ore-path
+         (icat/list-files-under-folder path)
+         (-> (metadata/list-avus user "folder" data-id) :body :avus)))
+      nil)))
+
+(defn do-ore-save
+  "Entrypoint for the API."
+  [data-id {:keys [user]}]
+  (ore-save user (uuidify data-id)))
 
 (defn- bulk-add-file-avus
   "Applies metadata from a list of attributes and values to the given path."
