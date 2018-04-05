@@ -22,6 +22,7 @@ data-info.max-paths-in-request       = 1000
 data-info.metadata.base-url          = http://example.org:31331
 data-info.perms-filter               = rodsadmin_acl,rodsBoot,rodsadmin,admin_proxy
 data-info.port                       = 60000
+data-info.commons.base               = http://datacommons.example.org/
 
 # ICAT configuration
 data-info.icat.host           = irods.example.org
