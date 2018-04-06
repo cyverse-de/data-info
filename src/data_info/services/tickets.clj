@@ -48,7 +48,7 @@
      :ticket-id         (:ticket-id tm)}))
 
 (defn- add-tickets
-  [user paths public?]
+  [user paths public? mode uses-limit file-write-limit]
   (irods/with-jargon-exceptions [cm]
     (let [new-uuids (gen-uuids cm user (count paths))]
       (validators/user-exists cm user)
@@ -56,7 +56,13 @@
       (validators/all-paths-writeable cm user paths)
       (doseq [[path uuid] (map list paths new-uuids)]
         (log/warn "[add-tickets] adding ticket for " path "as" uuid)
-        (create-ticket cm (:username cm) path uuid)
+        (create-ticket cm
+                       (:username cm)
+                       path
+                       uuid
+                       :rw-mode          mode
+                       :uses-limit       uses-limit
+                       :file-write-limit file-write-limit)
         (when public?
           (log/warn "[add-tickets] making ticket" uuid "public")
           (publicize-ticket cm uuid)))
@@ -92,8 +98,8 @@
      (apply merge (mapv #(hash-map %1 (returnable-tickets-for-path cm %1)) paths))}))
 
 (defn do-add-tickets
-  [{public? :public user :user} {paths :paths}]
-  (add-tickets user paths public?))
+  [{:keys [user mode uses-limit file-write-limit] public? :public} {paths :paths}]
+  (add-tickets user paths public? mode uses-limit file-write-limit))
 
 (with-pre-hook! #'do-add-tickets
   (fn [params body]
