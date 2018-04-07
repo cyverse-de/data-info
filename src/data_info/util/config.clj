@@ -281,6 +281,11 @@
   [props config-valid configs]
   "data-info.commons.base" "http://datacommons.cyverse.org")
 
+(cc/defprop-optstr ore-attribute
+  "The attribute to tag OAI-ORE files with."
+  [props config-valid configs]
+  "data-info.ore-attr" "ipc-oai-ore")
+
 (defn- validate-config
   "Validates the configuration settings after they've been loaded."
   []

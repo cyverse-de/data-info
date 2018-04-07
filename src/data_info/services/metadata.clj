@@ -318,6 +318,7 @@
          ore-path
          (icat/list-files-under-folder path)
          (-> (metadata/list-avus user "folder" data-id) :body :avus)))
+      (add-metadata cm ore-path (cfg/ore-attribute) "true" "")
       nil)))
 
 (defn do-ore-save
