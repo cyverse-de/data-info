@@ -25,3 +25,4 @@
 *.swp
 build.xml
 test2junit
+telepresence.log
