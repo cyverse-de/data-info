@@ -286,6 +286,11 @@
   [props config-valid configs]
   "data-info.ore-attr" "ipc-oai-ore")
 
+(cc/defprop-optstr d1-format-id-attribute
+  "The attribute used to specify the format of OAI-ORE files."
+  [props config-valid configs]
+  "data-info.d1-format-id-attr" "ipc-d1-format-id")
+
 (defn- validate-config
   "Validates the configuration settings after they've been loaded."
   []
