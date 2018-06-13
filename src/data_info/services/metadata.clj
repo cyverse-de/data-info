@@ -297,13 +297,18 @@
   ([{:keys [uuid]}]
    (str (curl/url (cfg/dataone-member-node-base) "v1" "object" uuid))))
 
+(defn- build-archived-file [{:keys [uuid] :as m}]
+  {:id  uuid
+   :uri (build-ore-uri m)})
+
 (defn- build-ore [cm writer agg-path ore-path files avus]
-  (xml/emit (ore/to-rdf (ore/build-ore
-                         (build-ore-uri cm agg-path)
-                         (build-ore-uri cm ore-path)
-                         (mapv build-ore-uri (remove (comp (partial = ore-path) :path) files))
-                         avus))
-            writer))
+  (let [ore-file-info? (comp (partial = ore-path) :path)]
+    (xml/emit (ore/to-rdf (ore/build-ore
+                           (build-ore-uri cm agg-path)
+                           (build-archived-file (first (filter ore-file-info? files)))
+                           (mapv build-archived-file (remove ore-file-info? files))
+                           avus))
+              writer)))
 
 (defn- ensure-file-exists
   "Ensures that a file exists at a given path."
