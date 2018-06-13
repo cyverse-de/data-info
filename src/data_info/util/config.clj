@@ -276,10 +276,10 @@
   [props config-valid configs]
   "data-info.amqp.queue.auto-delete" false)
 
-(cc/defprop-optstr commons-base
-  "The base URL for the Data Commons web application."
+(cc/defprop-optstr dataone-member-node-base
+  "The base URL for the DataONE member node service."
   [props config-valid configs]
-  "data-info.commons.base" "http://datacommons.cyverse.org")
+  "data-info.dataone-member-node.base" "https://de.cyverse.org/dataone-node/rest/mn")
 
 (cc/defprop-optstr ore-attribute
   "The attribute to tag OAI-ORE files with."

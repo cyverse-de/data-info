@@ -31,7 +31,7 @@
                  [net.sf.opencsv/opencsv "2.3"]
                  [de.ubercode.clostache/clostache "1.4.0" :exclusions [org.clojure/core.incubator]]
                  [slingshot "0.12.2"]
-                 [org.cyverse/clj-icat-direct "2.8.4"
+                 [org.cyverse/clj-icat-direct "2.8.5-SNAPSHOT"
                    :exclusions [[org.slf4j/slf4j-log4j12]
                                 [log4j]]]
                  [org.cyverse/clj-jargon "2.8.8"
@@ -44,7 +44,7 @@
                  [org.cyverse/heuristomancer "2.8.4"]
                  [org.cyverse/kameleon "3.0.2"]
                  [org.cyverse/metadata-client "3.0.0"]
-                 [org.cyverse/oai-ore "1.0.1"]
+                 [org.cyverse/oai-ore "1.0.2-SNAPSHOT"]
                  [org.cyverse/service-logging "2.8.0"]
                  [org.cyverse/tree-urls-client "2.8.1"]
                  [org.cyverse/event-messages "0.0.1"]

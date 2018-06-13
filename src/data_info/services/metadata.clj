@@ -1,6 +1,7 @@
 (ns data-info.services.metadata
   (:use [clojure-commons.error-codes]
         [clojure-commons.validators]
+        [clj-jargon.item-info :only [exists?]]
         [clj-jargon.item-ops :only [copy-stream input-stream output-stream]]
         [clj-jargon.metadata]
         [kameleon.uuids :only [uuidify]]
@@ -290,17 +291,30 @@
   (metadata-save user (uuidify data-id) (ft/rm-last-slash dest) (boolean recursive)))
 
 (defn- build-ore-uri
-  "Creates a URI for an ORE aggregation from an iRODS path."
-  [path]
-  (str (curl/url (cfg/commons-base) "browse" (string/replace path #"^/+" ""))))
+  "Creates a URI for an ORE aggregation from an iRODS path or a map containing the irods path and its UUID."
+  ([cm path]
+   (build-ore-uri {:uuid (irods/lookup-uuid cm path)}))
+  ([{:keys [uuid]}]
+   (str (curl/url (cfg/dataone-member-node-base) "v1" "object" uuid))))
 
-(defn- build-ore [writer agg-path ore-path files avus]
-  (xml/emit (ore/to-rdf (ore/build-ore
-                         (build-ore-uri agg-path)
-                         (build-ore-uri ore-path)
-                         (mapv build-ore-uri (remove (partial = ore-path) files))
-                         avus))
-            writer))
+(defn- build-archived-file [{:keys [uuid] :as m}]
+  {:id  uuid
+   :uri (build-ore-uri m)})
+
+(defn- build-ore [cm writer agg-path ore-path files avus]
+  (let [ore-file-info? (comp (partial = ore-path) :path)]
+    (xml/emit (ore/to-rdf (ore/build-ore
+                           (build-ore-uri cm agg-path)
+                           (build-archived-file (first (filter ore-file-info? files)))
+                           (mapv build-archived-file (remove ore-file-info? files))
+                           avus))
+              writer)))
+
+(defn- ensure-file-exists
+  "Ensures that a file exists at a given path."
+  [cm path]
+  (when-not (exists? cm path)
+    (.close (output-stream cm path))))
 
 (defn- ore-save
   "Allows a data commons administrator to save an OAI-ORE file for a data set."
@@ -309,10 +323,12 @@
     (validators/user-exists cm user)
     (let [{:keys [path] :as dir-stat} (stat/uuid-stat cm user data-id)
           ore-path                    (ft/path-join path "ore.xml")]
+      (ensure-file-exists cm ore-path)
       (validators/stat-is-dir dir-stat)
       (validators/path-writeable cm user path)
       (with-open [out (OutputStreamWriter. (output-stream cm ore-path))]
         (build-ore
+         cm
          out
          path
          ore-path
