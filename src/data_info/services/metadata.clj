@@ -24,6 +24,7 @@
             [data-info.util.validators :as validators]
             [dire.core :refer [with-pre-hook! with-post-hook!]]
             [cemerick.url :as curl]
+            [org.cyverse.metadata-files.datacite :as datacite]
             [org.cyverse.oai-ore :as ore])
   (:import [java.io OutputStreamWriter]))
 
@@ -290,6 +291,9 @@
   [data-id {:keys [user]} {:keys [dest recursive]}]
   (metadata-save user (uuidify data-id) (ft/rm-last-slash dest) (boolean recursive)))
 
+(defn- build-cyverse-metadata-file [writer avus]
+  (xml/emit (datacite/build-datacite avus) writer))
+
 (defn- build-ore-uri
   "Creates a URI for an ORE aggregation from an iRODS path or a map containing the irods path and its UUID."
   ([cm path]
@@ -301,13 +305,16 @@
   {:id  uuid
    :uri (build-ore-uri m)})
 
-(defn- build-ore [cm writer agg-path ore-path files avus]
-  (let [ore-file-info? (comp (partial = ore-path) :path)]
+(defn- build-ore [cm writer agg-path ore-path files avus md-path]
+  (let [md-file-info?       (comp (partial = ore-path) :path)
+        ore-file-info?      (comp (partial = ore-path) :path)
+        reserved-file-info? (some-fn md-file-info? ore-file-info?)]
     (xml/emit (ore/to-rdf (ore/build-ore
                            (build-ore-uri cm agg-path)
                            (build-archived-file (first (filter ore-file-info? files)))
-                           (mapv build-archived-file (remove ore-file-info? files))
-                           avus))
+                           (mapv build-archived-file (remove reserved-file-info? files))
+                           avus
+                           (build-archived-file (first (filter md-file-info? files)))))
               writer)))
 
 (defn- ensure-file-exists
@@ -322,10 +329,15 @@
   (irods/with-jargon-exceptions :client-user user [cm]
     (validators/user-exists cm user)
     (let [{:keys [path] :as dir-stat} (stat/uuid-stat cm user data-id)
-          ore-path                    (ft/path-join path "ore.xml")]
+          md-path                     (ft/path-join path "cyverse-metadata.xml")
+          ore-path                    (ft/path-join path "ore.xml")
+          avus                        (-> (metadata/list-avus user "folder" data-id) :body :avus)]
+      (ensure-file-exists cm md-path)
       (ensure-file-exists cm ore-path)
       (validators/stat-is-dir dir-stat)
       (validators/path-writeable cm user path)
+      (with-open [out (OutputStreamWriter. (output-stream cm md-path))]
+        (build-cyverse-metadata-file out avus))
       (with-open [out (OutputStreamWriter. (output-stream cm ore-path))]
         (build-ore
          cm
@@ -333,7 +345,8 @@
          path
          ore-path
          (icat/list-files-under-folder path)
-         (-> (metadata/list-avus user "folder" data-id) :body :avus)))
+         avus
+         md-path))
       (set-metadata cm ore-path (cfg/ore-attribute) "true" "")
       (set-metadata cm ore-path (cfg/d1-format-id-attribute) ore/format-id "")
       nil)))
