@@ -306,7 +306,7 @@
    :uri (build-ore-uri m)})
 
 (defn- build-ore [cm writer agg-path ore-path files avus md-path]
-  (let [md-file-info?       (comp (partial = ore-path) :path)
+  (let [md-file-info?       (comp (partial = md-path) :path)
         ore-file-info?      (comp (partial = ore-path) :path)
         reserved-file-info? (some-fn md-file-info? ore-file-info?)]
     (xml/emit (ore/to-rdf (ore/build-ore
