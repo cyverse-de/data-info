@@ -2,7 +2,7 @@
   (:use [clojure-commons.error-codes]
         [clojure-commons.validators]
         [clj-jargon.item-info :only [exists?]]
-        [clj-jargon.item-ops :only [copy-stream input-stream output-stream]]
+        [clj-jargon.item-ops :only [copy-stream input-stream output-stream mkdirs]]
         [clj-jargon.metadata]
         [kameleon.uuids :only [uuidify]]
         [slingshot.slingshot :only [try+ throw+]])
@@ -332,10 +332,10 @@
           md-path                     (ft/path-join path "cyverse-metadata.xml")
           ore-path                    (ft/path-join path "ore.xml")
           avus                        (-> (metadata/list-avus user "folder" data-id) :body :avus)]
-      (ensure-file-exists cm md-path)
-      (ensure-file-exists cm ore-path)
       (validators/stat-is-dir dir-stat)
       (validators/path-writeable cm user path)
+      (ensure-file-exists cm md-path)
+      (ensure-file-exists cm ore-path)
       (with-open [out (OutputStreamWriter. (output-stream cm md-path))]
         (build-cyverse-metadata-file out avus))
       (with-open [out (OutputStreamWriter. (output-stream cm ore-path))]
