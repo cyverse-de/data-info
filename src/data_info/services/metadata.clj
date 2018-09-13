@@ -323,17 +323,27 @@
   (when-not (exists? cm path)
     (.close (output-stream cm path))))
 
+(defn- d1-metadata-dir-path
+  "Builds a path to the dataone metadata directory for a data set."
+  [data-set-path]
+  (ft/path-join
+   (ft/dirname (ft/dirname data-set-path))
+   (cfg/d1-metadata-dirname)
+   (ft/basename data-set-path)))
+
 (defn- ore-save
   "Allows a data commons administrator to save an OAI-ORE file for a data set."
   [user data-id]
   (irods/with-jargon-exceptions :client-user user [cm]
     (validators/user-exists cm user)
     (let [{:keys [path] :as dir-stat} (stat/uuid-stat cm user data-id)
-          md-path                     (ft/path-join path "cyverse-metadata.xml")
-          ore-path                    (ft/path-join path "ore.xml")
+          md-dir-path                 (d1-metadata-dir-path path)
+          md-path                     (ft/path-join md-dir-path "cyverse-metadata.xml")
+          ore-path                    (ft/path-join md-dir-path "ore.xml")
           avus                        (-> (metadata/list-avus user "folder" data-id) :body :avus)]
       (validators/stat-is-dir dir-stat)
       (validators/path-writeable cm user path)
+      (mkdirs cm md-dir-path)
       (ensure-file-exists cm md-path)
       (ensure-file-exists cm ore-path)
       (with-open [out (OutputStreamWriter. (output-stream cm md-path))]
