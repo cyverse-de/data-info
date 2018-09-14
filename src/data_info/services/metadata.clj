@@ -359,6 +359,7 @@
          md-path))
       (set-metadata cm ore-path (cfg/ore-attribute) "true" "")
       (set-metadata cm ore-path (cfg/d1-format-id-attribute) ore/format-id "")
+      (set-metadata cm path (cfg/d1-metadata-dirpath-attribute) md-dir-path "")
       nil)))
 
 (defn do-ore-save
