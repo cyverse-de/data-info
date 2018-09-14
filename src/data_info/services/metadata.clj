@@ -354,7 +354,7 @@
          out
          path
          ore-path
-         (icat/list-files-under-folder path)
+         (mapcat icat/list-files-under-folder [path md-dir-path])
          avus
          md-path))
       (set-metadata cm ore-path (cfg/ore-attribute) "true" "")
