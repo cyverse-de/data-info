@@ -162,8 +162,12 @@ with characters in a runtime-configurable parameter. Currently, this parameter l
         :query [params StandardUserQueryParams]
         :summary "Generating an OAI-ORE File for a Data Set"
         :description (str
-  "Generates an OAI-ORE file serialized as RDF/XML for a the data set and saves it in the data
-  set folder. The user must have write access to the data set folder."
+  "Generates an OAI-ORE file serialized as RDF/XML for the data set and saves it in a separate
+  folder in the data store. The user must have write access to the data set folder, and must be able
+  to create the related metadata folder. The metadata folder is determined using a relative path. For
+  example, if the data set is stored in /zone/home/user/repo/curated/dataset then the metadata files
+  might be stored in /zone/home/user/repo/curated_metadata/dataset. The curated_metadata folder name
+  is configurable, so the path to the metadata folder might be slightly different."
   (get-error-code-block
    "ERR_NOT_A_USER, ERR_DOES_NOT_EXIST, ERR_NOT_A_FOLDER, ERR_NOT_WRITEABLE, ERR_BAD_PATH_LENGTH")
   (get-endpoint-delegate-block

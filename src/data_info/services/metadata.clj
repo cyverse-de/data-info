@@ -2,7 +2,7 @@
   (:use [clojure-commons.error-codes]
         [clojure-commons.validators]
         [clj-jargon.item-info :only [exists?]]
-        [clj-jargon.item-ops :only [copy-stream input-stream output-stream]]
+        [clj-jargon.item-ops :only [copy-stream input-stream output-stream mkdirs]]
         [clj-jargon.metadata]
         [kameleon.uuids :only [uuidify]]
         [slingshot.slingshot :only [try+ throw+]])
@@ -323,19 +323,36 @@
   (when-not (exists? cm path)
     (.close (output-stream cm path))))
 
+(defn- d1-metadata-dir-path
+  "Builds a path to the dataone metadata directory for a data set. Obtaining the path this way is a little clunky,
+   but using a relative path allows testing to be performed outside of the Data Commons repository. If the metadata
+   directory already exists then the user performing the request must have write access to that directory. If it
+   doesn't exist already then the user must have write access to the highest missing directory in the hierarchy,
+   which may be the grandparent of the directory containing the data files."
+  [data-set-path]
+  (ft/path-join
+   (ft/dirname (ft/dirname data-set-path))
+   (cfg/d1-metadata-dirname)
+   (ft/basename data-set-path)))
+
 (defn- ore-save
-  "Allows a data commons administrator to save an OAI-ORE file for a data set."
+  "Allows a data commons administrator to save an OAI-ORE file for a data set. The generated OAI-ORE and DataCite
+   metadata files are stored in a separate directory. And the administrator performing the request must be able to
+   create this directory. A separate validation is not performed. If the user does not have permission to create
+   the directory then an ERR_NOT_WRITEABLE error will be returned."
   [user data-id]
   (irods/with-jargon-exceptions :client-user user [cm]
     (validators/user-exists cm user)
     (let [{:keys [path] :as dir-stat} (stat/uuid-stat cm user data-id)
-          md-path                     (ft/path-join path "cyverse-metadata.xml")
-          ore-path                    (ft/path-join path "ore.xml")
+          md-dir-path                 (d1-metadata-dir-path path)
+          md-path                     (ft/path-join md-dir-path "cyverse-metadata.xml")
+          ore-path                    (ft/path-join md-dir-path "ore.xml")
           avus                        (-> (metadata/list-avus user "folder" data-id) :body :avus)]
-      (ensure-file-exists cm md-path)
-      (ensure-file-exists cm ore-path)
       (validators/stat-is-dir dir-stat)
       (validators/path-writeable cm user path)
+      (mkdirs cm md-dir-path)
+      (ensure-file-exists cm md-path)
+      (ensure-file-exists cm ore-path)
       (with-open [out (OutputStreamWriter. (output-stream cm md-path))]
         (build-cyverse-metadata-file out avus))
       (with-open [out (OutputStreamWriter. (output-stream cm ore-path))]
@@ -344,11 +361,12 @@
          out
          path
          ore-path
-         (icat/list-files-under-folder path)
+         (mapcat icat/list-files-under-folder [path md-dir-path])
          avus
          md-path))
       (set-metadata cm ore-path (cfg/ore-attribute) "true" "")
       (set-metadata cm ore-path (cfg/d1-format-id-attribute) ore/format-id "")
+      (set-metadata cm path (cfg/d1-metadata-dirpath-attribute) md-dir-path "")
       nil)))
 
 (defn do-ore-save

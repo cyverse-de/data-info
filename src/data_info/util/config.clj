@@ -291,6 +291,16 @@
   [props config-valid configs]
   "data-info.d1-format-id-attr" "ipc-d1-format-id")
 
+(cc/defprop-optstr d1-metadata-dirname
+  "The name of the directory containing the metadata files used by DataONE."
+  [props config-valid configs]
+  "data-info.d1-metadata-base" "curated_metadata")
+
+(cc/defprop-optstr d1-metadata-dirpath-attribute
+  "The attribute used to store the path to the directory containing the DataONE metadata files for a curated dataset."
+  [props config-valid configs]
+  "data-info.d1-metadata-dirpath-attribute" "ipc-d1-dirpath")
+
 (defn- validate-config
   "Validates the configuration settings after they've been loaded."
   []
