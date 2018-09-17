@@ -324,7 +324,11 @@
     (.close (output-stream cm path))))
 
 (defn- d1-metadata-dir-path
-  "Builds a path to the dataone metadata directory for a data set."
+  "Builds a path to the dataone metadata directory for a data set. Obtaining the path this way is a little clunky,
+   but using a relative path allows testing to be performed outside of the Data Commons repository. If the metadata
+   directory already exists then the user performing the request must have write access to that directory. If it
+   doesn't exist already then the user must have write access to the highest missing directory in the hierarchy,
+   which may be the grandparent of the directory containing the data files."
   [data-set-path]
   (ft/path-join
    (ft/dirname (ft/dirname data-set-path))
@@ -332,7 +336,10 @@
    (ft/basename data-set-path)))
 
 (defn- ore-save
-  "Allows a data commons administrator to save an OAI-ORE file for a data set."
+  "Allows a data commons administrator to save an OAI-ORE file for a data set. The generated OAI-ORE and DataCite
+   metadata files are stored in a separate directory. And the administrator performing the request must be able to
+   create this directory. A separate validation is not performed. If the user does not have permission to create
+   the directory then an ERR_NOT_WRITEABLE error will be returned."
   [user data-id]
   (irods/with-jargon-exceptions :client-user user [cm]
     (validators/user-exists cm user)
