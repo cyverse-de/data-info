@@ -18,7 +18,7 @@ node('docker') {
 
         dockerRepo = "test-${env.BUILD_TAG}"
 
-        sh "docker build --rm --build-arg git_commit=${git_commit} --build-arg version=${version} --build-arg descriptive_version=${descriptive_version} -t ${dockerRepo} ."
+        sh "docker build --pull --rm --build-arg git_commit=${git_commit} --build-arg version=${version} --build-arg descriptive_version=${descriptive_version} -t ${dockerRepo} ."
 
         image_sha = sh(returnStdout: true, script: "docker inspect -f '{{ .Config.Image }}' ${dockerRepo}").trim()
         echo image_sha

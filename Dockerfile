@@ -1,10 +1,8 @@
-FROM discoenv/clojure-base:master
+FROM clojure:lein-alpine
 
-ENV CONF_TEMPLATE=/usr/src/app/data-info.properties.tmpl
-ENV CONF_FILENAME=data-info.properties
-ENV PROGRAM=data-info
+RUN apk add --no-cache git
 
-VOLUME ["/etc/iplant/de"]
+WORKDIR /usr/src/app
 
 COPY project.clj /usr/src/app/
 RUN lein deps
@@ -17,7 +15,7 @@ RUN lein uberjar && \
 
 RUN ln -s "/usr/bin/java" "/bin/data-info"
 
-ENTRYPOINT ["run-service", "-Dlogback.configurationFile=/etc/iplant/de/logging/data-info-logging.xml", "-cp", ".:data-info-standalone.jar", "data_info.core"]
+ENTRYPOINT ["data-info", "-Dlogback.configurationFile=/etc/iplant/de/logging/data-info-logging.xml", "-cp", ".:data-info-standalone.jar", "data_info.core"]
 CMD ["--help"]
 
 ARG git_commit=unknown
