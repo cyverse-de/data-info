@@ -1,8 +1,10 @@
 FROM clojure:lein-alpine
 
+WORKDIR /usr/src/app
+
 RUN apk add --no-cache git
 
-WORKDIR /usr/src/app
+RUN ln -s "/usr/bin/java" "/bin/data-info"
 
 COPY project.clj /usr/src/app/
 RUN lein deps
@@ -12,8 +14,6 @@ COPY . /usr/src/app
 
 RUN lein uberjar && \
     cp target/data-info-standalone.jar .
-
-RUN ln -s "/usr/bin/java" "/bin/data-info"
 
 ENTRYPOINT ["data-info", "-Dlogback.configurationFile=/etc/iplant/de/logging/data-info-logging.xml", "-cp", ".:data-info-standalone.jar", "data_info.core"]
 CMD ["--help"]
