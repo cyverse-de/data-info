@@ -8,17 +8,17 @@
 
 (s/defschema AddTicketQueryParams
   (assoc StandardUserQueryParams
-         (s/optional-key :mode)
-         (describe (s/enum :read :write)
-                   "Whether the created tickets allow `write` or `read` only access. Default is `read` only.")
+    (s/optional-key :mode)
+    (describe (s/enum :read :write)
+              "Whether the created tickets allow `write` or `read` only access. Default is `read` only.")
 
-         (s/optional-key :uses-limit)
-         (describe Long "Sets the `uses-limit` of the created tickets, when provided")
+    (s/optional-key :uses-limit)
+    (describe Long "Sets the `uses-limit` of the created tickets, when provided")
 
-         (s/optional-key :file-write-limit)
-         (describe Long "Sets the `file-write-limit` of the created tickets, when provided (10 by default)")
+    (s/optional-key :file-write-limit)
+    (describe Long "Sets the `file-write-limit` of the created tickets, when provided (10 by default)")
 
-         :public (describe Boolean "Whether the created tickets should be made public")))
+    :public (describe Boolean "Whether the created tickets should be made public")))
 
 (s/defschema TicketDefinition
   {:path (describe NonBlankString "The iRODS path for the ticket")
