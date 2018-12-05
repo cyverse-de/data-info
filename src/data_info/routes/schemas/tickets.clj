@@ -18,7 +18,15 @@
     (s/optional-key :file-write-limit)
     (describe Long "Sets the `file-write-limit` of the created tickets, when provided (10 by default)")
 
-    :public (describe Boolean "Whether the created tickets should be made public")))
+    :public (describe Boolean "Whether the created tickets should be made public")
+
+    (s/optional-key :for-job)
+    (describe Boolean "Indicates whether the tickets are being created for an analysis")))
+
+(s/defschema DeleteTicketQueryParams
+  (assoc StandardUserQueryParams
+    (s/optional-key :for-job)
+    (describe Boolean "Indicates whether the tickets being deleted were created for an analysis")))
 
 (s/defschema TicketDefinition
   {:path (describe NonBlankString "The iRODS path for the ticket")
