@@ -48,12 +48,14 @@
      :ticket-id         (:ticket-id tm)}))
 
 (defn- add-tickets
-  [user paths public? mode uses-limit file-write-limit]
+  [user paths public? mode uses-limit file-write-limit for-job?]
   (irods/with-jargon-exceptions [cm]
     (let [new-uuids (gen-uuids cm user (count paths))]
       (validators/user-exists cm user)
       (validators/all-paths-exist cm paths)
-      (validators/all-paths-writeable cm user paths)
+      (if (and for-job? (= mode :read))
+        (validators/all-paths-readable cm user paths)
+        (validators/all-paths-writeable cm user paths))
       (doseq [[path uuid] (map list paths new-uuids)]
         (log/warn "[add-tickets] adding ticket for " path "as" uuid)
         (create-ticket cm
@@ -70,12 +72,14 @@
        :tickets (mapv (partial returnable-ticket-map cm) new-uuids)})))
 
 (defn- remove-tickets
-  [user ticket-ids]
+  [user ticket-ids for-job?]
   (irods/with-jargon-exceptions [cm]
     (validators/user-exists cm user)
     (validators/all-tickets-exist cm user ticket-ids)
     (let [all-paths (mapv #(.getIrodsAbsolutePath (ticket-by-id cm (:username cm) %)) ticket-ids)]
-      (validators/all-paths-writeable cm user all-paths)
+      (if for-job?
+        (validators/all-paths-readable cm user all-paths)
+        (validators/all-paths-writeable cm user all-paths))
       (doseq [ticket-id ticket-ids]
         (delete-ticket cm (:username cm) ticket-id))
       {:user user :tickets ticket-ids})))
@@ -98,8 +102,8 @@
      (apply merge (mapv #(hash-map %1 (returnable-tickets-for-path cm %1)) paths))}))
 
 (defn do-add-tickets
-  [{:keys [user mode uses-limit file-write-limit] public? :public} {paths :paths}]
-  (add-tickets user paths public? mode uses-limit file-write-limit))
+  [{:keys [user mode uses-limit file-write-limit] public? :public for-job? :for-job} {paths :paths}]
+  (add-tickets user paths public? mode uses-limit file-write-limit for-job?))
 
 (with-pre-hook! #'do-add-tickets
   (fn [params body]
@@ -109,8 +113,8 @@
 (with-post-hook! #'do-add-tickets (dul/log-func "do-add-tickets"))
 
 (defn do-remove-tickets
-  [{user :user} {tickets :tickets}]
-  (remove-tickets user tickets))
+  [{user :user for-job? :for-job} {tickets :tickets}]
+  (remove-tickets user tickets for-job?))
 
 (with-pre-hook! #'do-remove-tickets
   (fn [params body]

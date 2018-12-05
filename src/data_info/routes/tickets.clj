@@ -34,7 +34,7 @@
 
   (POST "/ticket-deleter" [:as {uri :uri}]
     :tags ["tickets"]
-    :query [params StandardUserQueryParams]
+    :query [params DeleteTicketQueryParams]
     :body [body Tickets]
     :return DeleteTicketsResponse
     :summary "Delete tickets"
