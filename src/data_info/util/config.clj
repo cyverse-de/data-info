@@ -1,6 +1,7 @@
 (ns data-info.util.config
   (:use [slingshot.slingshot :only [throw+]])
-  (:require [clj-jargon.init :as init]
+  (:require [cheshire.core :as cheshire]
+            [clj-jargon.init :as init]
             [clojure-commons.config :as cc]
             [clojure-commons.error-codes :as ce]
             [clojure.tools.logging :as log]
@@ -78,12 +79,13 @@
   [props config-valid configs]
   "data-info.anon-user" "anonymous")
 
-
-(cc/defprop-str anon-files-base-url
-  "The base url for the anon-files server."
+(cc/defprop-str anon-files-mappings-raw
+  "The mappings between paths in the data store and anonymous access locations. Should be a JSON object mapping paths to partial URLs, and the longest matching prefix will be used."
   [props config-valid configs]
-  "data-info.anon-files-base-url")
+  "data-info.anon-files-mappings")
 
+(def anon-files-mappings
+  (memoize (fn [] (cheshire/decode (anon-files-mappings-raw) false))))
 
 (cc/defprop-optstr metadata-base-url
   "The base URL to use when connecting to the metadata services."
@@ -315,23 +317,11 @@
 (def metadata-client
   (memoize #(metadata-client/new-metadata-client (metadata-base-url))))
 
-(def anon-files-base
-  (memoize
-   (fn []
-     (if (System/getenv "ANON_FILES_PORT")
-       (cfg/env-setting "ANON_FILES_PORT")
-       (anon-files-base-url)))))
-
-(defn log-environment
-  []
-  (log/warn "ENV? data-info.anon-files-base-url = " (anon-files-base)))
-
 (defn load-config-from-file
   "Loads the configuration settings from a file."
   [cfg-path]
   (cc/load-config-from-file cfg-path props)
   (cc/log-config props :filters [#"irods\.user" #"icat\.user"])
-  (log-environment)
   (validate-config)
   (ce/register-filters (exception-filters)))
 
