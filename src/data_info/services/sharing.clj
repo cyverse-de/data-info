@@ -145,10 +145,22 @@
   [cm p]
   (is-readable? cm (cfg/anon-user) p))
 
+(defn- map-anon-url-path
+  [path]
+  (let [mappings (cfg/anon-files-mappings)
+        mapping-keys (reverse (sort-by count (keys mappings)))
+        matching-key (first (filter
+                              (fn [key] (and
+                                          (> (count path) (count key))
+                                          (= key (subs path 0 (count key)))))
+                              mapping-keys))]
+    (when-not (nil? matching-key)
+      (string/replace-first path matching-key (mappings matching-key)))))
+
 (defn anon-file-url
-  [p]
-  (let [aurl (url/url (cfg/anon-files-base))]
-    (str (-> aurl (assoc :path (apply ft/path-join (:path aurl) (map url/url-encode (string/split (string/replace p #"^/" "") #"/"))))))))
+  [path]
+  (let [aurl (url/url (cfg/anon-files-base-url))]
+    (str (-> aurl (assoc :path (apply ft/path-join (:path aurl) [(map-anon-url-path path)]))))))
 
 (defn- anon-files-urls
   [paths]
