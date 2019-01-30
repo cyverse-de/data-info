@@ -12,6 +12,7 @@ data-info can be built with Leiningen: `lein do clean, uberjar`, and then run as
 data-info uses a properties-style configuration file, passed in via the `--config` command-line option or found by default at `/etc/iplant/de/data-info.properties`. An example configuration file:
 
 ```properties
+data-info.anon-files-base-url        = https://example.org/anon-files/
 data-info.anon-user                  = anonymous
 data-info.bad-chars                  = \u0060\u0027\u000A\u0009
 data-info.community-data             = /iplant/home/shared

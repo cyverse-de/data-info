@@ -19,6 +19,7 @@
     (is (= (config/bad-chars) "\u0060\u0027\u000A\u0009"))
     (is (= (config/max-paths-in-request)  1000))
     (is (= (config/anon-user) "anonymous"))
+    (is (= (config/anon-files-base-url) "https://de.example.org/anon-files/"))
     (is (= (config/metadata-base-url) "http://metadata:60000"))
     (is (= (config/tree-urls-base-url) "http://tree-urls:60000"))
     (is (= (config/kifshare-download-template) "{{url}}/d/{{ticket-id}}/{{filename}}"))

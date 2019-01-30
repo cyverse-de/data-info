@@ -145,7 +145,7 @@
   [cm p]
   (is-readable? cm (cfg/anon-user) p))
 
-(defn anon-file-url
+(defn- map-anon-url-path
   [path]
   (let [mappings (cfg/anon-files-mappings)
         mapping-keys (reverse (sort-by count (keys mappings)))
@@ -156,6 +156,11 @@
                               mapping-keys))]
     (when-not (nil? matching-key)
       (string/replace-first path matching-key (mappings matching-key)))))
+
+(defn anon-file-url
+  [path]
+  (let [aurl (url/url (cfg/anon-files-base-url))]
+    (str (-> aurl (assoc :path (apply ft/path-join (:path aurl) [(map-anon-url-path path)]))))))
 
 (defn- anon-files-urls
   [paths]

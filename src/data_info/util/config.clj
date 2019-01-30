@@ -79,6 +79,11 @@
   [props config-valid configs]
   "data-info.anon-user" "anonymous")
 
+(cc/defprop-str anon-files-base-url
+  "The base URL for the anonymous data access server. The mappings below are relative to this URL."
+  [props config-valid configs]
+  "data-info.anon-files-base-url")
+
 (cc/defprop-str anon-files-mappings-raw
   "The mappings between paths in the data store and anonymous access locations. Should be a JSON object mapping paths to partial URLs, and the longest matching prefix will be used."
   [props config-valid configs]
