@@ -1,7 +1,7 @@
 (ns data-info.routes.filetypes
   (:use [common-swagger-api.schema]
-        [data-info.routes.schemas.common]
-        [data-info.routes.schemas.filetypes])
+        [common-swagger-api.schema.filetypes]
+        [data-info.routes.schemas.common])
   (:require [data-info.services.filetypes :as filetypes]
             [data-info.util.service :as svc]))
 

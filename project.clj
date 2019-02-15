@@ -40,7 +40,7 @@
                  [org.cyverse/clojure-commons "2.8.3"]
                  [org.cyverse/common-cli "2.8.1"]
                  [org.cyverse/common-cfg "2.8.1"]
-                 [org.cyverse/common-swagger-api "2.8.3"]
+                 [org.cyverse/common-swagger-api "2.9.3-SNAPSHOT"]
                  [org.cyverse/heuristomancer "2.8.6"]
                  [org.cyverse/kameleon "3.0.2"]
                  [org.cyverse/metadata-client "3.0.0"]
