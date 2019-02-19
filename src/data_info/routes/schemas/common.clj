@@ -1,6 +1,7 @@
 (ns data-info.routes.schemas.common
   (:use [common-swagger-api.schema :only [describe NonBlankString ->optional-param]])
-  (:require [schema.core :as s])
+  (:require [common-swagger-api.schema.data :as data-schema]
+            [schema.core :as s])
   (:import [java.util UUID]))
 
 (defn get-error-code-block
@@ -10,7 +11,7 @@
 #### Error Codes:
     " (clojure.string/join "\n    " error-codes)))
 
-(def DataIdPathParam (describe UUID "The data item's UUID"))
+(def DataIdPathParam data-schema/DataIdPathParam)
 
 (s/defschema Paths
   {:paths (describe [(s/one NonBlankString "path") NonBlankString] "A list of iRODS paths")})
@@ -25,4 +26,4 @@
   (-> (merge DataIds OptionalPaths)
       (->optional-param :ids)))
 
-(def PermissionEnum (s/enum :read :write :own))
+(def PermissionEnum data-schema/PermissionEnum)
