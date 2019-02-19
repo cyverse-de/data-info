@@ -58,7 +58,7 @@
                                   :test-paths]
              :linters [:wrong-arity :wrong-ns-form :wrong-pre-post :wrong-tag :misplaced-docstrings]}
   :plugins [[test2junit "1.1.3"]
-            [jonase/eastwood "0.2.3"]]
+            [jonase/eastwood "0.3.4"]]
   :profiles {:dev     {:dependencies   [[ring "1.5.0"]] ;; required for lein-ring with compojure-api 1.1.8+
                        :plugins        [[lein-ring "0.9.7"]]
                        :resource-paths ["conf/test"]}
