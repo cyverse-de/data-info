@@ -40,7 +40,7 @@
                  [org.cyverse/clojure-commons "2.8.3"]
                  [org.cyverse/common-cli "2.8.1"]
                  [org.cyverse/common-cfg "2.8.1"]
-                 [org.cyverse/common-swagger-api "2.8.3"]
+                 [org.cyverse/common-swagger-api "2.9.3-SNAPSHOT"]
                  [org.cyverse/heuristomancer "2.8.6"]
                  [org.cyverse/kameleon "3.0.2"]
                  [org.cyverse/metadata-client "3.0.0"]
@@ -58,7 +58,7 @@
                                   :test-paths]
              :linters [:wrong-arity :wrong-ns-form :wrong-pre-post :wrong-tag :misplaced-docstrings]}
   :plugins [[test2junit "1.1.3"]
-            [jonase/eastwood "0.2.3"]]
+            [jonase/eastwood "0.3.4"]]
   :profiles {:dev     {:dependencies   [[ring "1.5.0"]] ;; required for lein-ring with compojure-api 1.1.8+
                        :plugins        [[lein-ring "0.9.7"]]
                        :resource-paths ["conf/test"]}

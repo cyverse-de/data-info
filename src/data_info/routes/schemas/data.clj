@@ -5,6 +5,7 @@
                                           SortFieldDocs
                                           SortFieldOptionalKey
                                           StandardUserQueryParams]]
+        [common-swagger-api.schema.filetypes :only [ValidInfoTypesEnum]]
         [data-info.routes.schemas.common]
         [heuristomancer.core :as info])
   (:require [schema.core :as s]))
@@ -102,7 +103,7 @@
     (assoc :page (describe NonBlankString "The page number.")
            :number-pages (describe NonBlankString "The total number of pages")
            :max-cols (describe NonBlankString "The maximum number of columns present.")
-           :csv (describe [CSVEntry] "The tabular data result.")))) 
+           :csv (describe [CSVEntry] "The tabular data result."))))
 
 (s/defschema TabularChunkDoc
   (-> TabularChunkReturn

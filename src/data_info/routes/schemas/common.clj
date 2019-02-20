@@ -1,6 +1,6 @@
 (ns data-info.routes.schemas.common
   (:use [common-swagger-api.schema :only [describe NonBlankString ->optional-param]])
-  (:require [heuristomancer.core :as hm]
+  (:require [common-swagger-api.schema.data :as data-schema]
             [schema.core :as s])
   (:import [java.util UUID]))
 
@@ -11,8 +11,7 @@
 #### Error Codes:
     " (clojure.string/join "\n    " error-codes)))
 
-(def DataIdPathParam (describe UUID "The data item's UUID"))
-(def ValidInfoTypes (conj (hm/supported-formats) "unknown"))
+(def DataIdPathParam data-schema/DataIdPathParam)
 
 (s/defschema Paths
   {:paths (describe [(s/one NonBlankString "path") NonBlankString] "A list of iRODS paths")})
@@ -27,6 +26,4 @@
   (-> (merge DataIds OptionalPaths)
       (->optional-param :ids)))
 
-(def ValidInfoTypesEnum (apply s/enum ValidInfoTypes))
-(def ValidInfoTypesEnumPlusBlank (apply s/enum (conj ValidInfoTypes "")))
-(def PermissionEnum (s/enum :read :write :own))
+(def PermissionEnum data-schema/PermissionEnum)
