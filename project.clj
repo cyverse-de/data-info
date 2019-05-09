@@ -40,7 +40,7 @@
                  [org.cyverse/clojure-commons "2.8.3"]
                  [org.cyverse/common-cli "2.8.1"]
                  [org.cyverse/common-cfg "2.8.1"]
-                 [org.cyverse/common-swagger-api "2.9.3-SNAPSHOT"]
+                 [org.cyverse/common-swagger-api "2.11.7"]
                  [org.cyverse/heuristomancer "2.8.6"]
                  [org.cyverse/kameleon "3.0.2"]
                  [org.cyverse/metadata-client "3.0.0"]
@@ -66,7 +66,7 @@
   :main ^:skip-aot data-info.core
   :ring {:handler data-info.routes/app
          :init data-info.core/lein-ring-init
-         :port 60000
+         :port 31360
          :auto-reload? false}
   :uberjar-exclusions [#".*[.]SF" #"LICENSE" #"NOTICE"]
   :jvm-opts ["-Dlogback.configurationFile=/etc/iplant/de/logging/data-info-logging.xml"])
