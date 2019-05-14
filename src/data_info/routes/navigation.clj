@@ -1,5 +1,6 @@
 (ns data-info.routes.navigation
   (:use [common-swagger-api.schema]
+        [common-swagger-api.schema.data.navigation :only [UserBasePaths]]
         [data-info.routes.schemas.common]
         [data-info.routes.schemas.navigation]
         [data-info.routes.schemas.stats])
