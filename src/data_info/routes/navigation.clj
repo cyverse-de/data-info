@@ -1,10 +1,8 @@
 (ns data-info.routes.navigation
   (:use [common-swagger-api.schema]
-        [common-swagger-api.schema.data.navigation :only [UserBasePaths]]
-        [data-info.routes.schemas.common]
-        [data-info.routes.schemas.navigation]
-        [data-info.routes.schemas.stats])
-  (:require [data-info.services.directory :as dir]
+        [data-info.routes.schemas.common :only [get-error-code-block]])
+  (:require [common-swagger-api.schema.data.navigation :as schema]
+            [data-info.services.directory :as dir]
             [data-info.services.root :as root]
             [data-info.services.home :as home]
             [data-info.util.service :as svc]))
@@ -16,7 +14,7 @@
 
     (GET "/base-paths" [:as {uri :uri}]
       :query [{:keys [user]} StandardUserQueryParams]
-      :return UserBasePaths
+      :return schema/UserBasePaths
       :summary "Get User's Base Paths"
       :description (str
 "This endpoint returns the base paths of the user's home directory, trash, and the base trash path."
@@ -26,7 +24,7 @@
 
     (GET "/home" [:as {uri :uri}]
       :query [params StandardUserQueryParams]
-      :return RootListing
+      :return schema/RootListing
       :summary "Get User's Home Dir"
       :description (str
 "This endpoint returns the ID and path of a user's home directory, creating it if it does not
@@ -37,7 +35,7 @@
 
     (GET "/root" [:as {uri :uri}]
       :query [{:keys [user]} StandardUserQueryParams]
-      :return NavigationRootResponse
+      :return schema/NavigationRootResponse
       :summary "Root Listing"
       :description (str
 "This endpoint provides a shortcut for the client to list the top-level directories (e.g. the user's
@@ -49,7 +47,7 @@
     (GET "/path/:zone/*" [:as {{path :*} :params uri :uri}]
       :path-params [zone :- String]
       :query [params StandardUserQueryParams]
-      :return NavigationResponse
+      :return schema/NavigationResponse
       :no-doc true
       (svc/trap uri dir/do-directory zone path params))
 
@@ -58,7 +56,7 @@
       :path-params [zone :- (describe String "The IRODS zone")
                     path :- (describe String "The IRODS path under the zone")]
       :query [params StandardUserQueryParams]
-      :return NavigationResponse
+      :return schema/NavigationResponse
       :summary "Directory List (Non-Recursive)"
       :description (str
                      "Only lists subdirectories of the directory path passed into it."
