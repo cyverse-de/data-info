@@ -13,8 +13,7 @@
 
 (def DataIdPathParam data-schema/DataIdPathParam)
 
-(s/defschema Paths
-  {:paths (describe [(s/one NonBlankString "path") NonBlankString] "A list of iRODS paths")})
+(def Paths data-schema/Paths)
 
 (s/defschema OptionalPaths
   {(s/optional-key :paths) (describe [NonBlankString] "A list of iRODS paths")})
