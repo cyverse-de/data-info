@@ -1,8 +1,10 @@
 (ns data-info.routes.tickets
   (:use [common-swagger-api.schema]
-        [data-info.routes.schemas.common]
+        [data-info.routes.schemas.common :only [get-error-code-block]]
         [data-info.routes.schemas.tickets])
-  (:require [data-info.services.tickets :as tickets]
+  (:require [common-swagger-api.schema.data :as data-schema]
+            [common-swagger-api.schema.data.tickets :as schema]
+            [data-info.services.tickets :as tickets]
             [data-info.util.service :as svc]))
 
 
@@ -13,8 +15,8 @@
 
     (POST "/" [:as {uri :uri}]
       :query [params AddTicketQueryParams]
-      :body [body Paths]
-      :return AddTicketResponse
+      :body [body data-schema/Paths]
+      :return schema/AddTicketResponse
       :summary "Create tickets"
       :description (str
 "This endpoint allows creating tickets for a set of provided paths"
@@ -24,8 +26,8 @@
   (POST "/ticket-lister" [:as {uri :uri}]
     :tags ["tickets"]
     :query [params StandardUserQueryParams]
-    :body [body Paths]
-    :return (doc-only ListTicketsResponse ListTicketsDocumentation)
+    :body [body data-schema/Paths]
+    :return (doc-only schema/ListTicketsResponse schema/ListTicketsDocumentation)
     :summary "List tickets"
     :description (str
 "This endpoint lists tickets for a set of provided paths."
@@ -35,8 +37,8 @@
   (POST "/ticket-deleter" [:as {uri :uri}]
     :tags ["tickets"]
     :query [params DeleteTicketQueryParams]
-    :body [body Tickets]
-    :return DeleteTicketsResponse
+    :body [body schema/Tickets]
+    :return schema/DeleteTicketsResponse
     :summary "Delete tickets"
     :description (str
 "This endpoint deletes the provided set of tickets."
