@@ -1,11 +1,10 @@
 (ns data-info.routes.tickets
   (:use [common-swagger-api.schema]
-        [data-info.routes.schemas.common :only [get-error-code-block]]
-        [data-info.routes.schemas.tickets])
+        [data-info.routes.schemas.tickets]
+        [ring.util.http-response :only [ok]])
   (:require [common-swagger-api.schema.data :as data-schema]
             [common-swagger-api.schema.data.tickets :as schema]
-            [data-info.services.tickets :as tickets]
-            [data-info.util.service :as svc]))
+            [data-info.services.tickets :as tickets]))
 
 
 (defroutes ticket-routes
@@ -13,34 +12,28 @@
   (context "/tickets" []
     :tags ["tickets"]
 
-    (POST "/" [:as {uri :uri}]
+    (POST "/" []
       :query [params AddTicketQueryParams]
       :body [body data-schema/Paths]
-      :return schema/AddTicketResponse
-      :summary "Create tickets"
-      :description (str
-"This endpoint allows creating tickets for a set of provided paths"
-(get-error-code-block "ERR_NOT_A_USER, ERR_DOES_NOT_EXIST, ERR_NOT_WRITEABLE, ERR_TOO_MANY_RESULTS"))
-      (svc/trap uri tickets/do-add-tickets params body)))
+      :responses schema/AddTicketResponses
+      :summary schema/AddTicketSummary
+      :description schema/AddTicketDocs
+      (ok (tickets/do-add-tickets params body))))
 
-  (POST "/ticket-lister" [:as {uri :uri}]
+  (POST "/ticket-lister" []
     :tags ["tickets"]
     :query [params StandardUserQueryParams]
     :body [body data-schema/Paths]
-    :return (doc-only schema/ListTicketsResponse schema/ListTicketsDocumentation)
-    :summary "List tickets"
-    :description (str
-"This endpoint lists tickets for a set of provided paths."
-(get-error-code-block "ERR_NOT_A_USER, ERR_DOES_NOT_EXIST, ERR_NOT_READABLE, ERR_TOO_MANY_RESULTS"))
-    (svc/trap uri tickets/do-list-tickets params body))
+    :responses schema/ListTicketResponses
+    :summary schema/ListTicketSummary
+    :description schema/ListTicketDocs
+    (ok (tickets/do-list-tickets params body)))
 
-  (POST "/ticket-deleter" [:as {uri :uri}]
+  (POST "/ticket-deleter" []
     :tags ["tickets"]
     :query [params DeleteTicketQueryParams]
     :body [body schema/Tickets]
-    :return schema/DeleteTicketsResponse
-    :summary "Delete tickets"
-    :description (str
-"This endpoint deletes the provided set of tickets."
-(get-error-code-block "ERR_NOT_A_USER, ERR_TICKET_DOES_NOT_EXIST, ERR_NOT_WRITEABLE"))
-    (svc/trap uri tickets/do-remove-tickets params body)))
+    :responses schema/DeleteTicketResponses
+    :summary schema/DeleteTicketSummary
+    :description schema/DeleteTicketDocs
+    (ok (tickets/do-remove-tickets params body))))
