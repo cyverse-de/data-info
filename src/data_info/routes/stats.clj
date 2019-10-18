@@ -2,9 +2,10 @@
   (:use [common-swagger-api.schema]
         [data-info.routes.schemas.common]
         [data-info.routes.schemas.stats])
-  (:require [data-info.services.stat :as stat]
+  (:require [common-swagger-api.schema.data :as data-schema]
+            [common-swagger-api.schema.stats :as schema]
+            [data-info.services.stat :as stat]
             [data-info.util.service :as svc]))
-
 
 (defroutes stat-gatherer
 
@@ -15,8 +16,8 @@
 
     (POST "/" [:as {uri :uri}]
       :query [params StatQueryParams]
-      :body [body (describe OptionalPathsOrDataIds "The path or data ids of the data objects to gather status information on.")]
-      :return (doc-only StatusInfo StatResponse)
+      :body [body data-schema/OptionalPathsOrDataIds]
+      :return (doc-only schema/StatusInfo schema/StatResponse)
       :summary "File and Folder Status Information"
       :description (str
 "This endpoint allows the caller to get information about many files and folders at once, potentially also "
@@ -30,8 +31,8 @@
 
     (POST "/" [:as {uri :uri}]
       :query [params FilteredStatQueryParams]
-      :body [body (describe OptionalPathsOrDataIds "The path or data ids of the data objects to gather status information on.")]
-      :return (doc-only FilteredStatusInfo StatResponse)
+      :body [body data-schema/OptionalPathsOrDataIds]
+      :return (doc-only schema/FilteredStatusInfo schema/StatResponse)
       :summary "File and Folder Status Information (allowing filtering)"
       :description (str
 "This endpoint allows the caller to get information about many files and folders at once, potentially also validating "
