@@ -1,5 +1,6 @@
 (ns data-info.routes.trash
   (:use [common-swagger-api.schema]
+        [common-swagger-api.schema.data :only [OptionalPaths]]
         [data-info.routes.schemas.common]
         [data-info.routes.schemas.trash])
   (:require [data-info.services.trash :as trash]
