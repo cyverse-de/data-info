@@ -19,7 +19,7 @@
 (defn- move-paths
   "As 'user', moves directories listed in 'sources' into the directory listed in 'dest'."
   [user sources dest]
-  (irods/with-jargon-exceptions [cm]
+  (irods/with-jargon-exceptions :client-user user [cm]
     (let [all-paths  (apply merge (mapv #(hash-map (source->dest %1 dest) %1) sources))
           dest-paths (keys all-paths)
           sources    (mapv ft/rm-last-slash sources)
@@ -39,7 +39,7 @@
 
    If the data item is remaining in the same directory, do not validate if it's writeable."
   [user source dest]
-  (irods/with-jargon-exceptions [cm]
+  (irods/with-jargon-exceptions :client-user user [cm]
     (let [source    (ft/rm-last-slash source)
           dest      (ft/rm-last-slash dest)
           src-base  (ft/basename source)
