@@ -1,0 +1,99 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: data-info
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      de-app: data-info
+  template:
+    metadata:
+      labels:
+        de-app: data-info
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: de-app
+                operator: In
+                values:
+                - data-info
+            topologyKey: kubernetes.io/hostname
+      restartPolicy: Always
+      volumes:
+        - name: localtime
+          hostPath:
+            path: /etc/localtime
+        - name: timezone
+          configMap:
+            name: timezone
+            items:
+              - key: timezone
+                path: timezone
+        - name: service-configs
+          secret:
+            secretName: service-configs
+            items:
+              - key: data-info.properties
+                path: data-info.properties
+      containers:
+      - name: data-info
+        image: discoenv/data-info
+        resources:
+          requests:
+            cpu: "160m"
+            memory: "1Gi"
+          limits:
+            cpu: "4000m"
+            memory: "3Gi"
+        args:
+          - --config
+          - /etc/iplant/de/data-info.properties
+        volumeMounts:
+          - name: localtime
+            mountPath: /etc/localtime
+            readOnly: true
+          - name: timezone
+            mountPath: /etc/timezone
+            subPath: timezone
+          - name: service-configs
+            mountPath: /etc/iplant/de
+            readOnly: true
+        env:
+          - name: JAVA_TOOL_OPTIONS
+            valueFrom:
+              configMapKeyRef:
+                name: java-tool-options
+                key: high
+        ports:
+          - name: listen-port
+            containerPort: 60000
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 60000
+          initialDelaySeconds: 60
+          periodSeconds: 20
+          timeoutSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 60000
+          initialDelaySeconds: 60
+          periodSeconds: 20
+          timeoutSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: data-info
+spec:
+  selector:
+    de-app: data-info
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: listen-port
