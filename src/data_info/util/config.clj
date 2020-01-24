@@ -6,7 +6,8 @@
             [clojure-commons.error-codes :as ce]
             [clojure.tools.logging :as log]
             [common-cfg.cfg :as cfg]
-            [metadata-client.core :as metadata-client]))
+            [metadata-client.core :as metadata-client]
+            [async-tasks-client.core :as async-tasks-client]))
 
 (def docs-uri "/docs")
 
@@ -91,6 +92,11 @@
 
 (def anon-files-mappings
   (memoize (fn [] (cheshire/decode (anon-files-mappings-raw) false))))
+
+(cc/defprop-optstr async-tasks-base-url
+  "The base URL to use when connecting to the async-tasks services."
+  [props config-valid configs]
+  "data-info.async-tasks.base-url" "http://async-tasks:60000")
 
 (cc/defprop-optstr metadata-base-url
   "The base URL to use when connecting to the metadata services."
@@ -321,6 +327,9 @@
 
 (def metadata-client
   (memoize #(metadata-client/new-metadata-client (metadata-base-url))))
+
+(def async-tasks-client
+  (memoize #(async-tasks-client/new-async-tasks-client (async-tasks-base-url))))
 
 (defn load-config-from-file
   "Loads the configuration settings from a file."
