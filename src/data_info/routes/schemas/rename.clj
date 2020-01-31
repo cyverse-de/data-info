@@ -31,7 +31,10 @@
    (describe NonBlankString "An iRODS path to the initial location of the data item being renamed.")
 
    :dest
-   (describe NonBlankString "An iRODS path to the destination of the data item being renamed.")})
+   (describe NonBlankString "An iRODS path to the destination of the data item being renamed.")
+
+   (s/optional-key :async-task-id)
+   (describe NonBlankString "An asynchronous task ID for the rename process being handled in the background.")})
 
 (s/defschema Filename
   {:filename (describe NonBlankString "The name of the data item.")})

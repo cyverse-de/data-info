@@ -98,6 +98,44 @@
                      :user user}))
           {:source source :dest dest :user user})))))
 
+(defn- rename-path-thread
+  [async-task-id]
+  (let [{:keys [username data] :as async-task} (async-tasks/get-by-id async-task-id)
+        update-fn (fn [path action]
+                    (log/info "Updating async task:" async-task-id ":" path action)
+                    (async-tasks/add-status async-task-id {:status (format "running-%s-%s" path (name action))}))]
+    (try+
+      (async-tasks/add-status async-task-id {:status "started"})
+      (irods/with-jargon-exceptions :client-user username [cm]
+        (move cm (:source data) (:destination data) :user username :admin-users (cfg/irods-admins) :update-fn update-fn))
+      (async-tasks/add-status async-task-id {:status "completed"})
+      (catch Object _
+        (log/error (:throwable &throw-context) "unable to rename path for async task" async-task-id)
+        (async-tasks/add-status async-task-id {:status "failed"})))))
+
+(defn- rename-path-async
+  [user source dest]
+  (let [source    (ft/rm-last-slash source)
+        dest      (ft/rm-last-slash dest)
+        src-base  (ft/basename source)
+        dest-base (ft/basename dest)]
+    (if (= source dest)
+      {:source source :dest dest :user user}
+      (do
+        (irods/with-jargon-exceptions :client-user user [cm]
+          (validators/user-exists cm user)
+          (validators/all-paths-exist cm [source (ft/dirname dest)])
+          (validators/path-is-dir cm (ft/dirname dest))
+          (validators/user-owns-path cm user source)
+          (if-not (= (ft/dirname source) (ft/dirname dest))
+            (validators/path-writeable cm user (ft/dirname dest)))
+          (validators/path-not-exists cm dest))
+        (let [async-task-id (async-tasks/create-task {:type "data-rename" :username user :data {:source source :destination dest} :statuses [{:status "registered"}]})
+              ^Runnable task-thread #(rename-path-thread async-task-id)]
+          (log/warn async-task-id)
+          (.start (Thread. task-thread (str "data-rename-" async-task-id)))
+          {:user user :source source :dest dest :async-task-id async-task-id})))))
+
 (defn- rename-uuid
   "Rename by UUID: given a user, a source file UUID, and a new name, rename within the same folder."
   [user source-uuid dest-base]
@@ -105,7 +143,7 @@
         src-dir (ft/dirname source)
         dest (str (ft/add-trailing-slash src-dir) dest-base)]
     (validators/validate-num-paths-under-folder user source)
-    (rename-path user source dest)))
+    (rename-path-async user source dest)))
 
 (defn do-rename-uuid
   [{user :user} {dest-base :filename} source-uuid]
@@ -118,7 +156,7 @@
         src-base (ft/basename source)
         dest (str (ft/add-trailing-slash dest-dir) src-base)]
     (validators/validate-num-paths-under-folder user source)
-    (rename-path user source dest)))
+    (rename-path-async user source dest)))
 
 (defn do-move-uuid
   [{user :user} {dest-dir :dirname} source-uuid]
