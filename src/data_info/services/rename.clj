@@ -17,24 +17,6 @@
   [source-path dest-path]
   (ft/path-join dest-path (ft/basename source-path)))
 
-(defn- move-paths
-  "As 'user', moves directories listed in 'sources' into the directory listed in 'dest'."
-  [user sources dest]
-  (irods/with-jargon-exceptions :client-user user [cm]
-    (let [all-paths  (apply merge (mapv #(hash-map (source->dest %1 dest) %1) sources))
-          dest-paths (keys all-paths)
-          sources    (mapv ft/rm-last-slash sources)
-          dest       (ft/rm-last-slash dest)]
-      (validators/user-exists cm user)
-      (validators/all-paths-exist cm sources)
-      (validators/all-paths-exist cm [dest])
-      (validators/path-is-dir cm dest)
-      (validators/user-owns-paths cm user sources)
-      (validators/path-writeable cm user dest)
-      (validators/no-paths-exist cm dest-paths)
-      (move-all cm sources dest :user user :admin-users (cfg/irods-admins))
-      {:user user :sources sources :dest dest})))
-
 (defn- move-paths-thread
   [async-task-id]
   (let [{:keys [username data] :as async-task} (async-tasks/get-by-id async-task-id)
@@ -50,8 +32,8 @@
         (log/error (:throwable &throw-context) "unable to move paths for async task" async-task-id)
         (async-tasks/add-status async-task-id {:status "failed"})))))
 
-(defn- move-paths-async
-  "As 'user', moves directories in 'sources' into the directory in 'dest', establishing an asynchronous task and processing in another thread."
+(defn- move-paths
+  "As 'user', moves objects in 'sources' into the directory in 'dest', establishing an asynchronous task and processing in another thread."
   [user sources dest]
   (let [all-paths  (apply merge (mapv #(hash-map (source->dest %1 dest) %1) sources))
         dest-paths (keys all-paths)
@@ -71,33 +53,6 @@
       (.start (Thread. task-thread (str "data-move-" async-task-id)))
       {:user user :sources sources :dest dest :async-task-id async-task-id})))
 
-(defn- rename-path
-  "Data item renaming. As 'user', move 'source' to 'dest'.
-
-   If the data item is remaining in the same directory, do not validate if it's writeable."
-  [user source dest]
-  (let [source    (ft/rm-last-slash source)
-        dest      (ft/rm-last-slash dest)
-        src-base  (ft/basename source)
-        dest-base (ft/basename dest)]
-    (if (= source dest)
-      {:source source :dest dest :user user}
-      (irods/with-jargon-exceptions :client-user user [cm]
-        (validators/user-exists cm user)
-        (validators/all-paths-exist cm [source (ft/dirname dest)])
-        (validators/path-is-dir cm (ft/dirname dest))
-        (validators/user-owns-path cm user source)
-        (if-not (= (ft/dirname source) (ft/dirname dest))
-          (validators/path-writeable cm user (ft/dirname dest)))
-        (validators/path-not-exists cm dest)
-
-        (let [result (move cm source dest :user user :admin-users (cfg/irods-admins))]
-          (when-not (nil? result)
-            (throw+ {:error_code ERR_INCOMPLETE_RENAME
-                     :paths result
-                     :user user}))
-          {:source source :dest dest :user user})))))
-
 (defn- rename-path-thread
   [async-task-id]
   (let [{:keys [username data] :as async-task} (async-tasks/get-by-id async-task-id)
@@ -113,7 +68,8 @@
         (log/error (:throwable &throw-context) "unable to rename path for async task" async-task-id)
         (async-tasks/add-status async-task-id {:status "failed"})))))
 
-(defn- rename-path-async
+(defn- rename-path
+  "As 'user', move 'source' to 'dest', establishing an asynchronous task and processing in another thread."
   [user source dest]
   (let [source    (ft/rm-last-slash source)
         dest      (ft/rm-last-slash dest)
@@ -143,7 +99,7 @@
         src-dir (ft/dirname source)
         dest (str (ft/add-trailing-slash src-dir) dest-base)]
     (validators/validate-num-paths-under-folder user source)
-    (rename-path-async user source dest)))
+    (rename-path user source dest)))
 
 (defn do-rename-uuid
   [{user :user} {dest-base :filename} source-uuid]
@@ -156,7 +112,7 @@
         src-base (ft/basename source)
         dest (str (ft/add-trailing-slash dest-dir) src-base)]
     (validators/validate-num-paths-under-folder user source)
-    (rename-path-async user source dest)))
+    (rename-path user source dest)))
 
 (defn do-move-uuid
   [{user :user} {dest-dir :dirname} source-uuid]
@@ -164,7 +120,7 @@
 
 (defn do-move
   [{user :user} {sources :sources dest :dest}]
-  (move-paths-async user sources dest))
+  (move-paths user sources dest))
 
 (defn- move-uuid-contents
   "Rename by UUID: given a user, a source directory UUID, and a new directory, move the directory contents, retaining the filename."
@@ -173,7 +129,7 @@
     (irods/with-jargon-exceptions [cm]
       (validators/path-is-dir cm source))
     (let [sources (directory/get-paths-in-folder user source)]
-      (move-paths-async user sources dest-dir))))
+      (move-paths user sources dest-dir))))
 
 (defn do-move-uuid-contents
   [{user :user} {dest-dir :dirname} source-uuid]
