@@ -54,9 +54,9 @@
   "As 'user', moves directories in 'sources' into the directory in 'dest', establishing an asynchronous task and processing in another thread."
   [user sources dest]
   (let [all-paths  (apply merge (mapv #(hash-map (source->dest %1 dest) %1) sources))
-          dest-paths (keys all-paths)
-          sources    (mapv ft/rm-last-slash sources)
-          dest       (ft/rm-last-slash dest)]
+        dest-paths (keys all-paths)
+        sources    (mapv ft/rm-last-slash sources)
+        dest       (ft/rm-last-slash dest)]
     (irods/with-jargon-exceptions :client-user user [cm]
       (validators/user-exists cm user)
       (validators/all-paths-exist cm sources)
