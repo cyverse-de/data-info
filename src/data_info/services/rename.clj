@@ -76,28 +76,27 @@
 
    If the data item is remaining in the same directory, do not validate if it's writeable."
   [user source dest]
-  (irods/with-jargon-exceptions :client-user user [cm]
-    (let [source    (ft/rm-last-slash source)
-          dest      (ft/rm-last-slash dest)
-          src-base  (ft/basename source)
-          dest-base (ft/basename dest)]
-      (if (= source dest)
-        {:source source :dest dest :user user}
-        (do
-          (validators/user-exists cm user)
-          (validators/all-paths-exist cm [source (ft/dirname dest)])
-          (validators/path-is-dir cm (ft/dirname dest))
-          (validators/user-owns-path cm user source)
-          (if-not (= (ft/dirname source) (ft/dirname dest))
-            (validators/path-writeable cm user (ft/dirname dest)))
-          (validators/path-not-exists cm dest)
+  (let [source    (ft/rm-last-slash source)
+        dest      (ft/rm-last-slash dest)
+        src-base  (ft/basename source)
+        dest-base (ft/basename dest)]
+    (if (= source dest)
+      {:source source :dest dest :user user}
+      (irods/with-jargon-exceptions :client-user user [cm]
+        (validators/user-exists cm user)
+        (validators/all-paths-exist cm [source (ft/dirname dest)])
+        (validators/path-is-dir cm (ft/dirname dest))
+        (validators/user-owns-path cm user source)
+        (if-not (= (ft/dirname source) (ft/dirname dest))
+          (validators/path-writeable cm user (ft/dirname dest)))
+        (validators/path-not-exists cm dest)
 
-          (let [result (move cm source dest :user user :admin-users (cfg/irods-admins))]
-            (when-not (nil? result)
-              (throw+ {:error_code ERR_INCOMPLETE_RENAME
-                       :paths result
-                       :user user}))
-            {:source source :dest dest :user user}))))))
+        (let [result (move cm source dest :user user :admin-users (cfg/irods-admins))]
+          (when-not (nil? result)
+            (throw+ {:error_code ERR_INCOMPLETE_RENAME
+                     :paths result
+                     :user user}))
+          {:source source :dest dest :user user})))))
 
 (defn- rename-uuid
   "Rename by UUID: given a user, a source file UUID, and a new name, rename within the same folder."
