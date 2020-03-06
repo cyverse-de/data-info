@@ -5,10 +5,10 @@
                                           SortFieldDocs
                                           SortFieldOptionalKey
                                           StandardUserQueryParams]]
-        [common-swagger-api.schema.filetypes :only [ValidInfoTypesEnum]]
         [data-info.routes.schemas.common]
         [heuristomancer.core :as info])
-  (:require [schema.core :as s]))
+  (:require [common-swagger-api.schema.data :as data-schema]
+            [schema.core :as s]))
 
 (s/defschema PathToUUIDParams
   (assoc StandardUserQueryParams
@@ -40,34 +40,25 @@
 
 (s/defschema FolderListingParams
   (merge
-    StandardUserQueryParams
-    (assoc PagingParams
-      SortFieldOptionalKey
-      (describe (apply s/enum ValidSortFields) SortFieldDocs))
-    {(s/optional-key :entity-type)
-     (describe (s/enum :any :file :folder) "The type of folder items to include in the response.")
+   StandardUserQueryParams
+   data-schema/FolderListingParams
+   {(s/optional-key :bad-chars)
+    (describe String
+              "A list of characters which will mark a folder item's `badName` field to true if found in
+               that item's name.")
 
-     (s/optional-key :bad-chars)
-     (describe String
-       "A list of characters which will mark a folder item's `badName` field to true if found in
-        that item's name.")
+    (s/optional-key :bad-name)
+    (describe (s/either [String] String)
+              "A list of names which will mark a folder item's `badName` field to true if its name matches
+               any in the list.")
 
-     (s/optional-key :bad-name)
-     (describe (s/either [String] String)
-       "A list of names which will mark a folder item's `badName` field to true if its name matches
-        any in the list.")
+    (s/optional-key :bad-path)
+    (describe (s/either [String] String)
+              "A list of paths which will mark a folder item's `badName` field to true if its path matches
+               any in the list.")
 
-     (s/optional-key :bad-path)
-     (describe (s/either [String] String)
-       "A list of paths which will mark a folder item's `badName` field to true if its path matches
-        any in the list.")
-
-     (s/optional-key :info-type)
-     (describe (s/either [ValidInfoTypesEnum] ValidInfoTypesEnum)
-       "A list of info-types with which to filter a folder's result items.")
-
-     (s/optional-key :attachment)
-     (describe Boolean "Download file contents as attachment.")}))
+    (s/optional-key :attachment)
+    (describe Boolean "Download file contents as attachment.")}))
 
 (s/defschema TabularChunkParams
   (assoc
