@@ -31,13 +31,6 @@
       their files and subfolders) under the source folder will be included in the exported file,
       along with all of their metadata")})
 
-(def ValidSortFields
-  #{:datecreated
-    :datemodified
-    :name
-    :path
-    :size})
-
 (s/defschema FolderListingParams
   (merge
    StandardUserQueryParams

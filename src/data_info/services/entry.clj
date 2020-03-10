@@ -11,7 +11,6 @@
             [clj-jargon.validations :as jv]
             [clojure-commons.error-codes :as error]
             [clojure-commons.file-utils :as file]
-            [data-info.routes.schemas.data :as domain]
             [data-info.util.config :as cfg]
             [data-info.util.irods :as irods]
             [data-info.util.validators :as duv]
@@ -103,16 +102,18 @@
     :else                      info-type-params))
 
 
+(def ^:private database-column-from-sort-field
+  {:datecreated  :create-ts
+   :datemodified :modify-ts
+   :name         :base-name
+   :path         :full-path
+   :size         :data-size})
+
+
 (defn- resolve-sort-field
   [sort-field-param]
-  (if (and sort-field-param (contains? domain/ValidSortFields sort-field-param))
-    (case sort-field-param
-      :datecreated  :create-ts
-      :datemodified :modify-ts
-      :name         :base-name
-      :path         :full-path
-      :size         :data-size
-      sort-field-param)
+  (if sort-field-param
+    (database-column-from-sort-field sort-field-param sort-field-param)
     :base-name))
 
 
