@@ -4,7 +4,7 @@
         [clj-jargon.item-info]
         [clj-jargon.metadata]
         [clj-jargon.permissions]
-        [clj-jargon.tickets]
+        [clj-jargon.tickets :exclude [iget iput]]
         [slingshot.slingshot :only [try+ throw+]])
   (:require [clojure.tools.logging :as log]
             [clojure-commons.file-utils :as ft]
