@@ -3,6 +3,7 @@
   (:use [slingshot.slingshot :only [throw+]])
   (:require [me.raynes.fs :as fs]
             [clj-icat-direct.icat :as icat]
+            [clj-jargon.init :refer [proxy-input-stream-return clean-return]]
             [clj-jargon.by-uuid :as uuid]
             [clj-jargon.item-info :as item]
             [clj-jargon.item-ops :as ops]
@@ -37,21 +38,19 @@
 ;; file specific
 
 (defn- get-file
-  [user path]
-  (irods/with-jargon-exceptions :client-user user [irods]
+  [irods user path]
     (if (zero? (item/file-size irods path))
-      ""
-      (ops/input-stream irods path))))
+      (clean-return irods "")
+      (proxy-input-stream-return irods (ops/input-stream irods path))))
 
 (defn- file-entry
-  [path {:keys [user attachment]}]
+  [cm path {:keys [user attachment]}]
   (let [filename    (str \" (file/basename path) \")
         disposition (if attachment
                       (str "attachment; filename=" filename)
                       (str "filename=" filename))
-        media-type  (irods/with-jargon-exceptions :client-user user [cm]
-                      (irods/detect-media-type cm path))]
-    (assoc (http-response/ok (get-file user path))
+        media-type  (irods/detect-media-type cm path)]
+    (assoc (http-response/ok (get-file cm user path))
            :headers {"Content-Type"        media-type
                      "Content-Disposition" disposition})))
 
@@ -189,14 +188,8 @@
 (defn- paged-dir-listing
   "Provides paged directory listing as an alternative to (list-dir). Always contains files."
   [irods user path entity-type bad-indicator sfield sord offset limit info-types]
-  (let [id           (irods/lookup-uuid irods path)
-        bad?         (is-bad? bad-indicator path)
-        perm         (perm/permission-for irods user path)
-        stat         (item/stat irods path)
-        date-created (:date-created stat)
-        mod-date     (:date-modified stat)
+  (let [;; first, icat stuff in futures
         zone         (cfg/irods-zone)
-        name         (fs/base-name path)
         total        (future (icat/number-of-items-in-folder user zone path entity-type info-types))
         total-bad    (future (total-bad user zone path entity-type info-types bad-indicator))
         page         (future (icat/paged-folder-listing
@@ -208,24 +201,33 @@
                        :sort-column    sfield
                        :sort-direction sord
                        :limit          limit
-                       :offset         offset))]
-    (merge (fmt-entry id date-created mod-date bad? nil path name perm 0)
-           (page->map (partial is-bad? bad-indicator) @page)
-           {:total    @total
-            :totalBad @total-bad})))
+                       :offset         offset))
+        ;; now the irods stuff to run parallel to the icat stuff
+        id           (irods/lookup-uuid irods path)
+        bad?         (is-bad? bad-indicator path)
+        perm         (perm/permission-for irods user path)
+        stat         (item/stat irods path)
+        date-created (:date-created stat)
+        mod-date     (:date-modified stat)
+        name         (fs/base-name path)]
+    (clean-return irods ;; ensure that the with-jargon is closed out
+      (merge (fmt-entry id date-created mod-date bad? nil path name perm 0)
+             (page->map (partial is-bad? bad-indicator) @page)
+             {:total    @total
+              :totalBad @total-bad}))))
 
 
 (defn- folder-entry
-  [path {:keys [user
-                entity-type
-                bad-chars
-                bad-name
-                bad-path
-                sort-field
-                sort-dir
-                offset
-                limit
-                info-type]}]
+  [cm path {:keys [user
+                   entity-type
+                   bad-chars
+                   bad-name
+                   bad-path
+                   sort-field
+                   sort-dir
+                   offset
+                   limit
+                   info-type]}]
   (validate-limit limit)
   (let [badies {:chars (set bad-chars)
                 :names (resolve-bad-names bad-name)
@@ -236,26 +238,23 @@
         sort-dir    (resolve-sort-dir sort-dir)
         offset      (if-not (nil? offset) offset 0)]
     (http-response/ok
-      (irods/with-jargon-exceptions :client-user user [cm]
-        (paged-dir-listing
-           cm user path entity-type badies sort-field sort-dir offset limit info-type)))))
+      (paged-dir-listing
+         cm user path entity-type badies sort-field sort-dir offset limit info-type))))
 
 
 (defn- get-path-attrs
-  [zone path-in-zone user]
-  (irods/with-jargon-exceptions [cm]
-    (duv/user-exists cm user)
-    (let [path (file/rm-last-slash (irods/abs-path zone path-in-zone))]
-      (jv/validate-path-lengths path)
-      (duv/path-exists cm path)
-      (duv/path-readable cm user path)
-      {:path           path
-       :is-dir?        (item/is-dir? cm path)})))
+  [cm zone path-in-zone user]
+  (let [path (file/rm-last-slash (irods/abs-path zone path-in-zone))]
+    (jv/validate-path-lengths path)
+    (duv/path-exists cm path)
+    {:path           path
+     :is-dir?        (item/is-dir? cm path)}))
 
 
 (defn dispatch-path-to-resource
   [zone path-in-zone {:keys [user] :as params}]
-  (let [{:keys [path is-dir?]} (get-path-attrs zone path-in-zone user)]
-    (if is-dir?
-      (folder-entry path params)
-      (file-entry path params))))
+  (irods/with-jargon-exceptions :client-user user :auto-close false [cm]
+    (let [{:keys [path is-dir?]} (get-path-attrs cm zone path-in-zone user)]
+      (if is-dir?
+        (folder-entry cm path params)
+        (file-entry cm path params)))))
