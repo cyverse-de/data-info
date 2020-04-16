@@ -27,10 +27,10 @@
       (async-tasks/add-status async-task-id {:status "started"})
       (irods/with-jargon-exceptions :client-user username [cm]
         (move-all cm (:sources data) (:destination data) :user username :admin-users (cfg/irods-admins) :update-fn update-fn))
-      (async-tasks/add-status async-task-id {:status "completed"})
+      (async-tasks/add-completed-status async-task-id {:status "completed"})
       (catch Object _
         (log/error (:throwable &throw-context) "unable to move paths for async task" async-task-id)
-        (async-tasks/add-status async-task-id {:status "failed"})))))
+        (async-tasks/add-completed-status async-task-id {:status "failed"})))))
 
 (defn- move-paths
   "As 'user', moves objects in 'sources' into the directory in 'dest', establishing an asynchronous task and processing in another thread."
@@ -63,10 +63,10 @@
       (async-tasks/add-status async-task-id {:status "started"})
       (irods/with-jargon-exceptions :client-user username [cm]
         (move cm (:source data) (:destination data) :user username :admin-users (cfg/irods-admins) :update-fn update-fn))
-      (async-tasks/add-status async-task-id {:status "completed"})
+      (async-tasks/add-completed-status async-task-id {:status "completed"})
       (catch Object _
         (log/error (:throwable &throw-context) "unable to rename path for async task" async-task-id)
-        (async-tasks/add-status async-task-id {:status "failed"})))))
+        (async-tasks/add-completed-status async-task-id {:status "failed"})))))
 
 (defn- rename-path
   "As 'user', move 'source' to 'dest', establishing an asynchronous task and processing in another thread."

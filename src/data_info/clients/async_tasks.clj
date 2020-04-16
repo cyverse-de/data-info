@@ -19,6 +19,10 @@
   [id status]
   (async-tasks-client/add-status (config/async-tasks-client) id status))
 
+(defn add-completed-status
+  [id status]
+  (async-tasks-client/add-completed-status (config/async-tasks-client) id status))
+
 (defn add-behavior
   [id behavior]
   (async-tasks-client/add-behavior (config/async-tasks-client) id behavior))
