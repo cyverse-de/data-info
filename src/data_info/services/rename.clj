@@ -47,6 +47,16 @@
                     (move cm (:source data) (:destination data) :user username :admin-users (cfg/irods-admins) :update-fn update-fn)))]
     (async-thread async-task-id jargon-fn)))
 
+(defn- new-task
+  [type user data]
+  (async-tasks/create-task
+    {:type type
+     :username user
+     :data data
+     :statuses [{:status "registered"}]
+     :behaviors [{:type "statuschangetimeout"
+                  :data {:statuses [{:start_status "running" :end_status "detected-stalled" :timeout "10m"}]}}]}))
+
 (defn- move-paths
   "As 'user', moves objects in 'sources' into the directory in 'dest', establishing an asynchronous task and processing in another thread."
   [user sources dest]
@@ -62,7 +72,7 @@
       (validators/user-owns-paths cm user sources)
       (validators/path-writeable cm user dest)
       (validators/no-paths-exist cm dest-paths))
-    (let [async-task-id (async-tasks/create-task {:type "data-move" :username user :data {:sources sources :destination dest} :statuses [{:status "registered"}]})
+    (let [async-task-id (new-task "data-move" user {:sources sources :destination dest})
           ^Runnable task-thread #(move-paths-thread async-task-id)]
       (log/warn async-task-id)
       (.start (Thread. task-thread (str "data-move-" async-task-id)))
@@ -86,7 +96,7 @@
           (if-not (= (ft/dirname source) (ft/dirname dest))
             (validators/path-writeable cm user (ft/dirname dest)))
           (validators/path-not-exists cm dest))
-        (let [async-task-id (async-tasks/create-task {:type "data-rename" :username user :data {:source source :destination dest} :statuses [{:status "registered"}]})
+        (let [async-task-id (new-task "data-rename" user {:source source :destination dest})
               ^Runnable task-thread #(rename-path-thread async-task-id)]
           (log/warn async-task-id)
           (.start (Thread. task-thread (str "data-rename-" async-task-id)))
