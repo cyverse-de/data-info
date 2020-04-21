@@ -22,7 +22,7 @@
   (let [{:keys [username] :as async-task} (async-tasks/get-by-id async-task-id)
         update-fn (fn [path action]
                     (log/info "Updating async task:" async-task-id ":" path action)
-                    (async-tasks/add-status async-task-id {:status (format "running-%s-%s" path (name action))}))]
+                    (async-tasks/add-status async-task-id {:status "running" :detail (format "%s: %s" path (name action))}))]
     (try+
       (async-tasks/add-status async-task-id {:status "started"})
       (irods/with-jargon-exceptions :client-user username [cm]
