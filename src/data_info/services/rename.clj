@@ -108,7 +108,6 @@
   (let [source (ft/rm-last-slash (uuids/path-for-uuid user source-uuid))
         src-dir (ft/dirname source)
         dest (str (ft/add-trailing-slash src-dir) dest-base)]
-    (validators/validate-num-paths-under-folder user source)
     (rename-path user source dest)))
 
 (defn do-rename-uuid
@@ -121,7 +120,6 @@
   (let [source (ft/rm-last-slash (uuids/path-for-uuid user source-uuid))
         src-base (ft/basename source)
         dest (str (ft/add-trailing-slash dest-dir) src-base)]
-    (validators/validate-num-paths-under-folder user source)
     (rename-path user source dest)))
 
 (defn do-move-uuid
@@ -165,7 +163,6 @@
 
 (with-pre-hook! #'do-move
   (fn [params body]
-    (dul/log-call "do-move" params body)
-    (validators/validate-num-paths-under-paths (:user params) (:sources body))))
+    (dul/log-call "do-move" params body)))
 
 (with-post-hook! #'do-move (dul/log-func "do-move"))
