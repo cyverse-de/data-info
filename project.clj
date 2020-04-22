@@ -44,6 +44,7 @@
                  [org.cyverse/heuristomancer "2.8.6"]
                  [org.cyverse/kameleon "3.0.2"]
                  [org.cyverse/metadata-client "3.0.0"]
+                 [org.cyverse/async-tasks-client "0.0.3"]
                  [org.cyverse/metadata-files "1.0.2"]
                  [org.cyverse/oai-ore "1.0.3"]
                  [org.cyverse/service-logging "2.8.0"]
