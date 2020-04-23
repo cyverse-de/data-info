@@ -34,11 +34,10 @@
    (str (ft/basename path-to-inc) "." (rand-str 7))))
 
 (defn- move-to-trash
-  [cm p user]
-  (let [trash-path (randomized-trash-path user p)]
-    (move cm p trash-path :user user :admin-users (cfg/irods-admins))
-    (set-metadata cm trash-path trash-attr p paths/IPCSYSTEM)
-    trash-path))
+  [cm p trash-path user]
+  (move cm p trash-path :user user :admin-users (cfg/irods-admins))
+  (set-metadata cm trash-path trash-attr p paths/IPCSYSTEM)
+  trash-path)
 
 (defn- home-matcher
   [user path]
@@ -56,31 +55,36 @@
    (irods/with-jargon-exceptions [cm]
      (delete-paths cm user paths)))
   ([cm user paths]
-     (let [paths (mapv ft/rm-last-slash paths)
-           trash-paths (atom (hash-map))]
+     (let [paths (mapv ft/rm-last-slash paths)]
        (validators/user-exists cm user)
        (validators/all-paths-exist cm paths)
        (validators/user-owns-paths cm user paths)
        (validate-not-homedir user paths)
 
-       (doseq [^String p paths]
-         (log/debug "path" p)
-         (log/debug "readable?" user (owns? cm user p))
+       (let [trash-paths (apply merge (mapv
+                           (fn [path]
+                             (if-not (.startsWith path (paths/user-trash-path user))
+                               {path (randomized-trash-path user path)}
+                               {}))
+                           paths))]
 
-         ;;; Delete all of the tickets associated with the file.
-         (let [path-tickets (mapv :ticket-id (ticket-ids-for-path cm (:username cm) p))]
-           (doseq [path-ticket path-tickets]
-             (delete-ticket cm (:username cm) path-ticket)))
+         (doseq [^String p paths]
+           (log/debug "path" p)
+           (log/debug "readable?" user (owns? cm user p))
 
-         ;;; If the file isn't already in the user's trash, move it there
-         ;;; otherwise, do a hard delete.
-         (if-not (.startsWith p (paths/user-trash-path user))
-           (do (let [trash-path (move-to-trash cm p user)]
-               (swap! trash-paths assoc p trash-path)))
-           (delete cm p true))) ;;; Force a delete to bypass proxy user's trash.
+           ;;; Delete all of the tickets associated with the file.
+           (let [path-tickets (mapv :ticket-id (ticket-ids-for-path cm (:username cm) p))]
+             (doseq [path-ticket path-tickets]
+               (delete-ticket cm (:username cm) path-ticket)))
 
-        {:paths paths
-         :trash-paths @trash-paths})))
+           ;;; If the file isn't already in the user's trash, move it there
+           ;;; otherwise, do a hard delete.
+           (if (contains? trash-paths p)
+             (move-to-trash cm p (trash-paths p) user)
+             (delete cm p true))) ;;; Force a delete to bypass proxy user's trash.
+
+         {:paths paths
+          :trash-paths trash-paths}))))
 
 (defn- delete-uuid
   "Delete by UUID: given a user and a data item UUID, delete that data item, returning a list of filenames deleted."
