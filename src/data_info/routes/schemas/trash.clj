@@ -35,7 +35,10 @@
 
 (s/defschema TrashPaths
   (assoc Paths
-         :trash-paths (describe TrashPathsMap "A map of paths from the request to their location in the trash, if any.")))
+         :trash-paths (describe TrashPathsMap "A map of paths from the request to their location in the trash, if any.")
+
+         (s/optional-key :async-task-id)
+         (describe NonBlankString "An asynchronous task ID for the delete process being handled in the background")))
 
 ;; Used only for documentation in Swagger UI
 (s/defschema TrashPathsDocMap

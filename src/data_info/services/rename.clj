@@ -31,7 +31,7 @@
                     (move cm (:source data) (:destination data) :user username :admin-users (cfg/irods-admins) :update-fn update-fn)))]
     (async-tasks/paths-async-thread async-task-id jargon-fn)))
 
-(defn- new-task
+(defn new-task
   [type user data]
   (async-tasks/create-task
     {:type type

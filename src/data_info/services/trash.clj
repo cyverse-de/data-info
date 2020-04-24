@@ -9,12 +9,14 @@
   (:require [clojure.tools.logging :as log]
             [clojure-commons.file-utils :as ft]
             [dire.core :refer [with-pre-hook! with-post-hook!]]
+            [data-info.clients.async-tasks :as async-tasks]
             [data-info.util.config :as cfg]
             [data-info.util.irods :as irods]
             [data-info.util.paths :as paths]
             [data-info.util.logging :as dul]
             [data-info.services.directory :as directory]
             [data-info.services.uuids :as uuids]
+            [data-info.services.rename :as rename]
             [data-info.util.validators :as validators])
   (:import [org.irods.jargon.core.pub IRODSFileSystemAO]
            [org.irods.jargon.core.pub.io IRODSFile]))
@@ -34,9 +36,10 @@
    (str (ft/basename path-to-inc) "." (rand-str 7))))
 
 (defn- move-to-trash
-  [cm p trash-path user]
-  (move cm p trash-path :user user :admin-users (cfg/irods-admins))
+  [cm p trash-path user & {:keys [update-fn] :or {update-fn (fn [_ _])}}]
+  (move cm p trash-path :user user :admin-users (cfg/irods-admins) :update-fn update-fn)
   (set-metadata cm trash-path trash-attr p paths/IPCSYSTEM)
+  (update-fn p :set-trash-path-metadata)
   trash-path)
 
 (defn- home-matcher
@@ -49,6 +52,31 @@
   (when (some true? (mapv #(home-matcher user %) paths))
     (throw+ {:error_code ERR_NOT_AUTHORIZED
              :paths (filterv #(home-matcher user %) paths)})))
+
+(defn- delete-paths-thread
+  [async-task-id]
+  (let [jargon-fn (fn [cm async-task update-fn]
+                    (update-fn "deleted paths" :begin)
+                    (let [{:keys [username data]} async-task]
+                      (log/info data)
+                      (log/info (:trash-paths data))
+                      (doseq [^String p (:paths data)]
+                        (update-fn p :begin-delete)
+                        ;;; Delete all of the tickets associated with the file.
+                        (let [path-tickets (mapv :ticket-id (ticket-ids-for-path cm (:username cm) p))]
+                          (doseq [path-ticket path-tickets]
+                            (delete-ticket cm (:username cm) path-ticket)))
+
+                        (update-fn p :deleted-tickets)
+
+                        ;;; If the file isn't already in the user's trash, move it there
+                        ;;; otherwise, do a hard delete.
+                        (if (contains? (:trash-paths data) (keyword p))
+                          (move-to-trash cm p ((:trash-paths data) (keyword p)) username :update-fn update-fn)
+                          (delete cm p true)) ;;; Force a delete to bypass proxy user's trash.
+                        (update-fn p :end-delete)))
+                    (update-fn "deleted paths" :end))]
+    (async-tasks/paths-async-thread async-task-id jargon-fn)))
 
 (defn- delete-paths
   ([user paths]
@@ -66,25 +94,13 @@
                              (if-not (.startsWith path (paths/user-trash-path user))
                                {path (randomized-trash-path user path)}
                                {}))
-                           paths))]
-
-         (doseq [^String p paths]
-           (log/debug "path" p)
-           (log/debug "readable?" user (owns? cm user p))
-
-           ;;; Delete all of the tickets associated with the file.
-           (let [path-tickets (mapv :ticket-id (ticket-ids-for-path cm (:username cm) p))]
-             (doseq [path-ticket path-tickets]
-               (delete-ticket cm (:username cm) path-ticket)))
-
-           ;;; If the file isn't already in the user's trash, move it there
-           ;;; otherwise, do a hard delete.
-           (if (contains? trash-paths p)
-             (move-to-trash cm p (trash-paths p) user)
-             (delete cm p true))) ;;; Force a delete to bypass proxy user's trash.
-
+                           paths))
+             async-task-id (async-tasks/run-async-thread
+                             (rename/new-task "data-delete" user {:paths paths :trash-paths trash-paths})
+                             delete-paths-thread "data-delete")]
          {:paths paths
-          :trash-paths trash-paths}))))
+          :trash-paths trash-paths
+          :async-task-id async-task-id}))))
 
 (defn- delete-uuid
   "Delete by UUID: given a user and a data item UUID, delete that data item, returning a list of filenames deleted."
