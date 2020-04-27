@@ -17,35 +17,19 @@
   [source-path dest-path]
   (ft/path-join dest-path (ft/basename source-path)))
 
-(defn- async-thread
-  [async-task-id jargon-fn]
-  (let [{:keys [username] :as async-task} (async-tasks/get-by-id async-task-id)
-        update-fn (fn [path action]
-                    (log/info "Updating async task:" async-task-id ":" path action)
-                    (async-tasks/add-status async-task-id {:status "running" :detail (format "%s: %s" path (name action))}))]
-    (try+
-      (async-tasks/add-status async-task-id {:status "started"})
-      (irods/with-jargon-exceptions :client-user username [cm]
-        (jargon-fn cm async-task update-fn))
-      (async-tasks/add-completed-status async-task-id {:status "completed"})
-      (catch Object _
-        (log/error (:throwable &throw-context) "unable to move paths for async task" async-task-id)
-        (async-tasks/add-completed-status async-task-id {:status "failed"})))))
-
-
 (defn- move-paths-thread
   [async-task-id]
   (let [jargon-fn (fn [cm async-task update-fn]
                     (let [{:keys [username data]} async-task]
                     (move-all cm (:sources data) (:destination data) :user username :admin-users (cfg/irods-admins) :update-fn update-fn)))]
-    (async-thread async-task-id jargon-fn)))
+    (async-tasks/paths-async-thread async-task-id jargon-fn)))
 
 (defn- rename-path-thread
   [async-task-id]
   (let [jargon-fn (fn [cm async-task update-fn]
                     (let [{:keys [username data]} async-task]
                     (move cm (:source data) (:destination data) :user username :admin-users (cfg/irods-admins) :update-fn update-fn)))]
-    (async-thread async-task-id jargon-fn)))
+    (async-tasks/paths-async-thread async-task-id jargon-fn)))
 
 (defn- new-task
   [type user data]
