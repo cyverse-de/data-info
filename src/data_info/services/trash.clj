@@ -199,7 +199,6 @@
                                     (fn [path]
                                       {path (restoration-paths cm user path)})
                                     paths))]
-          (log/warn retval)
           (doseq [path paths]
             (let [fully-restored      (:restored-path (retval path))
                   restored-to-homedir (:partial-restore (retval path))]
