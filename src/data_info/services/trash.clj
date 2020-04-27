@@ -76,7 +76,7 @@
                           (delete cm p true)) ;;; Force a delete to bypass proxy user's trash.
                         (update-fn p :end-delete)))
                     (update-fn "deleted paths" :end))]
-    (async-tasks/paths-async-thread async-task-id jargon-fn)))
+    (async-tasks/paths-async-thread async-task-id jargon-fn false))) ;; we don't use a client user so we can delete tickets
 
 (defn- delete-paths
   ([user paths]
