@@ -202,6 +202,37 @@
           (set-owner cm parent user)
           (recur (ft/dirname parent)))))))
 
+(defn- restore-paths-thread
+  [async-task-id]
+  (let [jargon-fn (fn [cm async-task update-fn]
+                    (update-fn "deleted paths" :begin)
+                    (let [{:keys [username data]} async-task]
+                      (doseq [^String p (:paths data)]
+                        (let [fully-restored      (:restored-path ((:restoration-paths data) p))
+                              restored-to-homedir (:partial-restore ((:restoration-paths data) p))]
+                          (update-fn p :begin-restore)
+                          (log/warn "Restoring " p " to " fully-restored)
+
+                          (validators/path-not-exists cm fully-restored)
+                          (log/warn fully-restored " does not exist. That's good.")
+
+                          (restore-parent-dirs cm username fully-restored)
+                          (log/warn "Done restoring parent dirs for " fully-restored)
+
+                          (validators/path-writeable cm username (ft/dirname fully-restored))
+                          (log/warn fully-restored "is writeable. That's good.")
+
+                          (log/warn "Moving " p " to " fully-restored)
+                          (validators/path-not-exists cm fully-restored)
+
+                          (log/warn fully-restored " does not exist. That's good.")
+                          (move cm p fully-restored :user username :admin-users (cfg/irods-admins) :update-fn update-fn)
+                          (log/warn "Done moving " p " to " fully-restored)
+
+                          (update-fn p :end-restore))))
+                    (update-fn "deleted paths" :end))]
+    (async-tasks/paths-async-thread async-task-id jargon-fn)))
+
 (defn- restore-paths
   [{:keys [user paths user-trash]}]
   (let [paths (mapv ft/rm-last-slash paths)]
@@ -214,29 +245,11 @@
         (let [retval (apply merge (mapv
                                     (fn [path]
                                       {path (restoration-paths cm user path)})
-                                    paths))]
-          (doseq [path paths]
-            (let [fully-restored      (:restored-path (retval path))
-                  restored-to-homedir (:partial-restore (retval path))]
-              (log/warn "Restoring " path " to " fully-restored)
-
-              (validators/path-not-exists cm fully-restored)
-              (log/warn fully-restored " does not exist. That's good.")
-
-              (restore-parent-dirs cm user fully-restored)
-              (log/warn "Done restoring parent dirs for " fully-restored)
-
-              (validators/path-writeable cm user (ft/dirname fully-restored))
-              (log/warn fully-restored "is writeable. That's good.")
-
-              (log/warn "Moving " path " to " fully-restored)
-              (validators/path-not-exists cm fully-restored)
-
-              (log/warn fully-restored " does not exist. That's good.")
-              (move cm path fully-restored :user user :admin-users (cfg/irods-admins))
-              (log/warn "Done moving " path " to " fully-restored)))
-          {:restored retval}))
-      {:restored {}})))
+                                    paths))
+              async-task-id (async-tasks/run-async-thread
+                              (rename/new-task "data-restore" user {:paths paths :restoration-paths retval})
+                              restore-paths-thread "data-restore")]
+         {:restored retval :async-task-id async-task-id})))))
 
 (defn do-delete
   [{user :user} {paths :paths}]
