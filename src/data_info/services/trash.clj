@@ -106,7 +106,6 @@
   "Delete by UUID: given a user and a data item UUID, delete that data item, returning a list of filenames deleted."
   [user source-uuid]
   (let [path (ft/rm-last-slash (uuids/path-for-uuid user source-uuid))]
-    (validate-not-homedir user [path])
     (delete-paths user [path])))
 
 (defn- delete-uuid-contents
@@ -255,8 +254,7 @@
 
 (with-pre-hook! #'do-delete
   (fn [params body]
-    (dul/log-call "do-delete" params body)
-    (validate-not-homedir (:user params) (:paths body))))
+    (dul/log-call "do-delete" params body)))
 
 (with-post-hook! #'do-delete (dul/log-func "do-delete"))
 
