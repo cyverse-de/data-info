@@ -107,7 +107,6 @@
   [user source-uuid]
   (let [path (ft/rm-last-slash (uuids/path-for-uuid user source-uuid))]
     (validate-not-homedir user [path])
-    (validators/validate-num-paths-under-folder user path)
     (delete-paths user [path])))
 
 (defn- delete-uuid-contents
@@ -115,7 +114,6 @@
   [user source-uuid]
   (irods/with-jargon-exceptions [cm]
     (let [source (ft/rm-last-slash (uuids/path-for-uuid cm user source-uuid))]
-      (validators/validate-num-paths-under-folder user source)
       (validators/path-is-dir cm source)
       (let [paths (directory/get-paths-in-folder user source)]
         (delete-paths cm user paths)))))
@@ -258,8 +256,7 @@
 (with-pre-hook! #'do-delete
   (fn [params body]
     (dul/log-call "do-delete" params body)
-    (validate-not-homedir (:user params) (:paths body))
-    (validators/validate-num-paths-under-paths (:user params) (:paths body))))
+    (validate-not-homedir (:user params) (:paths body))))
 
 (with-post-hook! #'do-delete (dul/log-func "do-delete"))
 
@@ -306,5 +303,4 @@
 
 (with-pre-hook! #'do-restore
   (fn [params body]
-    (dul/log-call "do-restore" params body)
-    (validators/validate-num-paths-under-paths (:user params) (:paths body))))
+    (dul/log-call "do-restore" params body)))
