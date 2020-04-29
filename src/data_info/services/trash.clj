@@ -208,8 +208,8 @@
                     (update-fn "deleted paths" :begin)
                     (let [{:keys [username data]} async-task]
                       (doseq [^String p (:paths data)]
-                        (let [fully-restored      (:restored-path ((:restoration-paths data) p))
-                              restored-to-homedir (:partial-restore ((:restoration-paths data) p))]
+                        (let [fully-restored      (:restored-path ((:restoration-paths data) (keyword p)))
+                              restored-to-homedir (:partial-restore ((:restoration-paths data) (keyword p)))]
                           (update-fn p :begin-restore)
                           (log/warn "Restoring " p " to " fully-restored)
 
