@@ -6,7 +6,10 @@
 
 (s/defschema Trash
   (assoc OptionalPaths
-         :trash (describe String "The path of the trash directory that was emptied.")))
+         :trash (describe String "The path of the trash directory that was emptied.")
+
+         (s/optional-key :async-task-id)
+         (describe NonBlankString "An asynchronous task ID for the delete process being handled in the background")))
 
 (s/defschema RestoredFile
   {:restored-path (describe NonBlankString "The path the file was restored to.")

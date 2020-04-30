@@ -125,17 +125,32 @@
       (file cm fixed-path)
       ffilter)))
 
+(defn- delete-trash-thread
+  [async-task-id]
+  (let [jargon-fn (fn [cm async-task update-fn]
+                    (update-fn "delete trash" :begin)
+                    (let [{:keys [username data]} async-task
+                          trash-list (:trash-paths data)]
+                      (doseq [trash-path trash-list]
+                        (update-fn trash-path :begin-delete)
+                        (delete cm trash-path true)
+                        (update-fn trash-path :end-delete)))
+                    (update-fn "delete trash" :end))]
+    (async-tasks/paths-async-thread async-task-id jargon-fn false))) ;; no client user, for backwards compatibility
+
 (defn- delete-trash
   "Permanently delete the contents of a user's trash directory."
   [user]
   (irods/with-jargon-exceptions [cm]
     (validators/user-exists cm user)
     (let [trash-dir  (paths/user-trash-path user)
-          trash-list (mapv (fn [^IRODSFile file] (.getAbsolutePath file)) (list-in-dir cm (ft/rm-last-slash trash-dir)))]
-      (doseq [trash-path trash-list]
-        (delete cm trash-path true))
+          trash-list (mapv (fn [^IRODSFile file] (.getAbsolutePath file)) (list-in-dir cm (ft/rm-last-slash trash-dir)))
+          async-task-id (async-tasks/run-async-thread
+                          (rename/new-task "data-delete-trash" user {:trash-paths trash-list})
+                          delete-trash-thread "data-delete-trash")]
       {:trash trash-dir
-       :paths trash-list})))
+       :paths trash-list
+       :async-task-id async-task-id})))
 
 (defn- restore-to-homedir?
   "Whether to restore a given file to the home directory.
