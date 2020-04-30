@@ -58,8 +58,6 @@
   (let [jargon-fn (fn [cm async-task update-fn]
                     (update-fn "deleted paths" :begin)
                     (let [{:keys [username data]} async-task]
-                      (log/info data)
-                      (log/info (:trash-paths data))
                       (doseq [^String p (:paths data)]
                         (update-fn p :begin-delete)
                         ;;; Delete all of the tickets associated with the file.
