@@ -6,7 +6,10 @@
 
 (s/defschema Trash
   (assoc OptionalPaths
-         :trash (describe String "The path of the trash directory that was emptied.")))
+         :trash (describe String "The path of the trash directory that was emptied.")
+
+         (s/optional-key :async-task-id)
+         (describe NonBlankString "An asynchronous task ID for the delete process being handled in the background")))
 
 (s/defschema RestoredFile
   {:restored-path (describe NonBlankString "The path the file was restored to.")
@@ -17,7 +20,10 @@
   (describe RestoredFile "The restored file information.")})
 
 (s/defschema Restoration
-  {:restored (describe RestorationMap "A map of paths from the request to their restoration info")})
+  {:restored (describe RestorationMap "A map of paths from the request to their restoration info")
+
+   (s/optional-key :async-task-id)
+   (describe NonBlankString "An asynchronous task ID for the delete process being handled in the background")})
 
 ;; Used only for display as documentation in Swagger UI
 (s/defschema RestorationPathsMap
@@ -26,8 +32,9 @@
 
 ;; Used only for display as documentation in Swagger UI
 (s/defschema RestorationPaths
-  {:restored
-   (describe RestorationPathsMap "A map of paths from the request to their restoration info")})
+  (assoc Restoration
+   :restored
+   (describe RestorationPathsMap "A map of paths from the request to their restoration info")))
 
 (s/defschema TrashPathsMap
   {(describe s/Keyword "The iRODS data item's original path.")
@@ -35,7 +42,10 @@
 
 (s/defschema TrashPaths
   (assoc Paths
-         :trash-paths (describe TrashPathsMap "A map of paths from the request to their location in the trash, if any.")))
+         :trash-paths (describe TrashPathsMap "A map of paths from the request to their location in the trash, if any.")
+
+         (s/optional-key :async-task-id)
+         (describe NonBlankString "An asynchronous task ID for the delete process being handled in the background")))
 
 ;; Used only for documentation in Swagger UI
 (s/defschema TrashPathsDocMap

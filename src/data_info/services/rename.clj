@@ -31,7 +31,7 @@
                     (move cm (:source data) (:destination data) :user username :admin-users (cfg/irods-admins) :update-fn update-fn)))]
     (async-tasks/paths-async-thread async-task-id jargon-fn)))
 
-(defn- new-task
+(defn new-task
   [type user data]
   (async-tasks/create-task
     {:type type
@@ -56,10 +56,9 @@
       (validators/user-owns-paths cm user sources)
       (validators/path-writeable cm user dest)
       (validators/no-paths-exist cm dest-paths))
-    (let [async-task-id (new-task "data-move" user {:sources sources :destination dest})
-          ^Runnable task-thread #(move-paths-thread async-task-id)]
-      (log/warn async-task-id)
-      (.start (Thread. task-thread (str "data-move-" async-task-id)))
+    (let [async-task-id (async-tasks/run-async-thread
+                          (new-task "data-move" user {:sources sources :destination dest})
+                          move-paths-thread "data-move")]
       {:user user :sources sources :dest dest :async-task-id async-task-id})))
 
 (defn- rename-path
@@ -80,10 +79,9 @@
           (if-not (= (ft/dirname source) (ft/dirname dest))
             (validators/path-writeable cm user (ft/dirname dest)))
           (validators/path-not-exists cm dest))
-        (let [async-task-id (new-task "data-rename" user {:source source :destination dest})
-              ^Runnable task-thread #(rename-path-thread async-task-id)]
-          (log/warn async-task-id)
-          (.start (Thread. task-thread (str "data-rename-" async-task-id)))
+        (let [async-task-id (async-tasks/run-async-thread
+                              (new-task "data-rename" user {:source source :destination dest})
+                              rename-path-thread "data-rename")]
           {:user user :source source :dest dest :async-task-id async-task-id})))))
 
 (defn- rename-uuid
