@@ -13,4 +13,6 @@
 
 (s/defschema FilteredStatQueryParams
   (merge StandardUserQueryParams
-         stats-schema/FilteredStatQueryParams))
+         stats-schema/FilteredStatQueryParams
+         {(s/optional-key :ignore-missing)
+          (describe Boolean "If set to true missing paths or IDs will be ignored.")}))

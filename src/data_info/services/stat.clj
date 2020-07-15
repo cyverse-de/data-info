@@ -137,31 +137,45 @@
   (let [path (uuids/path-for-uuid cm user uuid)]
     (path-stat cm user path :filter-include filter-include :filter-exclude filter-exclude)))
 
+(defn get-path [uuid]
+  (irods/with-jargon-exceptions [cm]
+    (uuid/get-path cm uuid)))
+
+(defn get-uuid-paths
+  "Returns a sequence of vectors containing the UUID of a file or folder and its path. UUIDs that can't be
+   found are simply ignored"
+  [cm uuids]
+  (->> (map (juxt (comp keyword str) (partial uuid/get-path cm)) uuids)
+       (remove (comp nil? second))))
+
 (defn do-stat
-  [{:keys [user validation-behavior filter-include filter-exclude] :or {filter-include nil filter-exclude nil}} {paths :paths uuids :ids}]
+  [{:keys [user validation-behavior filter-include filter-exclude ignore-missing]
+    :or   {filter-include nil filter-exclude nil ignore-missing false}}
+   {paths :paths uuids :ids}]
   (irods/with-jargon-exceptions [cm]
     (validators/user-exists cm user)
-    (validators/all-uuids-exist cm uuids)
-    (let [uuid-paths (map (juxt (comp keyword str) (partial uuid/get-path cm)) uuids)
-          all-paths (into paths (map second uuid-paths))]
-      (validators/all-paths-exist cm all-paths)
+    (when-not ignore-missing (validators/all-uuids-exist cm uuids))
+    (let [uuid-paths   (get-uuid-paths cm uuids)
+          all-paths    (into paths (map second uuid-paths))
+          _            (when-not ignore-missing (validators/all-paths-exist cm all-paths))
+          extant-paths (filter (partial info/exists? cm) all-paths)]
       (case (keyword validation-behavior)
-            :own (validators/user-owns-paths cm user all-paths)
-            :write (validators/all-paths-writeable cm user all-paths)
-            :read (validators/all-paths-readable cm user all-paths)
-            (validators/all-paths-readable cm user all-paths))
+        :own   (validators/user-owns-paths cm user extant-paths)
+        :write (validators/all-paths-writeable cm user extant-paths)
+        :read  (validators/all-paths-readable cm user extant-paths)
+        (validators/all-paths-readable cm user extant-paths))
       {:paths (into {}
                     (map
-                      (juxt keyword
-                            (fn [path]
-                              (path-stat cm user path :filter-include filter-include :filter-exclude filter-exclude)))
-                      paths))
+                     (juxt keyword
+                           (fn [path]
+                             (path-stat cm user path :filter-include filter-include :filter-exclude filter-exclude)))
+                     paths))
        :ids   (into {}
                     (map
-                      (juxt first
-                            (fn [path-vec]
-                              (path-stat cm user (second path-vec) :filter-include filter-include :filter-exclude filter-exclude)))
-                      uuid-paths))})))
+                     (juxt first
+                           (fn [path-vec]
+                             (path-stat cm user (second path-vec) :filter-include filter-include :filter-exclude filter-exclude)))
+                     uuid-paths))})))
 
 (with-pre-hook! #'do-stat
   (fn [params body]
