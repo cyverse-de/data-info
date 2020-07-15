@@ -15,4 +15,7 @@
   (merge StandardUserQueryParams
          stats-schema/FilteredStatQueryParams
          {(s/optional-key :ignore-missing)
-          (describe Boolean "If set to true missing paths or IDs will be ignored.")}))
+          (describe Boolean "If set to true, missing paths or data ids will be ignored.")
+
+          (s/optional-key :ignore-inaccessible)
+          (describe Boolean "If set to true, inaccessible paths or data ids will be ignored.")}))
