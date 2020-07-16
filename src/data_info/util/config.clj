@@ -103,6 +103,11 @@
   [props config-valid configs]
   "data-info.metadata.base-url" "http://metadata:60000")
 
+(cc/defprop-optstr notificationagent-base-url
+  "The base URL to use when connecting to the notification-agent services."
+  [props config-valid configs]
+  "data-info.notificationagent.base-url" "http://notification-agent:60000")
+
 (cc/defprop-optstr tree-urls-base-url
   "The base URL of the tree-urls service"
   [props config-valid configs]

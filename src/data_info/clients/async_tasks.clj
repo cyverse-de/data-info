@@ -42,9 +42,9 @@
   async-task-id)
 
 (defn paths-async-thread
-  ([async-task-id jargon-fn]
-   (paths-async-thread async-task-id jargon-fn true))
-  ([async-task-id jargon-fn use-client-user?]
+  ([async-task-id jargon-fn end-fn]
+   (paths-async-thread async-task-id jargon-fn end-fn true))
+  ([async-task-id jargon-fn end-fn use-client-user?]
    (let [{:keys [username] :as async-task} (get-by-id async-task-id)
          update-fn (fn [path action]
                      (log/info "Updating async task:" async-task-id ":" path action)
@@ -57,6 +57,8 @@
          (irods/with-jargon-exceptions [cm]
            (jargon-fn cm async-task update-fn)))
        (add-completed-status async-task-id {:status "completed"})
+       (end-fn async-task false)
        (catch Object _
          (log/error (:throwable &throw-context) "failed processing async task" async-task-id)
-         (add-completed-status async-task-id {:status "failed"}))))))
+         (add-completed-status async-task-id {:status "failed"})
+         (end-fn async-task true))))))

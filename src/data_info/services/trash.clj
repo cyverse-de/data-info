@@ -10,6 +10,7 @@
             [clojure-commons.file-utils :as ft]
             [dire.core :refer [with-pre-hook! with-post-hook!]]
             [data-info.clients.async-tasks :as async-tasks]
+            [data-info.clients.notifications :as notifications]
             [data-info.util.config :as cfg]
             [data-info.util.irods :as irods]
             [data-info.util.paths :as paths]
@@ -73,8 +74,11 @@
                           (move-to-trash cm p ((:trash-paths data) (keyword p)) username :update-fn update-fn)
                           (delete cm p true)) ;;; Force a delete to bypass proxy user's trash.
                         (update-fn p :end-delete)))
-                    (update-fn "deleted paths" :end))]
-    (async-tasks/paths-async-thread async-task-id jargon-fn false))) ;; we don't use a client user so we can delete tickets
+                    (update-fn "deleted paths" :end))
+        end-fn (fn [async-task failed?]
+                 (notifications/send-notification
+                   (notifications/trash-notification (:username async-task) (:paths (:data async-task)) failed?)))]
+    (async-tasks/paths-async-thread async-task-id jargon-fn end-fn false))) ;; we don't use a client user so we can delete tickets
 
 (defn- delete-paths
   ([user paths]
@@ -133,8 +137,11 @@
                         (update-fn trash-path :begin-delete)
                         (delete cm trash-path true)
                         (update-fn trash-path :end-delete)))
-                    (update-fn "delete trash" :end))]
-    (async-tasks/paths-async-thread async-task-id jargon-fn false))) ;; no client user, for backwards compatibility
+                    (update-fn "delete trash" :end))
+        end-fn (fn [async-task failed?]
+                 (notifications/send-notification
+                   (notifications/empty-trash-notification (:username async-task) failed?)))]
+    (async-tasks/paths-async-thread async-task-id jargon-fn end-fn false))) ;; no client user, for backwards compatibility
 
 (defn- delete-trash
   "Permanently delete the contents of a user's trash directory."
@@ -240,8 +247,15 @@
                           (log/warn "Done moving " p " to " fully-restored)
 
                           (update-fn p :end-restore))))
-                    (update-fn "deleted paths" :end))]
-    (async-tasks/paths-async-thread async-task-id jargon-fn)))
+                    (update-fn "deleted paths" :end))
+        end-fn (fn [async-task failed?]
+                 (notifications/send-notification
+                   (notifications/restore-notification
+                     (:username async-task)
+                     [(:paths (:data async-task))]
+                     (mapv (fn [p] (:restored-path ((:restoration-paths (:data async-task)) (keyword p)))) (:paths (:data async-task)))
+                     failed?)))]
+    (async-tasks/paths-async-thread async-task-id jargon-fn end-fn)))
 
 (defn- restore-paths
   [{:keys [user paths user-trash]}]
