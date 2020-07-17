@@ -6,6 +6,7 @@
             [clojure-commons.file-utils :as ft]
             [dire.core :refer [with-pre-hook! with-post-hook!]]
             [data-info.clients.async-tasks :as async-tasks]
+            [data-info.clients.notifications :as notifications]
             [data-info.services.uuids :as uuids]
             [data-info.services.directory :as directory]
             [data-info.util.config :as cfg]
@@ -21,15 +22,21 @@
   [async-task-id]
   (let [jargon-fn (fn [cm async-task update-fn]
                     (let [{:keys [username data]} async-task]
-                    (move-all cm (:sources data) (:destination data) :user username :admin-users (cfg/irods-admins) :update-fn update-fn)))]
-    (async-tasks/paths-async-thread async-task-id jargon-fn)))
+                    (move-all cm (:sources data) (:destination data) :user username :admin-users (cfg/irods-admins) :update-fn update-fn)))
+        end-fn (fn [async-task failed?]
+                 (notifications/send-notification
+                   (notifications/move-notification (:username async-task) (:sources (:data async-task)) [(:destination (:data async-task))] failed?)))]
+    (async-tasks/paths-async-thread async-task-id jargon-fn end-fn)))
 
 (defn- rename-path-thread
   [async-task-id]
   (let [jargon-fn (fn [cm async-task update-fn]
                     (let [{:keys [username data]} async-task]
-                    (move cm (:source data) (:destination data) :user username :admin-users (cfg/irods-admins) :update-fn update-fn)))]
-    (async-tasks/paths-async-thread async-task-id jargon-fn)))
+                    (move cm (:source data) (:destination data) :user username :admin-users (cfg/irods-admins) :update-fn update-fn)))
+        end-fn (fn [async-task failed?]
+                 (notifications/send-notification
+                   (notifications/rename-notification (:username async-task) [(:source (:data async-task))] [(:destination (:data async-task))] failed?)))]
+    (async-tasks/paths-async-thread async-task-id jargon-fn end-fn)))
 
 (defn new-task
   [type user data]
