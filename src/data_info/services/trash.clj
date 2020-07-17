@@ -92,7 +92,7 @@
        (validate-not-homedir user paths)
 
        (let [trash-paths (apply merge (mapv
-                           (fn [path]
+                           (fn [^String path]
                              (if-not (.startsWith path (paths/user-trash-path user))
                                {path (randomized-trash-path user path)}
                                {}))
