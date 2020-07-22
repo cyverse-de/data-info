@@ -25,7 +25,7 @@
                     (move-all cm (:sources data) (:destination data) :user username :admin-users (cfg/irods-admins) :update-fn update-fn)))
         end-fn (fn [async-task failed?]
                  (notifications/send-notification
-                   (notifications/move-notification (:username async-task) (:sources (:data async-task)) [(:destination (:data async-task))] failed?)))]
+                   (notifications/move-notification (:username async-task) (:sources (:data async-task)) (mapv (fn [p] (ft/path-join (:destination (:data async-task)) (ft/basename p))) (:sources (:data async-task))) failed?)))]
     (async-tasks/paths-async-thread async-task-id jargon-fn end-fn)))
 
 (defn- rename-path-thread

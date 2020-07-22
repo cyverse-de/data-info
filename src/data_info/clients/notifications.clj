@@ -30,8 +30,8 @@
 (defn move-notification
   [user start-paths end-paths failed?]
   (amend-notification
-    {:subject (str (completed-text failed?) " moving " (count start-paths) " file(s)/folder(s) to " (first end-paths))
-     :message (str (completed-text failed?) " moving " (string/join ", " start-paths) " to " (first end-paths))} 
+    {:subject (str (completed-text failed?) " moving " (count start-paths) " file(s)/folder(s) to " (ft/dirname (first end-paths)))
+     :message (str (completed-text failed?) " moving " (string/join ", " start-paths) " to " (string/join ", " end-paths))}
     user "move" end-paths))
 
 (defn rename-notification
@@ -42,11 +42,18 @@
     user "rename" end-paths))
 
 (defn trash-notification
-  [user start-paths failed?]
+  [user start-paths end-paths failed?]
   (amend-notification
     {:subject (str (completed-text failed?) " moving " (count start-paths) " files(s)/folder(s) to trash")
-     :message (str (completed-text failed?) " moving " (string/join ", " start-paths) " to trash")}
-    user "trash" [(paths/user-trash-path user)]))
+     :message (str (completed-text failed?) " moving " (string/join ", " start-paths) " to trash at " (string/join ", " end-paths))}
+    user "trash" end-paths))
+
+(defn delete-notification
+  [user start-paths failed?]
+  (amend-notification
+    {:subject (str (completed-text failed?) " deleting " (count start-paths) " file(s)/folder(s)")
+     :message (str (completed-text failed?) " deleting " (string/join ", " start-paths))}
+    user "delete" [(paths/user-trash-path user)]))
 
 (defn restore-notification
   [user start-paths end-paths failed?]

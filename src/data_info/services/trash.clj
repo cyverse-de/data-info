@@ -76,8 +76,15 @@
                         (update-fn p :end-delete)))
                     (update-fn "deleted paths" :end))
         end-fn (fn [async-task failed?]
-                 (notifications/send-notification
-                   (notifications/trash-notification (:username async-task) (:paths (:data async-task)) failed?)))]
+                 (let [data (:data async-task)
+                       [trashed-paths deleted-paths] ((juxt filter remove) (fn [path] (contains? (:trash-paths data) (keyword path))) (:paths data))
+                       trash-paths (mapv (fn [p] ((:trash-paths data) (keyword p))) trashed-paths)]
+                   (when (seq deleted-paths)
+                     (notifications/send-notification
+                       (notifications/delete-notification (:username async-task) deleted-paths failed?)))
+                   (when (seq trashed-paths)
+                     (notifications/send-notification
+                       (notifications/trash-notification (:username async-task) trashed-paths trash-paths failed?)))))]
     (async-tasks/paths-async-thread async-task-id jargon-fn end-fn false))) ;; we don't use a client user so we can delete tickets
 
 (defn- delete-paths
