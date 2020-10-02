@@ -3,7 +3,9 @@
   (:use [slingshot.slingshot :only [throw+]])
   (:require [me.raynes.fs :as fs]
             [clj-icat-direct.icat :as icat]
+            [clojure.java.io :as io]
             [clj-jargon.init :refer [proxy-input-stream-return clean-return]]
+            [clj-irods.core :as rods]
             [clj-jargon.by-uuid :as uuid]
             [clj-jargon.item-info :as item]
             [clj-jargon.item-ops :as ops]
@@ -38,19 +40,20 @@
 ;; file specific
 
 (defn- get-file
-  [irods user path]
-    (if (zero? (item/file-size irods path))
-      (clean-return irods "")
-      (proxy-input-stream-return irods (ops/input-stream irods path))))
+  [irods user path istream-ref]
+  (if (zero? @(rods/file-size irods user (cfg/irods-zone) path))
+    (clean-return (:jargon irods) "")
+    (proxy-input-stream-return (:jargon irods) @istream-ref)))
 
 (defn- file-entry
-  [cm path {:keys [user attachment]}]
+  [irods path {:keys [user attachment]}]
   (let [filename    (str \" (file/basename path) \")
+        istream-ref (delay (io/input-stream (ops/input-stream @(:jargon irods) path)))
         disposition (if attachment
                       (str "attachment; filename=" filename)
                       (str "filename=" filename))
-        media-type  (irods/detect-media-type cm path)]
-    (assoc (http-response/ok (get-file cm user path))
+        media-type  (irods/detect-media-type (:jargon irods) path istream-ref)]
+    (assoc (http-response/ok (get-file irods user path istream-ref))
            :headers {"Content-Type"        media-type
                      "Content-Disposition" disposition})))
 
@@ -188,37 +191,30 @@
 (defn- paged-dir-listing
   "Provides paged directory listing as an alternative to (list-dir). Always contains files."
   [irods user path entity-type bad-indicator sfield sord offset limit info-types]
-  (let [;; first, icat stuff in futures
-        zone         (cfg/irods-zone)
-        total        (future (icat/number-of-items-in-folder user zone path entity-type info-types))
-        total-bad    (future (total-bad user zone path entity-type info-types bad-indicator))
-        page         (future (icat/paged-folder-listing
-                       :user           user
-                       :zone           zone
-                       :folder-path    path
-                       :entity-type    entity-type
-                       :info-types     info-types
-                       :sort-column    sfield
-                       :sort-direction sord
-                       :limit          limit
-                       :offset         offset))
-        ;; now the irods stuff to run parallel to the icat stuff
-        id           (irods/lookup-uuid irods path)
+  (let [zone         (cfg/irods-zone)
+        page         (rods/folder-listing irods user zone path
+                                          :entity-type entity-type
+                                          :info-types info-types
+                                          :sort-column sfield
+                                          :sort-direction sord
+                                          :limit limit
+                                          :offset offset)
+        total        (delay (force page) @(rods/items-in-folder irods user zone path :entity-type entity-type :info-types info-types))
+        id           (rods/uuid irods user zone path)
         bad?         (is-bad? bad-indicator path)
-        perm         (perm/permission-for irods user path)
-        stat         (item/stat irods path)
-        date-created (:date-created stat)
-        mod-date     (:date-modified stat)
+        perm         (rods/permission irods user zone path)
+        date-created (rods/date-created irods user zone path)
+        mod-date     (rods/date-modified irods user zone path)
         name         (fs/base-name path)]
-    (clean-return irods ;; ensure that the with-jargon is closed out
-      (merge (fmt-entry id date-created mod-date bad? nil path name perm 0)
-             (page->map (partial is-bad? bad-indicator) @page)
-             {:total    @total
-              :totalBad @total-bad}))))
+      (clean-return (:jargon irods) ;; ensure that the with-jargon is closed out
+        (merge (fmt-entry @id @date-created @mod-date bad? nil path name @perm 0)
+               (page->map (partial is-bad? bad-indicator) @page)
+               {:total    @total
+                :totalBad 0}))))
 
 
 (defn- folder-entry
-  [cm path {:keys [user
+  [irods path {:keys [user
                    entity-type
                    bad-chars
                    bad-name
@@ -239,22 +235,25 @@
         offset      (if-not (nil? offset) offset 0)]
     (http-response/ok
       (paged-dir-listing
-         cm user path entity-type badies sort-field sort-dir offset limit info-type))))
+         irods user path entity-type badies sort-field sort-dir offset limit info-type))))
 
 
 (defn- get-path-attrs
-  [cm zone path-in-zone user]
-  (let [path (file/rm-last-slash (irods/abs-path zone path-in-zone))]
+  [irods zone path-in-zone user]
+  (let [path (file/rm-last-slash (irods/abs-path zone path-in-zone))
+        object-type (rods/object-type irods user zone path)]
     (jv/validate-path-lengths path)
-    (duv/path-exists cm path)
-    {:path           path
-     :is-dir?        (item/is-dir? cm path)}))
+    (if (= @object-type :none)
+      (throw+ {:error_code error/ERR_DOES_NOT_EXIST
+               :path path})
+      {:path           path
+       :is-dir?        (= @object-type :dir)})))
 
 
 (defn dispatch-path-to-resource
   [zone path-in-zone {:keys [user] :as params}]
-  (irods/with-jargon-exceptions :client-user user :auto-close false [cm]
-    (let [{:keys [path is-dir?]} (get-path-attrs cm zone path-in-zone user)]
+  (irods/with-irods-exceptions {:jargon-opts {:client-user user :auto-close false}} irods
+    (let [{:keys [path is-dir?]} (get-path-attrs irods zone path-in-zone user)]
       (if is-dir?
-        (folder-entry cm path params)
-        (file-entry cm path params)))))
+        (folder-entry irods path params)
+        (file-entry irods path params)))))

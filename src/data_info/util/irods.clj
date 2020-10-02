@@ -2,6 +2,7 @@
   "This namespace encapsulates all of the common iRODS access logic."
   (:require [clojure.tools.logging :as log]
             [slingshot.slingshot :refer [try+ throw+]]
+            [clj-irods.core :as irods]
             [clj-jargon.by-uuid :as uuid]
             [clj-jargon.init :as init]
             [clj-jargon.item-ops :as ops]
@@ -31,6 +32,12 @@
     `(catch-jargon-io-exceptions
        (init/with-jargon (cfg/jargon-cfg) ~@opts [~cm-sym] (do ~@body)))))
 
+
+(defmacro with-irods-exceptions
+  [more-cfg & params]
+  `(catch-jargon-io-exceptions
+     (irods/with-irods (assoc ~more-cfg :jargon-cfg (cfg/jargon-cfg)) ~@params)))
+
 (defn ^String abs-path
   "Resolves a path relative to a zone into its absolute path.
 
@@ -53,17 +60,19 @@
 
    Returns:
      It returns the UUID."
-  [^IPersistentMap cm ^String path]
-  (let [attrs (meta/get-attribute cm path uuid/uuid-attr)]
+  [^IPersistentMap cm ^String path & {:keys [known-type] :or {known-type nil}}]
+  (let [attrs (meta/get-attribute cm path uuid/uuid-attr :known-type known-type)]
     (when-not (pos? (count attrs))
       (log/warn "Missing UUID for" path)
       (throw+ {:error_code error/ERR_NOT_FOUND :path path}))
     (-> attrs first :value UUID/fromString)))
 
 (defn- detect-media-type-from-contents
-  [^IPersistentMap cm ^String path]
-  (with-open [^InputStream istream (ops/input-stream cm path)]
-    (.detect (Tika.) istream)))
+  [cm ^String path & [istream-ref]]
+  (let [^InputStream istream (if istream-ref @istream-ref (ops/input-stream cm path))]
+    (try+
+      (.detect (Tika.) istream)
+      (finally (when-not istream-ref (.close istream))))))
 
 (defn ^String detect-media-type
   "detects the media type of a given file
@@ -74,13 +83,13 @@
 
    Returns:
      It returns the media type."
-  ([^IPersistentMap cm ^String path]
+  ([cm ^String path & [istream-ref]]
    (let [path-type (.detect (Tika.) (file/basename path))]
      (if (or (= path-type "application/octet-stream")
              (= path-type "text/plain"))
-       (detect-media-type-from-contents cm path)
+       (detect-media-type-from-contents (if (delay? cm) @cm cm) path istream-ref)
        path-type)))
 
   ([^String path]
-   (with-jargon-exceptions [cm]
+   (with-jargon-exceptions :lazy true [cm]
      (detect-media-type cm path))))
