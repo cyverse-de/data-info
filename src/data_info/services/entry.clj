@@ -206,11 +206,11 @@
         date-created (rods/date-created irods user zone path)
         mod-date     (rods/date-modified irods user zone path)
         name         (fs/base-name path)]
-      (clean-return (:jargon irods) ;; ensure that the with-jargon is closed out
-        (merge (fmt-entry @id @date-created @mod-date bad? nil path name @perm 0)
-               (page->map (partial is-bad? bad-indicator) @page)
-               {:total    @total
-                :totalBad 0}))))
+    (clean-return (:jargon irods) ;; ensure that the with-jargon is closed out
+      (merge (fmt-entry @id @date-created @mod-date bad? nil path name @perm 0)
+             (page->map (partial is-bad? bad-indicator) @page)
+             {:total    @total
+              :totalBad 0}))))
 
 
 (defn- folder-entry
