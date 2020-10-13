@@ -4,9 +4,12 @@
   (:require [clojure.tools.logging :as log]
             [clj-icat-direct.icat :as icat]
             [clj-jargon.by-uuid :as uuid]
+            [clj-irods.core :as rods]
+            [clj-irods.validate :refer [validate]]
             [clojure-commons.error-codes :as error]
+            [otel.otel :as otel]
             [data-info.util.irods :as irods]
-            [data-info.util.validators :as valid])
+            [data-info.util.config :as cfg])
   (:import [java.util UUID]
            [clojure.lang IPersistentMap]))
 
@@ -30,11 +33,12 @@
 
 (defn do-simple-uuid-for-path
   [{:keys [user path]}]
-  (irods/with-jargon-exceptions [cm]
-    (valid/user-exists cm user)
-    (valid/path-exists cm path)
-    (valid/path-readable cm user path)
-    {:id (irods/lookup-uuid cm path)}))
+  (irods/with-irods-exceptions {:use-icat-transaction false} irods
+    (validate irods
+              [:user-exists user (cfg/irods-zone)]
+              [:path-exists path user (cfg/irods-zone)]
+              [:path-readable path user (cfg/irods-zone)])
+    {:id @(rods/uuid irods user (cfg/irods-zone) path)}))
 
 (defn ^Boolean uuid-accessible?
   "Indicates if a data item is readable by a given user.
