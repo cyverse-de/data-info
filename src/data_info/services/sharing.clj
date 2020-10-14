@@ -6,6 +6,7 @@
             [clojure.string :as string]
             [clojure-commons.file-utils :as ft]
             [cemerick.url :as url]
+            [otel.otel :as otel]
             [dire.core :refer [with-pre-hook! with-post-hook!]]
             [data-info.util.logging :as dul]
             [data-info.util.paths :as paths]
@@ -143,7 +144,8 @@
 
 (defn anon-readable?
   [cm p]
-  (is-readable? cm (cfg/anon-user) p))
+  (otel/with-span [s ["anon-readable?"]]
+    (is-readable? cm (cfg/anon-user) p)))
 
 (defn- map-anon-url-path
   [path]

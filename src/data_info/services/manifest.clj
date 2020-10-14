@@ -4,6 +4,8 @@
         [slingshot.slingshot :only [try+ throw+]])
   (:require [clojure.tools.logging :as log]
             [clojure-commons.file-utils :as ft]
+            [clj-irods.validate :refer [validate]]
+            [otel.otel :as otel]
             [dire.core :refer [with-pre-hook! with-post-hook!]]
             [data-info.util.validators :as validators]
             [data-info.services.stat :as stat]
@@ -45,10 +47,11 @@
 
 (defn- extract-urls
   [cm fpath]
-  (let [urls (concat (extract-tree-urls cm fpath) (extract-coge-view cm fpath))]
-    (vec (if (anon-readable? cm fpath)
-           (conj urls (format-anon-files-url fpath))
-           urls))))
+  (otel/with-span [s ["extract-urls"]]
+    (let [urls (concat (extract-tree-urls cm fpath) (extract-coge-view cm fpath))]
+      (vec (if (anon-readable? cm fpath)
+             (conj urls (format-anon-files-url fpath))
+             urls)))))
 
 (defn- manifest-map
   [cm user {:keys [path] :as file}]
@@ -56,22 +59,39 @@
       (assoc :urls (extract-urls cm path))))
 
 (defn- manifest
-  [cm user file]
+  [{cm :jargon :as irods} user file]
   (let [path (ft/rm-last-slash (:path file))]
-    (validators/user-exists cm user)
-    (validators/path-exists cm path)
-    (validators/path-is-file cm path)
-    (validators/path-readable cm user path)
-    (manifest-map cm user file)))
+    (otel/with-span [s ["manifest validators"]]
+      (validate irods
+                [:path-exists (:path file) user (cfg/irods-zone)]
+                [:path-is-file (:path file) user (cfg/irods-zone)]
+                [:path-readable (:path file) user (cfg/irods-zone)]))
+    (manifest-map @cm user file)))
 
 (defn do-manifest-uuid
   [user data-id]
-  (irods/with-jargon-exceptions [cm]
-    (let [file (stat/uuid-stat cm user data-id :filter-include [:path :content-type :infoType])]
-      (manifest cm user file))))
+  (otel/with-span [s ["do-manifest-uuid"]]
+    (irods/with-irods-exceptions nil irods
+      (validate irods [:user-exists user (cfg/irods-zone)])
+      (let [file (stat/uuid-stat @(:jargon irods) user data-id :filter-include [:path :content-type :infoType])]
+        (manifest irods user file)))))
+
+(defn do-manifest
+  [user path]
+  (otel/with-span [s ["do-manifest"]]
+    (irods/with-irods-exceptions nil irods
+      (validate irods [:user-exists user (cfg/irods-zone)])
+      (let [file (stat/path-stat @(:jargon irods) user path :filter-include [:path :content-type :infoType])]
+        (manifest irods user file)))))
 
 (with-pre-hook! #'do-manifest-uuid
   (fn [user data-id]
     (dul/log-call "do-manifest-uuid" user data-id)))
 
 (with-post-hook! #'do-manifest-uuid (dul/log-func "do-manifest-uuid"))
+
+(with-pre-hook! #'do-manifest
+  (fn [user data-id]
+    (dul/log-call "do-manifest" user data-id)))
+
+(with-post-hook! #'do-manifest (dul/log-func "do-manifest"))
