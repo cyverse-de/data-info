@@ -127,14 +127,15 @@
 
 (defn ^IPersistentMap path-stat
   [^IPersistentMap cm ^String user ^String path & {:keys [filter-include filter-exclude] :or {filter-include nil filter-exclude nil}}]
-  (let [path (ft/rm-last-slash path)
-        included-keys (process-filters filter-include filter-exclude)]
-    (log/debug "[path-stat] user:" user "path:" path)
-    (validators/path-exists cm path)
-    (let [base-stat (if (needs-any-key? included-keys :type :date-created :date-modified :file-size :md5)
-                      (info/stat cm path)
-                      {:path path})]
-      (decorate-stat cm user base-stat included-keys))))
+  (otel/with-span [s ["path-stat" {:attributes {"path" path}}]]
+    (let [path (ft/rm-last-slash path)
+          included-keys (process-filters filter-include filter-exclude)]
+      (log/debug "[path-stat] user:" user "path:" path)
+      (validators/path-exists cm path)
+      (let [base-stat (if (needs-any-key? included-keys :type :date-created :date-modified :file-size :md5)
+                        (info/stat cm path)
+                        {:path path})]
+        (decorate-stat cm user base-stat included-keys)))))
 
 (defn ^IPersistentMap uuid-stat
   [^IPersistentMap cm ^String user uuid & {:keys [filter-include filter-exclude] :or {filter-include nil filter-exclude nil}}]
