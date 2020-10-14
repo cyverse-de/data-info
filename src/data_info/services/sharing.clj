@@ -5,6 +5,7 @@
   (:require [clojure.tools.logging :as log]
             [clojure.string :as string]
             [clojure-commons.file-utils :as ft]
+            [clj-irods.core :as rods]
             [cemerick.url :as url]
             [otel.otel :as otel]
             [dire.core :refer [with-pre-hook! with-post-hook!]]
@@ -143,9 +144,9 @@
         :else                           (skip-share unshare-with fpath :not-shared)))
 
 (defn anon-readable?
-  [cm p]
-  (otel/with-span [s ["anon-readable?"]]
-    (is-readable? cm (cfg/anon-user) p)))
+  [irods p]
+  (let [perm (rods/permission irods (cfg/anon-user) (cfg/irods-zone) p)]
+    (delay (contains? #{:read :write :own} @perm))))
 
 (defn- map-anon-url-path
   [path]
