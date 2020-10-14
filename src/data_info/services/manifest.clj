@@ -27,32 +27,31 @@
       (future (if @readable [(format-anon-files-url fpath)] [])))))
 
 (defn- manifest
-  [{cm :jargon :as irods} user path]
-  (let [path (ft/rm-last-slash path)]
-    (validate irods
-              [:path-exists path user (cfg/irods-zone)]
-              [:path-is-file path user (cfg/irods-zone)]
-              [:path-readable path user (cfg/irods-zone)])
-    (let [urls (extract-urls irods user path)
-          file (stat/path-stat @cm user path :filter-include [:path :content-type :infoType])]
-      {:content-type (:content-type file)
-       :infoType     (:infoType file)
-       :urls @urls})))
+  [user path-or-uuid uuid?]
+  (otel/with-span [s ["manifest"]]
+    (irods/with-irods-exceptions {:use-icat-transaction false} irods
+      (validate irods [:user-exists user (cfg/irods-zone)])
+      (let [path (ft/rm-last-slash
+                   (if uuid?
+                     (uuids/path-for-uuid @(:jargon irods) user path-or-uuid)
+                     path-or-uuid))]
+        (validate irods
+                  [:path-exists path user (cfg/irods-zone)]
+                  [:path-is-file path user (cfg/irods-zone)]
+                  [:path-readable path user (cfg/irods-zone)])
+        (let [urls (extract-urls irods user path)
+              file (stat/path-stat @(:jargon irods) user path :filter-include [:path :content-type :infoType])]
+          {:content-type (:content-type file)
+           :infoType     (:infoType file)
+           :urls @urls})))))
 
 (defn do-manifest-uuid
   [user data-id]
-  (otel/with-span [s ["do-manifest-uuid"]]
-    (irods/with-irods-exceptions {:use-icat-transaction false} irods
-      (validate irods [:user-exists user (cfg/irods-zone)])
-      (let [path (uuids/path-for-uuid @(:jargon irods) user data-id)]
-        (manifest irods user path)))))
+  (manifest user data-id true))
 
 (defn do-manifest
   [user path]
-  (otel/with-span [s ["do-manifest"]]
-    (irods/with-irods-exceptions {:use-icat-transaction false} irods
-      (validate irods [:user-exists user (cfg/irods-zone)])
-        (manifest irods user path))))
+  (manifest user path false))
 
 (with-pre-hook! #'do-manifest-uuid
   (fn [user data-id]
