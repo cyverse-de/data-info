@@ -9,7 +9,6 @@
             [otel.otel :as otel]
             [dire.core :refer [with-pre-hook! with-post-hook!]]
             [data-info.util.validators :as validators]
-            [data-info.services.stat :as stat]
             [data-info.services.uuids :as uuids]
             [data-info.util.irods :as irods]
             [data-info.util.logging :as dul]
@@ -40,9 +39,9 @@
                   [:path-is-file path user (cfg/irods-zone)]
                   [:path-readable path user (cfg/irods-zone)])
         (let [urls (extract-urls irods user path)
-              file (stat/path-stat @(:jargon irods) user path :filter-include [:path :content-type :infoType] :validate? false)]
-          {:content-type (:content-type file)
-           :infoType     (:infoType file)
+              info-type-avu (rods/object-avu irods user (cfg/irods-zone) path {:attr (cfg/type-detect-type-attribute)})]
+          {:content-type (irods/detect-media-type @(:jargon irods) path)
+           :infoType     (or (:value (first @info-type-avu)) "")
            :urls @urls})))))
 
 (defn do-manifest-uuid
