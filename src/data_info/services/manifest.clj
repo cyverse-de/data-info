@@ -85,8 +85,7 @@
   [user path]
   (otel/with-span [s ["do-manifest"]]
     (irods/with-irods-exceptions {:use-icat-transaction false} irods
-      (validate irods
-                [:user-exists user (cfg/irods-zone)])
+      (validate irods [:user-exists user (cfg/irods-zone)])
         (manifest irods user path))))
 
 (with-pre-hook! #'do-manifest-uuid
