@@ -40,7 +40,7 @@
                   [:path-is-file path user (cfg/irods-zone)]
                   [:path-readable path user (cfg/irods-zone)])
         (let [urls (extract-urls irods user path)
-              file (stat/path-stat @(:jargon irods) user path :filter-include [:path :content-type :infoType])]
+              file (stat/path-stat @(:jargon irods) user path :filter-include [:path :content-type :infoType] :validate? false)]
           {:content-type (:content-type file)
            :infoType     (:infoType file)
            :urls @urls})))))
