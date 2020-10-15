@@ -39,9 +39,9 @@
                   [:path-is-file path user (cfg/irods-zone)]
                   [:path-readable path user (cfg/irods-zone)])
         (let [urls (extract-urls irods user path)
-              info-type-avu (rods/object-avu irods user (cfg/irods-zone) path {:attr (cfg/type-detect-type-attribute)})]
-          {:content-type (irods/detect-media-type @(:jargon irods) path)
-           :infoType     (or (:value (first @info-type-avu)) "")
+              info-type (rods/info-type irods user (cfg/irods-zone) path)]
+          {:content-type (irods/detect-media-type (:jargon irods) path)
+           :infoType     (or @info-type "unknown")
            :urls @urls})))))
 
 (defn do-manifest-uuid
