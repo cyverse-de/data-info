@@ -36,10 +36,18 @@
          :file-size  (str (rods/file-size irods user (cfg/irods-zone) path))
          :chunk      (read-at-position @(:jargon irods) path position chunk-size)}))))
 
-(defn do-read-chunk
+(defn do-read-chunk-uuid
   [{user :user position :position chunk-size :size} data-id]
   (read-file-chunk user data-id position chunk-size true))
 
-(with-pre-hook! #'do-read-chunk
+(defn do-read-chunk
+  [{user :user position :position chunk-size :size} path]
+  (read-file-chunk user path position chunk-size false))
+
+(with-pre-hook! #'do-read-chunk-uuid
   (fn [params data-id]
-    (dul/log-call "do-read-chunk" params data-id)))
+    (dul/log-call "do-read-chunk-uuid" params data-id)))
+
+(with-pre-hook! #'do-read-chunk
+  (fn [params path]
+    (dul/log-call "do-read-chunk" params path)))

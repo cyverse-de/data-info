@@ -104,7 +104,23 @@ with characters in a runtime-configurable parameter. Currently, this parameter l
         :description (str
 "Returns a manifest for a file."
 (get-error-code-block "ERR_NOT_A_USER, ERR_DOES_NOT_EXIST, ERR_NOT_A_FILE, ERR_NOT_READABLE"))
-        (svc/trap uri manifest/do-manifest user (str "/" path))))
+        (svc/trap uri manifest/do-manifest user (str "/" path)))
+
+      (GET "/chunks/*" [:as {{path :*} :params uri :uri}]
+        :query [params ChunkParams]
+        :no-doc true
+        (svc/trap uri page-file/do-read-chunk params (str "/" path)))
+
+      (GET "/chunks/:path" [:as {uri :uri}]
+        :query [params ChunkParams]
+        :path-params [path :- String]
+        :return ChunkReturn
+        :summary "Get File Chunk"
+        :description (str
+  "Gets the chunk of the file of the specified position and size."
+  (get-error-code-block
+    "ERR_DOES_NOT_EXIST, ERR_NOT_A_FILE, ERR_NOT_READABLE, ERR_NOT_A_USER"))
+        (svc/trap uri page-file/do-read-chunk params (str "/" path))))
 
     (context "/:data-id" []
       :path-params [data-id :- DataIdPathParam]
@@ -149,7 +165,7 @@ with characters in a runtime-configurable parameter. Currently, this parameter l
   "Gets the chunk of the file of the specified position and size."
   (get-error-code-block
     "ERR_DOES_NOT_EXIST, ERR_NOT_A_FILE, ERR_NOT_READABLE, ERR_NOT_A_USER"))
-        (svc/trap uri page-file/do-read-chunk params data-id))
+        (svc/trap uri page-file/do-read-chunk-uuid params data-id))
 
       (GET "/chunks-tabular" [:as {uri :uri}]
         :query [params TabularChunkParams]
