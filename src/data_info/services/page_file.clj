@@ -23,7 +23,7 @@
                 [:user-exists user (cfg/irods-zone)])
       (let [path (ft/rm-last-slash
                    (if uuid?
-                     (uuids/path-for-uuid @(:jargon irods) user path-or-uuid)
+                     @(rods/uuid irods path-or-uuid)
                      path-or-uuid))]
         (validate irods
                   [:path-exists path user (cfg/irods-zone)]
