@@ -9,7 +9,6 @@
             [otel.otel :as otel]
             [dire.core :refer [with-pre-hook! with-post-hook!]]
             [data-info.util.validators :as validators]
-            [data-info.services.uuids :as uuids]
             [data-info.util.irods :as irods]
             [data-info.util.logging :as dul]
             [tree-urls-client.core :as tree]
@@ -32,7 +31,7 @@
       (validate irods [:user-exists user (cfg/irods-zone)])
       (let [path (ft/rm-last-slash
                    (if uuid?
-                     (uuids/path-for-uuid @(:jargon irods) user path-or-uuid)
+                     @(rods/uuid->path irods path-or-uuid)
                      path-or-uuid))]
         (validate irods
                   [:path-exists path user (cfg/irods-zone)]
