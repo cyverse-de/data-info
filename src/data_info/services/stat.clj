@@ -65,7 +65,7 @@
 (defn- merge-counts
   [stat-map cm user path included-keys]
   (if (and (needs-any-key? included-keys :file-count :dir-count) (is-dir? stat-map))
-    (otel/with-span [s ["merge-shares"]]
+    (otel/with-span [s ["merge-counts"]]
       (assoc stat-map
         :file-count (when (needs-key? included-keys :file-count) (icat/number-of-files-in-folder user (cfg/irods-zone) path))
         :dir-count  (when (needs-key? included-keys :dir-count)  (icat/number-of-folders-in-folder user (cfg/irods-zone) path))))
