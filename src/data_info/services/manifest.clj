@@ -1,77 +1,64 @@
 (ns data-info.services.manifest
   (:use [data-info.services.sharing :only [anon-file-url anon-readable?]]
+        [clj-irods.core :as rods]
         [clj-jargon.metadata :only [get-attribute attribute?]]
         [slingshot.slingshot :only [try+ throw+]])
   (:require [clojure.tools.logging :as log]
             [clojure-commons.file-utils :as ft]
+            [clj-irods.validate :refer [validate]]
+            [otel.otel :as otel]
             [dire.core :refer [with-pre-hook! with-post-hook!]]
             [data-info.util.validators :as validators]
-            [data-info.services.stat :as stat]
             [data-info.util.irods :as irods]
             [data-info.util.logging :as dul]
             [tree-urls-client.core :as tree]
             [data-info.util.config :as cfg]))
-
-(def ^:private coge-attr "ipc-coge-link")
-
-;; this is usually going to be the vector case, but the previous behavior is the map case so it's preserved
-(defn- postprocess-tree-urls
-  [tree-urls]
-  (if (map? tree-urls)
-      (:tree-urls tree-urls)
-      (vec tree-urls)))
-
-(defn- extract-tree-urls
-  [cm fpath]
-  (if (attribute? cm fpath (cfg/tree-urls-attr))
-    (-> (get-attribute cm fpath (cfg/tree-urls-attr))
-      first
-      :value
-      ft/basename
-      tree/get-tree-urls
-      postprocess-tree-urls)
-    []))
-
-(defn- extract-coge-view
-  [cm fpath]
-  (if (attribute? cm fpath coge-attr)
-    (mapv (fn [{url :value} idx] {:label (str "gene_" idx) :url url})
-          (get-attribute cm fpath coge-attr) (range))
-    []))
 
 (defn- format-anon-files-url
   [fpath]
   {:label "anonymous" :url (anon-file-url fpath)})
 
 (defn- extract-urls
-  [cm fpath]
-  (let [urls (concat (extract-tree-urls cm fpath) (extract-coge-view cm fpath))]
-    (vec (if (anon-readable? cm fpath)
-           (conj urls (format-anon-files-url fpath))
-           urls))))
-
-(defn- manifest-map
-  [cm user {:keys [path] :as file}]
-  (-> (select-keys file [:content-type :infoType])
-      (assoc :urls (extract-urls cm path))))
+  [irods user fpath]
+  (otel/with-span [s ["extract-urls"]]
+    (let [readable (anon-readable? irods fpath)]
+      (future (if @readable [(format-anon-files-url fpath)] [])))))
 
 (defn- manifest
-  [cm user file]
-  (let [path (ft/rm-last-slash (:path file))]
-    (validators/user-exists cm user)
-    (validators/path-exists cm path)
-    (validators/path-is-file cm path)
-    (validators/path-readable cm user path)
-    (manifest-map cm user file)))
+  [user path-or-uuid uuid?]
+  (otel/with-span [s ["manifest"]]
+    (irods/with-irods-exceptions {:use-icat-transaction false} irods
+      (validate irods [:user-exists user (cfg/irods-zone)])
+      (let [path (ft/rm-last-slash
+                   (if uuid?
+                     @(rods/uuid->path irods path-or-uuid)
+                     path-or-uuid))]
+        (validate irods
+                  [:path-exists path user (cfg/irods-zone)]
+                  [:path-is-file path user (cfg/irods-zone)]
+                  [:path-readable path user (cfg/irods-zone)])
+        (let [urls (extract-urls irods user path)
+              info-type (rods/info-type irods user (cfg/irods-zone) path)]
+          {:content-type (irods/detect-media-type (:jargon irods) path)
+           :infoType     (or @info-type "unknown")
+           :urls @urls})))))
 
 (defn do-manifest-uuid
   [user data-id]
-  (irods/with-jargon-exceptions [cm]
-    (let [file (stat/uuid-stat cm user data-id :filter-include [:path :content-type :infoType])]
-      (manifest cm user file))))
+  (manifest user data-id true))
+
+(defn do-manifest
+  [user path]
+  (manifest user path false))
 
 (with-pre-hook! #'do-manifest-uuid
   (fn [user data-id]
     (dul/log-call "do-manifest-uuid" user data-id)))
 
 (with-post-hook! #'do-manifest-uuid (dul/log-func "do-manifest-uuid"))
+
+(with-pre-hook! #'do-manifest
+  (fn [user data-id]
+    (dul/log-call "do-manifest" user data-id)))
+
+(with-post-hook! #'do-manifest (dul/log-func "do-manifest"))

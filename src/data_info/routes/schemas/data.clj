@@ -96,7 +96,7 @@
 
 (s/defschema ManifestURL
   {:label (describe NonBlankString "A label")
-   :url   (describe NonBlankString "The URL being described. For anon-files URLs, the label will be 'anonymous'. For CoGe URLs, the label will start with 'gene_'. For tree URLs, the label will *usually* start with 'tree_', but it's not guaranteed as the DE does not produce these labels.")})
+   :url   (describe NonBlankString "The URL being described. For anon-files URLs, the label will be 'anonymous'.")})
 
 (s/defschema Manifest
   {:content-type

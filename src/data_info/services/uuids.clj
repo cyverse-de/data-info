@@ -24,9 +24,10 @@
    Returns:
      It returns a path."
   ([^IPersistentMap cm ^String user ^UUID uuid]
-   (if-let [path (uuid/get-path cm uuid)]
-     path
-     (throw+ {:error_code error/ERR_DOES_NOT_EXIST :uuid uuid})))
+   (otel/with-span [s ["path-for-uuid" {:attributes {"uuid" (str uuid)}}]]
+     (if-let [path (uuid/get-path cm uuid)]
+       path
+       (throw+ {:error_code error/ERR_DOES_NOT_EXIST :uuid uuid}))))
   ([^String user ^UUID uuid]
    (irods/with-jargon-exceptions [cm]
        (path-for-uuid cm user uuid))))

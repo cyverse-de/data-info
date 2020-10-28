@@ -85,6 +85,27 @@ with characters in a runtime-configurable parameter. Currently, this parameter l
   "ERR_BAD_OR_MISSING_FIELD, ERR_NOT_WRITEABLE, ERR_EXISTS, ERR_DOES_NOT_EXIST, ERR_NOT_A_USER"))
       (svc/trap uri create/do-create params body))
 
+    (context "/by-path" []
+      :tags ["data"]
+
+      ; add both versions to catch multiple types of path passing
+      (GET "/manifest/*" [:as {{path :*} :params uri :uri}]
+        :query [{:keys [user]} StandardUserQueryParams]
+        :middleware [tree-urls-middleware]
+        :no-doc true
+        (svc/trap uri manifest/do-manifest user (str "/" path)))
+
+      (GET "/manifest/:path" [:as {uri :uri}]
+        :query [{:keys [user]} StandardUserQueryParams]
+        :path-params [path :- String]
+        :middleware [tree-urls-middleware]
+        :return Manifest
+        :summary "Return file manifest"
+        :description (str
+"Returns a manifest for a file."
+(get-error-code-block "ERR_NOT_A_USER, ERR_DOES_NOT_EXIST, ERR_NOT_A_FILE, ERR_NOT_READABLE"))
+        (svc/trap uri manifest/do-manifest user (str "/" path))))
+
     (context "/:data-id" []
       :path-params [data-id :- DataIdPathParam]
       :tags ["data-by-id"]

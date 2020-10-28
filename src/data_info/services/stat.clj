@@ -4,6 +4,7 @@
             [clojure.tools.logging :as log]
             [dire.core :refer [with-pre-hook! with-post-hook!]]
             [slingshot.slingshot :refer [throw+]]
+            [otel.otel :as otel]
             [clj-icat-direct.icat :as icat]
             [clj-jargon.by-uuid :as uuid]
             [clj-jargon.item-info :as info]
@@ -44,10 +45,11 @@
 
 (defn- get-types
   "Gets all of the filetypes associated with path."
-  [cm user path]
-  (validators/path-exists cm path)
-  (validators/user-exists cm user)
-  (validators/path-readable cm user path)
+  [cm user path & {:keys [validate?] :or {validate? true}}]
+  (when validate?
+    (validators/path-exists cm path)
+    (validators/user-exists cm user)
+    (validators/path-readable cm user path))
   (let [path-types (meta/get-attribute cm path (cfg/type-detect-type-attribute))]
     (log/info "Retrieved types" path-types "from" path "for" (str user "."))
     (or (:value (first path-types) ""))))
@@ -63,16 +65,18 @@
 (defn- merge-counts
   [stat-map cm user path included-keys]
   (if (and (needs-any-key? included-keys :file-count :dir-count) (is-dir? stat-map))
-    (assoc stat-map
-      :file-count (when (needs-key? included-keys :file-count) (icat/number-of-files-in-folder user (cfg/irods-zone) path))
-      :dir-count  (when (needs-key? included-keys :dir-count)  (icat/number-of-folders-in-folder user (cfg/irods-zone) path)))
+    (otel/with-span [s ["merge-shares"]]
+      (assoc stat-map
+        :file-count (when (needs-key? included-keys :file-count) (icat/number-of-files-in-folder user (cfg/irods-zone) path))
+        :dir-count  (when (needs-key? included-keys :dir-count)  (icat/number-of-folders-in-folder user (cfg/irods-zone) path))))
     stat-map))
 
 
 (defn- merge-shares
   [stat-map cm user path included-keys]
   (if (and (needs-key? included-keys :share-count) (owns? stat-map))
-    (assoc stat-map :share-count (count-shares cm user path))
+    (otel/with-span [s ["merge-shares"]]
+      (assoc stat-map :share-count (count-shares cm user path)))
     stat-map))
 
 
@@ -85,24 +89,26 @@
 
 
 (defn- merge-type-info
-  [stat-map cm user path included-keys]
+  [stat-map cm user path included-keys & {:keys [validate?] :or {validate? true}}]
   (if (and (needs-any-key? included-keys :infoType :content-type) (not (is-dir? stat-map)))
-    (assoc stat-map
-      :infoType     (when (needs-key? included-keys :infoType) (get-types cm user path))
-      :content-type (when (needs-key? included-keys :content-type) (irods/detect-media-type cm path)))
+    (otel/with-span [s ["merge-type-info"]]
+      (assoc stat-map
+        :infoType     (when (needs-key? included-keys :infoType) (get-types cm user path :validate? validate?))
+        :content-type (when (needs-key? included-keys :content-type) (irods/detect-media-type cm path))))
     stat-map))
 
 (defn ^IPersistentMap decorate-stat
-  [^IPersistentMap cm ^String user ^IPersistentMap stat included-keys]
-  (let [path (:path stat)]
-    (-> stat
-      (assoc :id         (when (needs-key? included-keys :id) (-> (meta/get-attribute cm path uuid/uuid-attr) first :value))
-             :permission (when (needs-key? included-keys :permission) (perm/permission-for cm user path)))
-      (merge-label user path included-keys)
-      (merge-type-info cm user path included-keys)
-      (merge-shares cm user path included-keys)
-      (merge-counts cm user path included-keys)
-      (select-keys included-keys))))
+  [^IPersistentMap cm ^String user ^IPersistentMap stat included-keys & {:keys [validate?] :or {validate? true}}]
+  (otel/with-span [s ["decorate-stat"]]
+    (let [path (:path stat)]
+      (-> stat
+        (assoc :id         (when (needs-key? included-keys :id) (-> (meta/get-attribute cm path uuid/uuid-attr) first :value))
+               :permission (when (needs-key? included-keys :permission) (perm/permission-for cm user path)))
+        (merge-label user path included-keys)
+        (merge-type-info cm user path included-keys :validate? validate?)
+        (merge-shares cm user path included-keys)
+        (merge-counts cm user path included-keys)
+        (select-keys included-keys)))))
 
 (defn- get-filter-set
   [filter-vec-or-string default]
@@ -121,21 +127,23 @@
       (cset/intersection all-keys (cset/difference includes-set excludes-set))))
 
 (defn ^IPersistentMap path-stat
-  [^IPersistentMap cm ^String user ^String path & {:keys [filter-include filter-exclude] :or {filter-include nil filter-exclude nil}}]
-  (let [path (ft/rm-last-slash path)
-        included-keys (process-filters filter-include filter-exclude)]
-    (log/debug "[path-stat] user:" user "path:" path)
-    (validators/path-exists cm path)
-    (let [base-stat (if (needs-any-key? included-keys :type :date-created :date-modified :file-size :md5)
-                      (info/stat cm path)
-                      {:path path})]
-      (decorate-stat cm user base-stat included-keys))))
+  [^IPersistentMap cm ^String user ^String path & {:keys [filter-include filter-exclude validate?] :or {filter-include nil filter-exclude nil validate? true}}]
+  (otel/with-span [s ["path-stat" {:attributes {"path" path}}]]
+    (let [path (ft/rm-last-slash path)
+          included-keys (process-filters filter-include filter-exclude)]
+      (log/debug "[path-stat] user:" user "path:" path)
+      (when validate? (validators/path-exists cm path))
+      (let [base-stat (if (needs-any-key? included-keys :type :date-created :date-modified :file-size :md5)
+                        (info/stat cm path)
+                        {:path path})]
+        (decorate-stat cm user base-stat included-keys :validate? validate?)))))
 
 (defn ^IPersistentMap uuid-stat
   [^IPersistentMap cm ^String user uuid & {:keys [filter-include filter-exclude] :or {filter-include nil filter-exclude nil}}]
-  (log/debug "[uuid-stat] user:" user "uuid:" uuid)
-  (let [path (uuids/path-for-uuid cm user uuid)]
-    (path-stat cm user path :filter-include filter-include :filter-exclude filter-exclude)))
+  (otel/with-span [s ["uuid-stat"]]
+    (log/debug "[uuid-stat] user:" user "uuid:" uuid)
+    (let [path (uuids/path-for-uuid cm user uuid)]
+      (path-stat cm user path :filter-include filter-include :filter-exclude filter-exclude))))
 
 (defn- get-uuid-paths
   "Returns a sequence of vectors containing the UUID of a file or folder and its path. UUIDs that can't be
