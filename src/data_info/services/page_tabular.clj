@@ -144,13 +144,25 @@
       (throw+ {:error_code "ERR_CHUNK_TOO_SMALL"
                :chunk-size (str chunk-size)}))))
 
-(defn do-read-csv-chunk
+(defn do-read-csv-chunk-uuid
   [{user :user separator :separator page :page size :size} data-id]
   (read-csv-chunk user data-id page size (url/url-decode separator) true))
 
-(with-pre-hook! #'do-read-csv-chunk
+(defn do-read-csv-chunk
+  [{user :user separator :separator page :page size :size} path]
+  (read-csv-chunk user path page size (url/url-decode separator) false))
+
+(with-pre-hook! #'do-read-csv-chunk-uuid
   (fn [params data-id]
-    (dul/log-call "do-read-csv-chunk" params data-id)))
+    (dul/log-call "do-read-csv-chunk-uuid" params data-id)))
+
+(with-post-hook! #'do-read-csv-chunk-uuid
+  (fn [result]
+    (dul/log-result "do-read-csv-chunk-uuid" (dissoc result :csv))))
+
+(with-pre-hook! #'do-read-csv-chunk
+  (fn [params path]
+    (dul/log-call "do-read-csv-chunk" params path)))
 
 (with-post-hook! #'do-read-csv-chunk
   (fn [result]

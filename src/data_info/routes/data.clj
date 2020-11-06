@@ -120,7 +120,23 @@ with characters in a runtime-configurable parameter. Currently, this parameter l
   "Gets the chunk of the file of the specified position and size."
   (get-error-code-block
     "ERR_DOES_NOT_EXIST, ERR_NOT_A_FILE, ERR_NOT_READABLE, ERR_NOT_A_USER"))
-        (svc/trap uri page-file/do-read-chunk params (str "/" path))))
+        (svc/trap uri page-file/do-read-chunk params (str "/" path)))
+
+      (GET "/chunks-tabular/*" [:as {{path :*} :params uri :uri}]
+        :query [params TabularChunkParams]
+        :no-doc true
+        (svc/trap uri page-tabular/do-read-csv-chunk params (str "/" path)))
+
+      (GET "/chunks-tabular/:path" [:as {uri :uri}]
+        :query [params TabularChunkParams]
+        :path-params [path :- String]
+        :return (doc-only TabularChunkReturn TabularChunkDoc)
+        :summary "Get Tabular File Chunk"
+        :description (str
+  "Gets the specified page of the tabular file, with a page size roughly corresponding to the provided size. The size is not precisely guaranteed, because partial lines cannot be correctly parsed."
+  (get-error-code-block
+    "ERR_DOES_NOT_EXIST, ERR_NOT_A_FILE, ERR_NOT_READABLE, ERR_NOT_A_USER, ERR_INVALID_PAGE, ERR_PAGE_NOT_POS, ERR_CHUNK_TOO_SMALL"))
+        (svc/trap uri page-tabular/do-read-csv-chunk params path)))
 
     (context "/:data-id" []
       :path-params [data-id :- DataIdPathParam]
@@ -175,7 +191,7 @@ with characters in a runtime-configurable parameter. Currently, this parameter l
   "Gets the specified page of the tabular file, with a page size roughly corresponding to the provided size. The size is not precisely guaranteed, because partial lines cannot be correctly parsed."
   (get-error-code-block
     "ERR_DOES_NOT_EXIST, ERR_NOT_A_FILE, ERR_NOT_READABLE, ERR_NOT_A_USER, ERR_INVALID_PAGE, ERR_PAGE_NOT_POS, ERR_CHUNK_TOO_SMALL"))
-        (svc/trap uri page-tabular/do-read-csv-chunk params data-id))
+        (svc/trap uri page-tabular/do-read-csv-chunk-uuid params data-id))
 
       (POST "/metadata/save" [:as {uri :uri}]
         :query [params StandardUserQueryParams]
