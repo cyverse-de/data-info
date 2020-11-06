@@ -93,46 +93,50 @@
   "Reads a chunk of a file and parses it as a CSV. The position and chunk-size are not guaranteed, since
    we shouldn't try to parse partial rows. We scan forward from the starting position to find the first
    line-ending and then scan backwards from the last position for the last line-ending."
-  [user path page chunk-size separator]
+  [user path-or-uuid page chunk-size separator uuid?]
   (otel/with-span [s ["read-csv-chunk"]]
     (irods/with-irods-exceptions {:use-icat-transaction false} irods
-      (log/warn "[read-csv-chunk]" user path page chunk-size separator)
+      (log/warn "[read-csv-chunk]" user path-or-uuid page chunk-size separator)
       (future (force (:jargon irods)))
       (validate irods
                 [:user-exists user (cfg/irods-zone)])
-      (validate irods
-                [:path-exists path user (cfg/irods-zone)]
-                [:path-is-file path user (cfg/irods-zone)]
-                [:path-readable path user (cfg/irods-zone)])
-      (let [page            (dec page)
-            start-pg        (if (= page 0) 0 (dec page))
-            full-chunk-size (calc-chunk-size page chunk-size)
-            fsize           (deref (rods/file-size irods user (cfg/irods-zone) path))
-            pages           (num-pages chunk-size fsize)
-            position        (start-pos page chunk-size)
-            load-pos        (start-pos start-pg chunk-size)]
-        (log/debug "reading from" load-pos "for" full-chunk-size)
+      (let [path (ft/rm-last-slash
+                   (if uuid?
+                     @(rods/uuid->path irods path-or-uuid)
+                     path-or-uuid))]
+        (validate irods
+                  [:path-exists path user (cfg/irods-zone)]
+                  [:path-is-file path user (cfg/irods-zone)]
+                  [:path-readable path user (cfg/irods-zone)])
+        (let [page            (dec page)
+              start-pg        (if (= page 0) 0 (dec page))
+              full-chunk-size (calc-chunk-size page chunk-size)
+              fsize           (deref (rods/file-size irods user (cfg/irods-zone) path))
+              pages           (num-pages chunk-size fsize)
+              position        (start-pos page chunk-size)
+              load-pos        (start-pos start-pg chunk-size)]
+          (log/debug "reading from" load-pos "for" full-chunk-size)
 
-        (when-not (<= page pages)
-          (throw+ {:error_code   "ERR_INVALID_PAGE"
-                   :page         (str page)
-                   :number-pages (str pages)}))
+          (when-not (<= page pages)
+            (throw+ {:error_code   "ERR_INVALID_PAGE"
+                     :page         (str page)
+                     :number-pages (str pages)}))
 
-        (let [^String chunk   (trim-chunk (read-at-position @(:jargon irods) path load-pos full-chunk-size) chunk-size page pages)
-                      the-csv (read-csv chunk separator)]
-          (log/debug "trimmed chunk for page" (inc page) ":" chunk)
-          (log/debug "parsed csv" the-csv)
-          {:path         path
-           :page         (str (inc page))
-           :number-pages (str pages)
-           :user         user
-           :max-cols     (str (reduce #(if (>= %1 %2) %1 %2) (map count the-csv)))
-           :chunk-size   (str (count (.getBytes chunk)))
-           :file-size    (str fsize)
-           :csv          the-csv})))))
+          (let [^String chunk   (trim-chunk (read-at-position @(:jargon irods) path load-pos full-chunk-size) chunk-size page pages)
+                        the-csv (read-csv chunk separator)]
+            (log/debug "trimmed chunk for page" (inc page) ":" chunk)
+            (log/debug "parsed csv" the-csv)
+            {:path         path
+             :page         (str (inc page))
+             :number-pages (str pages)
+             :user         user
+             :max-cols     (str (reduce #(if (>= %1 %2) %1 %2) (map count the-csv)))
+             :chunk-size   (str (count (.getBytes chunk)))
+             :file-size    (str fsize)
+             :csv          the-csv}))))))
 
 (with-pre-hook! #'read-csv-chunk
-  (fn [user path page chunk-size separator]
+  (fn [user path-or-uuid page chunk-size separator uuid?]
     (when-not (pos? page)
       (throw+ {:error_code "ERR_PAGE_NOT_POS"
                :page       page}))
@@ -142,8 +146,7 @@
 
 (defn do-read-csv-chunk
   [{user :user separator :separator page :page size :size} data-id]
-  (let [path (ft/rm-last-slash (uuids/path-for-uuid user data-id))]
-    (read-csv-chunk user path page size (url/url-decode separator))))
+  (read-csv-chunk user data-id page size (url/url-decode separator) true))
 
 (with-pre-hook! #'do-read-csv-chunk
   (fn [params data-id]
