@@ -4,6 +4,8 @@
   (:require [clojure.tools.logging :as log]
             [clj-jargon.item-info :as item]
             [clj-jargon.item-ops :as ops]
+            [clj-irods.core :as rods]
+            [clj-irods.validate :refer [validate]]
             [clojure-commons.file-utils :as ft]
             [data-info.services.stat :as stat]
             [data-info.util.config :as cfg]
@@ -20,21 +22,26 @@
    :base_trash_path (paths/base-trash-path)})
 
 (defn- get-root
-  [cm user root-path]
-  (validators/path-readable cm user root-path) ;; CORE-7638; otherwise a 'nil' permission can pop up and cause issues
-  (stat/path-stat cm user root-path :filter-include [:id :label :path :date-created :date-modified :permission]))
+  [irods user root-path]
+  (validate irods [:path-readable root-path user (cfg/irods-zone)]) ;; CORE-7638; otherwise a 'nil' permission can pop up and cause issues
+  {:id @(rods/uuid irods user (cfg/irods-zone) root-path)
+   :path root-path
+   :label (paths/path->label user root-path)
+   :date-created @(rods/date-created irods user (cfg/irods-zone) root-path)
+   :date-modified @(rods/date-modified irods user (cfg/irods-zone) root-path)
+   :permission @(rods/permission irods user (cfg/irods-zone) root-path)})
 
 (defn- make-root
-  [cm user root-path]
-  (when-not (exists? cm root-path)
+  [irods user root-path]
+  (when (= @(rods/object-type irods user (cfg/irods-zone) root-path) :none)
     (log/info "[make-root] Creating" root-path "for" user)
-    (ops/mkdirs cm root-path))
+    (ops/mkdirs @(:jargon irods) root-path))
 
-  (when-not (owns? cm user root-path)
+  (when-not (= @(rods/permission irods user (cfg/irods-zone) root-path) :own)
     (log/info "[make-root] Setting own permissions on" root-path "for" user)
-    (set-permission cm user root-path :own))
+    (set-permission @(:jargon irods) user root-path :own))
 
-  (get-root cm user root-path))
+  (get-root irods user root-path))
 
 (defn root-listing
   [user]
@@ -42,13 +49,13 @@
         community-data (ft/rm-last-slash (cfg/community-data))
         irods-home     (ft/rm-last-slash (cfg/irods-home))]
     (log/debug "[root-listing]" "for" user)
-    (irods/with-jargon-exceptions [cm]
-      (validators/user-exists cm user)
+    (irods/with-irods-exceptions {:use-icat-transaction false} irods
+      (validate irods [:user-exists user (cfg/irods-zone)])
       {:roots (remove nil?
-                [(get-root cm user home-path)
-                 (get-root cm user community-data)
-                 (get-root cm user irods-home)
-                 (make-root cm user trash-path)])
+                [(get-root irods user home-path)
+                 (get-root irods user community-data)
+                 (get-root irods user irods-home)
+                 (make-root irods user trash-path)])
        :base-paths base-paths})))
 
 (defn do-root-listing
