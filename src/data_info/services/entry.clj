@@ -175,19 +175,6 @@
         (not (duv/good-string? (:chars bad-indicator) basename)))))
 
 
-(defn- total-bad
-  [user zone parent entity-type info-types bad-indicator]
-  (icat/number-of-bad-items-in-folder
-    :user user
-    :zone zone
-    :parent-path parent
-    :entity-type entity-type
-    :info-types  info-types
-    :bad-chars   (apply str (:chars bad-indicator))
-    :bad-names   (:names bad-indicator)
-    :bad-paths   (:paths bad-indicator)))
-
-
 (defn- paged-dir-listing
   "Provides paged directory listing as an alternative to (list-dir). Always contains files."
   [irods user path entity-type bad-indicator sfield sord offset limit info-types]

@@ -11,7 +11,6 @@
             [data-info.util.validators :as validators]
             [data-info.util.irods :as irods]
             [data-info.util.logging :as dul]
-            [tree-urls-client.core :as tree]
             [data-info.util.config :as cfg]))
 
 (defn- format-anon-files-url

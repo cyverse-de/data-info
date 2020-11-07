@@ -57,12 +57,6 @@
   "data-info.community-data" "/iplant/home/shared")
 
 
-(cc/defprop-optstr copy-attribute
-  "The attribute to tag files with when they're a copy of another file."
-  [props config-valid configs]
-  "data-info.copy-key" "ipc-de-copy-from")
-
-
 (cc/defprop-optstr bad-chars
   "The characters that are considered invalid in iRODS dir- and filenames."
   [props config-valid configs]
@@ -107,13 +101,6 @@
   "The base URL to use when connecting to the notification-agent services."
   [props config-valid configs]
   "data-info.notificationagent.base-url" "http://notification-agent:60000")
-
-(cc/defprop-optstr tree-urls-base-url
-  "The base URL of the tree-urls service"
-  [props config-valid configs]
-  "data-info.tree-urls.base-url" "http://tree-urls:60000")
-
-(defn tree-urls-attr [] "ipc-tree-urls")
 
 (cc/defprop-optstr kifshare-download-template
   "The mustache template for the kifshare URL."

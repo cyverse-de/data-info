@@ -49,7 +49,6 @@
                  [org.cyverse/metadata-files "1.0.2"]
                  [org.cyverse/oai-ore "1.0.3"]
                  [org.cyverse/service-logging "2.8.0"]
-                 [org.cyverse/tree-urls-client "2.8.1"]
                  [org.cyverse/event-messages "0.0.1"]
                  [com.novemberain/langohr "3.5.1"]]
   :eastwood {:exclude-namespaces [data-info.routes.schemas.tickets

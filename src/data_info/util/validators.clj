@@ -57,26 +57,6 @@
                :value      param-val}))))
 
 
-(defn valid-uuid-param
-  "Validates that a given value is a UUID.
-
-   Parameters:
-     param-name - the name of the param holding the proposed UUID
-     param-val  - the proposed UUID
-
-   Throws:
-     It throws a map with of the following form.
-
-       {:error_code ERR_BAD_REQUEST
-        :param      param-name
-        :value      param-val}"
-  [^String param-name ^String param-val]
-  (when-not (is-uuid? param-val)
-    (throw+ {:error_code error/ERR_BAD_REQUEST
-             :param      param-name
-             :value      param-val})))
-
-
 (defn- num-paths-okay?
   [path-count]
   (<= path-count (cfg/max-paths-in-request)))

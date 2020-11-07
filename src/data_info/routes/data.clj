@@ -14,11 +14,8 @@
             [data-info.services.page-tabular :as page-tabular]
             [data-info.services.uuids :as uuids]
             [data-info.util.config :as cfg]
-            [tree-urls-client.middleware :refer [wrap-tree-urls-base]]
             [clojure-commons.error-codes :as ce]
             [data-info.util.service :as svc]))
-
-(defn tree-urls-middleware [handler] (wrap-tree-urls-base handler cfg/tree-urls-base-url))
 
 (defroutes data-operations
 
@@ -91,14 +88,12 @@ with characters in a runtime-configurable parameter. Currently, this parameter l
       ; add both versions to catch multiple types of path passing
       (GET "/manifest/*" [:as {{path :*} :params uri :uri}]
         :query [{:keys [user]} StandardUserQueryParams]
-        :middleware [tree-urls-middleware]
         :no-doc true
         (svc/trap uri manifest/do-manifest user (str "/" path)))
 
       (GET "/manifest/:path" [:as {uri :uri}]
         :query [{:keys [user]} StandardUserQueryParams]
         :path-params [path :- String]
-        :middleware [tree-urls-middleware]
         :return Manifest
         :summary "Return file manifest"
         :description (str
@@ -165,7 +160,6 @@ with characters in a runtime-configurable parameter. Currently, this parameter l
 
       (GET "/manifest" [:as {uri :uri}]
         :query [{:keys [user]} StandardUserQueryParams]
-        :middleware [tree-urls-middleware]
         :return Manifest
         :summary "Return file manifest"
         :description (str

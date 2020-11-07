@@ -40,17 +40,3 @@
               [:path-exists path user (cfg/irods-zone)]
               [:path-readable path user (cfg/irods-zone)])
     {:id @(rods/uuid irods user (cfg/irods-zone) path)}))
-
-(defn ^Boolean uuid-accessible?
-  "Indicates if a data item is readable by a given user.
-
-   Parameters:
-     user     - the authenticated name of the user
-     data-id  - the UUID of the data item
-
-   Returns:
-     It returns true if the user can access the data item, otherwise false"
-  [^String user ^UUID data-id]
-  (irods/with-jargon-exceptions [cm]
-    (let [data-path (uuid/get-path cm (str data-id))]
-      (and data-path (is-readable? cm user data-path)))))
