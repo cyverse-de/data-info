@@ -51,6 +51,12 @@
     (log/debug "[root-listing]" "for" user)
     (irods/with-irods-exceptions {:use-icat-transaction false} irods
       (validate irods [:user-exists user (cfg/irods-zone)])
+
+      ; get these calculating in parallel, calling the first thing it'll validate against
+      (doseq [p [home-path community-data irods-home]]
+        (rods/permission irods user (cfg/irods-zone) p))
+      (rods/object-type irods user (cfg/irods-zone) trash-path)
+
       {:roots (remove nil?
                 [(get-root irods user home-path)
                  (get-root irods user community-data)
