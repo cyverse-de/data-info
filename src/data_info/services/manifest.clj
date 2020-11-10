@@ -1,10 +1,10 @@
 (ns data-info.services.manifest
   (:use [data-info.services.sharing :only [anon-file-url anon-readable?]]
-        [clj-irods.core :as rods]
         [clj-jargon.metadata :only [get-attribute attribute?]]
         [slingshot.slingshot :only [try+ throw+]])
   (:require [clojure.tools.logging :as log]
             [clojure-commons.file-utils :as ft]
+            [clj-irods.core :as rods]
             [clj-irods.validate :refer [validate]]
             [otel.otel :as otel]
             [dire.core :refer [with-pre-hook! with-post-hook!]]
