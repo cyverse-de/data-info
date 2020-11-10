@@ -14,6 +14,7 @@
             [data-info.services.page-tabular :as page-tabular]
             [data-info.services.uuids :as uuids]
             [data-info.util.config :as cfg]
+            [schema.core :as s]
             [clojure-commons.error-codes :as ce]
             [data-info.util.service :as svc]))
 
@@ -56,7 +57,7 @@
 
     (POST "/" [:as {uri :uri}]
       :query [params FileUploadQueryParams]
-      :multipart-params [file :- String]
+      :multipart-params [file :- s/Any]
       :middleware [write/wrap-multipart-create]
       :return FileStat
       :summary "Upload a file"
@@ -149,7 +150,7 @@ with characters in a runtime-configurable parameter. Currently, this parameter l
 
       (PUT "/" [:as {uri :uri}]
         :query [params StandardUserQueryParams]
-        :multipart-params [file :- String]
+        :multipart-params [file :- s/Any]
         :middleware [write/wrap-multipart-overwrite]
         :return FileStat
         :summary "Overwrite Contents"
