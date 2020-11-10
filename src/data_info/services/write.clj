@@ -1,6 +1,7 @@
 (ns data-info.services.write
   (:require [clojure-commons.file-utils :as ft]
             [clojure-commons.error-codes :as ce]
+            [clojure.java.io :as io]
             [clj-jargon.item-info :as info]
             [clj-jargon.item-ops :as ops]
             [clj-irods.core :as rods]
@@ -15,12 +16,16 @@
 
 (defn- save-file-contents
   "Save an istream to a destination. Relies on upstream functions to validate."
-  [cm istream user dest-path set-owner?]
-  (ops/copy-stream cm istream user dest-path :set-owner? set-owner?)
-  ;; we don't want to convert the below to clj-irods without cache
-  ;; invalidation, since prior validations would have inaccurate info for this
-  ;; new content
-  (stat/path-stat cm user dest-path))
+  [irods istream-raw user dest-path set-owner?]
+  (let [istream-ref (delay (io/input-stream istream-raw))
+        media-type (irods/detect-media-type (:jargon irods) dest-path istream-ref)
+        base-stat (ops/copy-stream @(:jargon irods) @istream-ref user dest-path :set-owner? set-owner?)]
+    ;; we don't want to convert the below to clj-irods without cache
+    ;; invalidation, since prior validations would have inaccurate info for this
+    ;; new content
+    (assoc
+      (stat/decorate-stat @(:jargon irods) user base-stat (stat/process-filters nil [:content-type]) :validate? false)
+      :content-type media-type)))
 
 (defn- create-at-path
   "Create a new file at dest-path from istream.
@@ -33,7 +38,7 @@
                 [:path-not-exists dest-path user (cfg/irods-zone)]
                 [:path-exists dest-dir user (cfg/irods-zone)]
                 [:path-writeable dest-dir user (cfg/irods-zone)])
-      (save-file-contents @(:jargon irods) istream user dest-path true))))
+      (save-file-contents irods istream user dest-path true))))
 
 (defn- overwrite-path
   "Save new contents for the file at dest-path from istream.
@@ -45,7 +50,7 @@
               [:path-exists dest-path user (cfg/irods-zone)]
               [:path-is-file dest-path user (cfg/irods-zone)]
               [:path-readable dest-path user (cfg/irods-zone)])
-    (save-file-contents @(:jargon irods) istream user dest-path false)))
+    (save-file-contents irods istream user dest-path false)))
 
 (defn- multipart-create-handler
   "When partially applied, creates a storage handler for
