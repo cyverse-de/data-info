@@ -17,6 +17,9 @@
   "Save an istream to a destination. Relies on upstream functions to validate."
   [cm istream user dest-path set-owner?]
   (ops/copy-stream cm istream user dest-path :set-owner? set-owner?)
+  ;; we don't want to convert the below to clj-irods without cache
+  ;; invalidation, since prior validations would have inaccurate info for this
+  ;; new content
   (stat/path-stat cm user dest-path))
 
 (defn- create-at-path
