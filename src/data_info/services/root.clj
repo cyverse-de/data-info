@@ -35,11 +35,13 @@
   [irods user root-path]
   (when (= @(rods/object-type irods user (cfg/irods-zone) root-path) :none)
     (log/info "[make-root] Creating" root-path "for" user)
-    (ops/mkdirs @(:jargon irods) root-path))
+    (ops/mkdirs @(:jargon irods) root-path)
+    (rods/invalidate irods root-path))
 
   (when-not (= @(rods/permission irods user (cfg/irods-zone) root-path) :own)
     (log/info "[make-root] Setting own permissions on" root-path "for" user)
-    (set-permission @(:jargon irods) user root-path :own))
+    (set-permission @(:jargon irods) user root-path :own)
+    (rods/invalidate irods root-path))
 
   (get-root irods user root-path))
 
