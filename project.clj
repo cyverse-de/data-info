@@ -7,7 +7,7 @@
       (string/trim (:out (sh "git" "rev-parse" "HEAD")))
       ""))
 
-(defproject org.cyverse/data-info "2.20.0-SNAPSHOT"
+(defproject org.cyverse/data-info "2.21.0-SNAPSHOT"
   :description "provides an HTTP API for interacting with iRODS"
   :url "https://github.com/cyverse-de/data-info"
   :license {:name "BSD"
@@ -31,8 +31,8 @@
                  [net.sf.opencsv/opencsv "2.3"]
                  [de.ubercode.clostache/clostache "1.4.0" :exclusions [org.clojure/core.incubator]]
                  [slingshot "0.12.2"]
-                 [org.cyverse/clj-irods "0.1.3-SNAPSHOT"]
-                 [org.cyverse/clj-icat-direct "2.8.11-SNAPSHOT"
+                 [org.cyverse/clj-irods "0.1.3"]
+                 [org.cyverse/clj-icat-direct "2.8.11"
                    :exclusions [[org.slf4j/slf4j-log4j12]
                                 [log4j]]]
                  [org.cyverse/clj-jargon "2.8.12"
