@@ -7,7 +7,7 @@
       (string/trim (:out (sh "git" "rev-parse" "HEAD")))
       ""))
 
-(defproject org.cyverse/data-info "2.21.0"
+(defproject org.cyverse/data-info "2.21.1-SNAPSHOT"
   :description "provides an HTTP API for interacting with iRODS"
   :url "https://github.com/cyverse-de/data-info"
   :license {:name "BSD"
