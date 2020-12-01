@@ -43,7 +43,7 @@
                  [org.cyverse/common-cfg "2.8.1"]
                  [org.cyverse/common-swagger-api "2.11.27"]
                  [org.cyverse/heuristomancer "2.8.6"]
-                 [org.cyverse/kameleon "3.0.2"]
+                 [org.cyverse/kameleon "3.0.4"]
                  [org.cyverse/metadata-client "3.0.0"]
                  [org.cyverse/async-tasks-client "0.0.3"]
                  [org.cyverse/metadata-files "1.0.2"]
