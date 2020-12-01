@@ -33,7 +33,7 @@
 
 (defn- make-root
   [irods user root-path]
-  (when (= @(rods/object-type irods user (cfg/irods-zone) root-path) :none)
+  (when (= @(rods/object-type irods (cfg/irods-user) (cfg/irods-zone) root-path) :none)
     (log/info "[make-root] Creating" root-path "for" user)
     (ops/mkdirs @(:jargon irods) root-path)
     (rods/invalidate irods root-path))
