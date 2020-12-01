@@ -128,18 +128,36 @@
       "DESC" :desc
       :asc)))
 
+(defn- is-bad?
+  "Returns true if the map is okay to include in a directory listing."
+  [bad-indicator path]
+  (let [basename (file/basename path)]
+    (or (contains? (:paths bad-indicator) path)
+        (contains? (:names bad-indicator) basename)
+        (not (duv/good-string? (:chars bad-indicator) basename)))))
+
 
 (defn- fmt-entry
-  [id date-created date-modified bad? info-type path name permission size]
-  {:id           (str id)
-   :dateCreated  date-created
-   :dateModified date-modified
-   :badName      bad?
-   :infoType     info-type
-   :name         name
-   :path         path
-   :permission   permission
-   :size         size})
+  ([id date-created date-modified bad? info-type path name permission size]
+   {:id           (str id)
+    :dateCreated  date-created
+    :dateModified date-modified
+    :badName      bad?
+    :infoType     info-type
+    :name         name
+    :path         path
+    :permission   permission
+    :size         size})
+  ([irods user zone path bad-indicator]
+   (let [id           (rods/uuid irods user zone path)
+         date-created (rods/date-created irods user zone path)
+         mod-date     (rods/date-modified irods user zone path)
+         bad?         (is-bad? bad-indicator path)
+         info-type    (rods/info-type irods user zone path)
+         name         (fs/base-name path)
+         perm         (rods/permission irods user zone path)
+         size         (rods/file-size irods user zone path)]
+     (fmt-entry @id @date-created @mod-date bad? @info-type path name @perm @size))))
 
 
 (defn- page-entry->map
@@ -166,30 +184,23 @@
      :folders (mapv xformer collections)}))
 
 
-(defn- is-bad?
-  "Returns true if the map is okay to include in a directory listing."
-  [bad-indicator path]
-  (let [basename (file/basename path)]
-    (or (contains? (:paths bad-indicator) path)
-        (contains? (:names bad-indicator) basename)
-        (not (duv/good-string? (:chars bad-indicator) basename)))))
-
 (defn- file-exists-under-path
-  [irods user zone path filename]
-  (when (= @(rods/object-type irods user zone (file/path-join path filename)) :file) filename))
+  [irods user zone path filename bad-indicator]
+  (when (= @(rods/object-type irods user zone (file/path-join path filename)) :file)
+    (fmt-entry irods user zone (file/path-join path filename) bad-indicator)))
 
 (defn- has-readme?
-  [irods user zone path & maybe-listing]
+  [irods user zone path bad-indicator & maybe-listing]
   (let [check-file (partial file-exists-under-path irods user zone path)]
     (delay
       (when maybe-listing (force maybe-listing))
       (or
-        (check-file "README.md")
-        (check-file "README.txt")
-        (check-file "README")
-        (check-file "readme.md")
-        (check-file "readme.txt")
-        (check-file "readme")
+        (check-file "README.md" bad-indicator)
+        (check-file "README.txt" bad-indicator)
+        (check-file "README" bad-indicator)
+        (check-file "readme.md" bad-indicator)
+        (check-file "readme.txt" bad-indicator)
+        (check-file "readme" bad-indicator)
         false))))
 
 
@@ -211,7 +222,7 @@
         date-created (rods/date-created irods user zone path)
         mod-date     (rods/date-modified irods user zone path)
         name         (fs/base-name path)
-        readme       (has-readme? irods user zone path page)]
+        readme       (has-readme? irods user zone path bad-indicator page)]
     (clean-return (:jargon irods) ;; ensure that the with-jargon is closed out
       (merge (fmt-entry @id @date-created @mod-date bad? nil path name @perm 0)
              (page->map (partial is-bad? bad-indicator) @page)
