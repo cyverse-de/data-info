@@ -174,6 +174,24 @@
         (contains? (:names bad-indicator) basename)
         (not (duv/good-string? (:chars bad-indicator) basename)))))
 
+(defn- file-exists-under-path
+  [irods user zone path filename]
+  (when (= @(rods/object-type irods user zone (file/path-join path filename)) :file) filename))
+
+(defn- has-readme?
+  [irods user zone path & maybe-listing]
+  (let [check-file (partial file-exists-under-path irods user zone path)]
+    (delay
+      (when maybe-listing (force maybe-listing))
+      (or
+        (check-file "README.md")
+        (check-file "README.txt")
+        (check-file "README")
+        (check-file "readme.md")
+        (check-file "readme.txt")
+        (check-file "readme")
+        false))))
+
 
 (defn- paged-dir-listing
   "Provides paged directory listing as an alternative to (list-dir). Always contains files."
@@ -192,11 +210,13 @@
         perm         (rods/permission irods user zone path)
         date-created (rods/date-created irods user zone path)
         mod-date     (rods/date-modified irods user zone path)
-        name         (fs/base-name path)]
+        name         (fs/base-name path)
+        readme       (has-readme? irods user zone path page)]
     (clean-return (:jargon irods) ;; ensure that the with-jargon is closed out
       (merge (fmt-entry @id @date-created @mod-date bad? nil path name @perm 0)
              (page->map (partial is-bad? bad-indicator) @page)
-             {:total    @total
+             {:readme   @readme
+              :total    @total
               :totalBad 0}))))
 
 
