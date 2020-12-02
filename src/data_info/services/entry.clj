@@ -185,22 +185,22 @@
 
 
 (defn- file-exists-under-path
-  [irods user zone path filename bad-indicator]
+  [irods user zone path bad-indicator filename]
   (when (= @(rods/object-type irods user zone (file/path-join path filename)) :file)
     (fmt-entry irods user zone (file/path-join path filename) bad-indicator)))
 
 (defn- has-readme?
   [irods user zone path bad-indicator & maybe-listing]
-  (let [check-file (partial file-exists-under-path irods user zone path)]
+  (let [check-file (partial file-exists-under-path irods user zone path bad-indicator)]
     (delay
       (when maybe-listing (force maybe-listing))
       (or
-        (check-file "README.md" bad-indicator)
-        (check-file "README.txt" bad-indicator)
-        (check-file "README" bad-indicator)
-        (check-file "readme.md" bad-indicator)
-        (check-file "readme.txt" bad-indicator)
-        (check-file "readme" bad-indicator)
+        (check-file "README.md")
+        (check-file "README.txt")
+        (check-file "README")
+        (check-file "readme.md")
+        (check-file "readme.txt")
+        (check-file "readme")
         false))))
 
 
