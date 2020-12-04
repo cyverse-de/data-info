@@ -184,23 +184,23 @@
      :folders (mapv xformer collections)}))
 
 
-(defn- file-exists-under-path
+(defn- find-file-under-path
   [irods user zone path bad-indicator filename]
   (when (= @(rods/object-type irods user zone (file/path-join path filename)) :file)
     (fmt-entry irods user zone (file/path-join path filename) bad-indicator)))
 
-(defn- has-readme?
+(defn- readme-info
   [irods user zone path bad-indicator & maybe-listing]
-  (let [check-file (partial file-exists-under-path irods user zone path bad-indicator)]
+  (let [find-readme (partial find-file-under-path irods user zone path bad-indicator)]
     (delay
       (when maybe-listing (force maybe-listing))
       (or
-        (check-file "README.md")
-        (check-file "README.txt")
-        (check-file "README")
-        (check-file "readme.md")
-        (check-file "readme.txt")
-        (check-file "readme")
+        (find-readme "README.md")
+        (find-readme "README.txt")
+        (find-readme "README")
+        (find-readme "readme.md")
+        (find-readme "readme.txt")
+        (find-readme "readme")
         false))))
 
 
@@ -222,7 +222,7 @@
         date-created (rods/date-created irods user zone path)
         mod-date     (rods/date-modified irods user zone path)
         name         (fs/base-name path)
-        readme       (has-readme? irods user zone path bad-indicator page)]
+        readme       (readme-info irods user zone path bad-indicator page)]
     (clean-return (:jargon irods) ;; ensure that the with-jargon is closed out
       (merge (fmt-entry @id @date-created @mod-date bad? nil path name @perm 0)
              (page->map (partial is-bad? bad-indicator) @page)
