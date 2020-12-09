@@ -1,25 +1,53 @@
 (ns data-info.services.write
   (:require [clojure-commons.file-utils :as ft]
             [clojure-commons.error-codes :as ce]
+            [clojure.tools.logging :as log]
             [clojure.java.io :as io]
             [clj-jargon.item-info :as info]
             [clj-jargon.item-ops :as ops]
             [clj-irods.core :as rods]
             [clj-irods.validate :refer [validate]]
+            [heuristomancer.core :as hm]
             [ring.middleware.multipart-params :as multipart]
             [otel.otel :as otel]
             [data-info.services.stat :as stat]
             [data-info.services.uuids :as uuids]
             [data-info.util.config :as cfg]
             [data-info.util.irods :as irods]
-            [data-info.util.validators :as validators]))
+            [data-info.util.validators :as validators])
+  (:import [java.io InputStream]))
+
+(defn- reset-on-close-istream
+  [^InputStream istream]
+  (proxy [InputStream] []
+    (available [] (.available istream))
+    (mark [readlimit] (.mark istream readlimit))
+    (markSupported [] (.markSupported istream))
+    (read
+      ([] (.read istream))
+      ([b] (.read istream b))
+      ([b off len] (.read istream b off len)))
+    (reset [] (.reset istream))
+    (skip [n] (.skip istream n))
+    (close []
+      (.reset istream))))
+
+(defn- get-info-type
+  [istream-ref]
+  (log/info "get-info-type")
+  (.mark @istream-ref (cfg/type-detect-read-amount))
+  (let [data (hm/sip (reset-on-close-istream @istream-ref) (cfg/type-detect-read-amount))]
+    (log/info "got data")
+    (future (let [x (hm/identify-sample data)] (log/info "identified sample" x) x))))
 
 (defn- save-file-contents
   "Save an istream to a destination. Relies on upstream functions to validate."
   [irods istream-raw user dest-path set-owner?]
   (let [istream-ref (delay (io/input-stream istream-raw))
         media-type (irods/detect-media-type (:jargon irods) dest-path istream-ref)
+        info-type (get-info-type istream-ref)
         base-stat (ops/copy-stream @(:jargon irods) @istream-ref user dest-path :set-owner? set-owner?)]
+    (log/info "Detected info-type:" @info-type)
     ;; we don't want to convert the below to clj-irods without cache
     ;; invalidation, since prior validations would have inaccurate info for this
     ;; new content
