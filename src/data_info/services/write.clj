@@ -34,26 +34,28 @@
 
 (defn- get-info-type
   [istream-ref]
-  (log/info "get-info-type")
-  (.mark @istream-ref (cfg/type-detect-read-amount))
-  (let [data (hm/sip (reset-on-close-istream @istream-ref) (cfg/type-detect-read-amount))]
-    (log/info "got data")
-    (future (let [x (hm/identify-sample data)] (log/info "identified sample" x) x))))
+  (otel/with-span [s ["get-info-type"]]
+    (.mark @istream-ref (cfg/type-detect-read-amount))
+    (let [data (hm/sip (reset-on-close-istream @istream-ref) (cfg/type-detect-read-amount))]
+      (future
+        (otel/with-span [s ["identify-sample"]]
+          (hm/identify-sample data))))))
 
 (defn- save-file-contents
   "Save an istream to a destination. Relies on upstream functions to validate."
   [irods istream-raw user dest-path set-owner?]
-  (let [istream-ref (delay (io/input-stream istream-raw))
-        media-type (irods/detect-media-type (:jargon irods) dest-path istream-ref)
-        info-type (get-info-type istream-ref)
-        base-stat (ops/copy-stream @(:jargon irods) @istream-ref user dest-path :set-owner? set-owner?)]
-    (log/info "Detected info-type:" @info-type)
-    ;; we don't want to convert the below to clj-irods without cache
-    ;; invalidation, since prior validations would have inaccurate info for this
-    ;; new content
-    (assoc
-      (stat/decorate-stat @(:jargon irods) user base-stat (stat/process-filters nil [:content-type]) :validate? false)
-      :content-type media-type)))
+  (otel/with-span [s ["save-file-contents"]]
+    (let [istream-ref (delay (io/input-stream istream-raw))
+          media-type (irods/detect-media-type (:jargon irods) dest-path istream-ref)
+          info-type (get-info-type istream-ref)
+          base-stat (ops/copy-stream @(:jargon irods) @istream-ref user dest-path :set-owner? set-owner?)]
+      (log/info "Detected info-type:" @info-type)
+      ;; we don't want to convert the below to clj-irods without cache
+      ;; invalidation, since prior validations would have inaccurate info for this
+      ;; new content
+      (assoc
+        (stat/decorate-stat @(:jargon irods) user base-stat (stat/process-filters nil [:content-type]) :validate? false)
+        :content-type media-type))))
 
 (defn- create-at-path
   "Create a new file at dest-path from istream.
