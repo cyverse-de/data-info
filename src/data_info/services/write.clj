@@ -5,6 +5,7 @@
             [clojure.java.io :as io]
             [clj-jargon.item-info :as info]
             [clj-jargon.item-ops :as ops]
+            [clj-jargon.metadata :as meta]
             [clj-irods.core :as rods]
             [clj-irods.validate :refer [validate]]
             [heuristomancer.core :as hm]
@@ -39,7 +40,20 @@
     (let [data (hm/sip (reset-on-close-istream @istream-ref) (cfg/type-detect-read-amount))]
       (future
         (otel/with-span [s ["identify-sample"]]
-          (hm/identify-sample data))))))
+          (let [result (hm/identify-sample data)]
+            (if-not (nil? result)
+              (name result)
+              "unknown")))))))
+
+(defn- set-info-type
+  [cm path info-type]
+  (otel/with-span [s ["set-info-type"]]
+    (let [existing (meta/get-attribute cm path (cfg/type-detect-type-attribute))]
+      (if (seq existing)
+        (:value (first existing) "")
+        (do (log/info "adding type" info-type " to file " path)
+            (meta/add-metadata cm path (cfg/type-detect-type-attribute) info-type "ipc-data-info-detected")
+            info-type)))))
 
 (defn- save-file-contents
   "Save an istream to a destination. Relies on upstream functions to validate."
@@ -48,13 +62,15 @@
     (let [istream-ref (delay (io/input-stream istream-raw))
           media-type (irods/detect-media-type (:jargon irods) dest-path istream-ref)
           info-type (get-info-type istream-ref)
-          base-stat (ops/copy-stream @(:jargon irods) @istream-ref user dest-path :set-owner? set-owner?)]
-      (log/info "Detected info-type:" @info-type)
+          base-stat (ops/copy-stream @(:jargon irods) @istream-ref user dest-path :set-owner? set-owner?)
+          final-info-type (set-info-type @(:jargon irods) dest-path @info-type)]
+      (log/info "Detected info-type:" @info-type ", final type:" final-info-type)
       ;; we don't want to convert the below to clj-irods without cache
       ;; invalidation, since prior validations would have inaccurate info for this
       ;; new content
       (assoc
-        (stat/decorate-stat @(:jargon irods) user base-stat (stat/process-filters nil [:content-type]) :validate? false)
+        (stat/decorate-stat @(:jargon irods) user base-stat (stat/process-filters nil [:content-type :infoType]) :validate? false)
+        :infoType     final-info-type
         :content-type media-type))))
 
 (defn- create-at-path
