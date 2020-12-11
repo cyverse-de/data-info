@@ -48,11 +48,11 @@
 (defn- set-info-type
   [cm path info-type]
   (otel/with-span [s ["set-info-type"]]
-    (let [existing (meta/get-attribute cm path (cfg/type-detect-type-attribute))]
+    (let [existing (meta/get-attribute cm path (cfg/type-detect-type-attribute) :known-type :file)]
       (if (seq existing)
         (:value (first existing) "")
         (do (log/info "adding type" info-type " to file " path)
-            (meta/add-metadata cm path (cfg/type-detect-type-attribute) info-type "ipc-data-info-detected")
+            (meta/add-metadata cm path (cfg/type-detect-type-attribute) info-type "ipc-data-info-detected" :known-type :file)
             info-type)))))
 
 (defn- save-file-contents
