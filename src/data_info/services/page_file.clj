@@ -33,7 +33,7 @@
          :user       user
          :start      (str position)
          :chunk-size (str chunk-size)
-         :file-size  (str (rods/file-size irods user (cfg/irods-zone) path))
+         :file-size  (str @(rods/file-size irods user (cfg/irods-zone) path))
          :chunk      (read-at-position @(:jargon irods) path position chunk-size)}))))
 
 (defn do-read-chunk-uuid
