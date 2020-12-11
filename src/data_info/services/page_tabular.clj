@@ -111,7 +111,7 @@
         (let [page            (dec page)
               start-pg        (if (= page 0) 0 (dec page))
               full-chunk-size (calc-chunk-size page chunk-size)
-              fsize           (deref @(rods/file-size irods user (cfg/irods-zone) path))
+              fsize           (deref (rods/file-size irods user (cfg/irods-zone) path))
               pages           (num-pages chunk-size fsize)
               position        (start-pos page chunk-size)
               load-pos        (start-pos start-pg chunk-size)]
