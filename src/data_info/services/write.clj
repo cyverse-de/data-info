@@ -1,31 +1,77 @@
 (ns data-info.services.write
   (:require [clojure-commons.file-utils :as ft]
             [clojure-commons.error-codes :as ce]
+            [clojure.tools.logging :as log]
             [clojure.java.io :as io]
             [clj-jargon.item-info :as info]
             [clj-jargon.item-ops :as ops]
+            [clj-jargon.metadata :as meta]
             [clj-irods.core :as rods]
             [clj-irods.validate :refer [validate]]
+            [heuristomancer.core :as hm]
             [ring.middleware.multipart-params :as multipart]
             [otel.otel :as otel]
             [data-info.services.stat :as stat]
             [data-info.services.uuids :as uuids]
             [data-info.util.config :as cfg]
             [data-info.util.irods :as irods]
-            [data-info.util.validators :as validators]))
+            [data-info.util.validators :as validators])
+  (:import [java.io InputStream]))
+
+(defn- reset-on-close-istream
+  [^InputStream istream]
+  (proxy [InputStream] []
+    (available [] (.available istream))
+    (mark [readlimit] (.mark istream readlimit))
+    (markSupported [] (.markSupported istream))
+    (read
+      ([] (.read istream))
+      ([b] (.read istream b))
+      ([b off len] (.read istream b off len)))
+    (reset [] (.reset istream))
+    (skip [n] (.skip istream n))
+    (close []
+      (.reset istream))))
+
+(defn- get-info-type
+  [istream-ref]
+  (otel/with-span [s ["get-info-type"]]
+    (.mark @istream-ref (cfg/type-detect-read-amount))
+    (let [data (hm/sip (reset-on-close-istream @istream-ref) (cfg/type-detect-read-amount))]
+      (future
+        (otel/with-span [s ["identify-sample"]]
+          (let [result (hm/identify-sample data)]
+            (if-not (nil? result)
+              (name result)
+              "unknown")))))))
+
+(defn- set-info-type
+  [cm path info-type]
+  (otel/with-span [s ["set-info-type"]]
+    (let [existing (meta/get-attribute cm path (cfg/type-detect-type-attribute) :known-type :file)]
+      (if (seq existing)
+        (:value (first existing) "")
+        (do (log/info "adding type" info-type " to file " path)
+            (meta/add-metadata cm path (cfg/type-detect-type-attribute) info-type "ipc-data-info-detected" :known-type :file)
+            info-type)))))
 
 (defn- save-file-contents
   "Save an istream to a destination. Relies on upstream functions to validate."
   [irods istream-raw user dest-path set-owner?]
-  (let [istream-ref (delay (io/input-stream istream-raw))
-        media-type (irods/detect-media-type (:jargon irods) dest-path istream-ref)
-        base-stat (ops/copy-stream @(:jargon irods) @istream-ref user dest-path :set-owner? set-owner?)]
-    ;; we don't want to convert the below to clj-irods without cache
-    ;; invalidation, since prior validations would have inaccurate info for this
-    ;; new content
-    (assoc
-      (stat/decorate-stat @(:jargon irods) user base-stat (stat/process-filters nil [:content-type]) :validate? false)
-      :content-type media-type)))
+  (otel/with-span [s ["save-file-contents"]]
+    (let [istream-ref (delay (io/input-stream istream-raw))
+          media-type (irods/detect-media-type (:jargon irods) dest-path istream-ref)
+          info-type (get-info-type istream-ref)
+          base-stat (ops/copy-stream @(:jargon irods) @istream-ref user dest-path :set-owner? set-owner?)
+          final-info-type (set-info-type @(:jargon irods) dest-path @info-type)]
+      (log/info "Detected info-type:" @info-type ", final type:" final-info-type)
+      ;; we don't want to convert the below to clj-irods without cache
+      ;; invalidation, since prior validations would have inaccurate info for this
+      ;; new content
+      (assoc
+        (stat/decorate-stat @(:jargon irods) user base-stat (stat/process-filters nil [:content-type :infoType]) :validate? false)
+        :infoType     final-info-type
+        :content-type media-type))))
 
 (defn- create-at-path
   "Create a new file at dest-path from istream.

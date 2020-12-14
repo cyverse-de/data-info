@@ -223,6 +223,11 @@
   [props config-valid configs]
   "data-info.type-detect.type-attribute" "ipc-filetype")
 
+(cc/defprop-optstr type-detect-read-amount
+  "The number of bytes to read from a file to pass to the info-type detection process."
+  [props config-valid configs]
+  "data-info.type-detect.read-amount" 1024)
+
 ; End of type detection configuration
 
 
