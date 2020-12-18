@@ -1,5 +1,6 @@
 (ns data-info.routes.exists
   (:use [common-swagger-api.schema]
+        [otel.middleware :only [otel-middleware]]
         [ring.util.http-response :only [ok]])
   (:require [common-swagger-api.schema.data.exists :as schema]
             [data-info.services.exists :as exists]))
@@ -11,6 +12,7 @@
     :tags ["bulk"]
 
     (POST "/" []
+      :middleware [otel-middleware]
       :query [params StandardUserQueryParams]
       :body [body schema/ExistenceRequest]
       :responses schema/ExistenceResponses

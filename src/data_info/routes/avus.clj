@@ -1,6 +1,7 @@
 (ns data-info.routes.avus
   (:use [common-swagger-api.routes]
         [common-swagger-api.schema]
+        [otel.middleware :only [otel-middleware]]
         [data-info.routes.schemas.common]
         [data-info.routes.schemas.avus])
   (:require [data-info.services.metadata :as meta]
@@ -12,6 +13,7 @@
     :tags ["data-by-id"]
 
     (GET "/metadata" [:as {uri :uri}]
+      :middleware [otel-middleware]
       :query [{:keys [user]} StandardUserQueryParams]
       :return AVUGetResult
       :summary "List AVUs (administrative)"
@@ -27,6 +29,7 @@
       (svc/trap uri meta/admin-metadata-get data-id))
 
     (PATCH "/metadata" [:as {uri :uri}]
+      :middleware [otel-middleware]
       :query [{:keys [user]} StandardUserQueryParams]
       :body [body (describe AddMetadataRequest "The iRODS and Metadata AVUs to add")]
       :return AVUChangeResult
@@ -47,6 +50,7 @@
     :tags ["data-by-id"]
 
     (GET "/metadata" [:as {uri :uri}]
+      :middleware [otel-middleware]
       :query [{:keys [user]} StandardUserQueryParams]
       :return AVUGetResult
       :summary "List AVUs"
@@ -62,6 +66,7 @@
       (svc/trap uri meta/metadata-get user data-id :system false))
 
     (PATCH "/metadata" [:as {uri :uri}]
+      :middleware [otel-middleware]
       :query [{:keys [user]} StandardUserQueryParams]
       :body [body (describe AddMetadataRequest "The iRODS and Metadata AVUs to add")]
       :return AVUChangeResult
@@ -79,6 +84,7 @@
       (svc/trap uri meta/metadata-add user data-id body))
 
     (PUT "/metadata" [:as {uri :uri}]
+      :middleware [otel-middleware]
       :query [{:keys [user]} StandardUserQueryParams]
       :body [body (describe MetadataListing
                             "A list of AVUs to set for this file.
@@ -99,6 +105,7 @@
       (svc/trap uri meta/metadata-set user data-id body))
 
     (POST "/metadata/copy" [:as {uri :uri}]
+      :middleware [otel-middleware]
       :query [{:keys [user]} StandardUserQueryParams]
       :body [{:keys [destination_ids]} (describe MetadataCopyRequest "The destination data items.")]
       :return MetadataCopyResult
@@ -113,6 +120,7 @@
       (svc/trap uri meta/metadata-copy user data-id destination_ids))
 
     (POST "/metadata/csv-parser" [:as {uri :uri}]
+      :middleware [otel-middleware]
       :query [params MetadataCSVParseParams]
       :return MetadataCSVParseResult
       :summary "Add Batch Metadata from CSV File"

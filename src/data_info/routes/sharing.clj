@@ -1,5 +1,6 @@
 (ns data-info.routes.sharing
   (:use [common-swagger-api.schema]
+        [otel.middleware :only [otel-middleware]]
         [data-info.routes.schemas.common]
         [data-info.routes.schemas.sharing])
   (:require [data-info.services.sharing :as sharing]
@@ -7,6 +8,7 @@
 
 (defroutes sharing-routes
   (POST "/anonymizer" [:as {uri :uri}]
+    :middleware [otel-middleware]
     :tags ["bulk"]
     :query [params StandardUserQueryParams]
     :body [body (describe Paths "The paths to make readable by the anonymous user.")]

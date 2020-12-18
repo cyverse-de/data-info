@@ -1,5 +1,6 @@
 (ns data-info.routes.status
   (:use [common-swagger-api.schema]
+        [otel.middleware :only [otel-middleware]]
         [data-info.routes.schemas.status])
   (:require [clojure-commons.service :as commons-service]
             [clojure-commons.error-codes :as ce]

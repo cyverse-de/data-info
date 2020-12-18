@@ -1,5 +1,6 @@
 (ns data-info.routes.tickets
   (:use [common-swagger-api.schema]
+        [otel.middleware :only [otel-middleware]]
         [data-info.routes.schemas.tickets]
         [ring.util.http-response :only [ok]])
   (:require [common-swagger-api.schema.data :as data-schema]
@@ -13,6 +14,7 @@
     :tags ["tickets"]
 
     (POST "/" []
+      :middleware [otel-middleware]
       :query [params AddTicketQueryParams]
       :body [body data-schema/Paths]
       :responses schema/AddTicketResponses
@@ -21,6 +23,7 @@
       (ok (tickets/do-add-tickets params body))))
 
   (POST "/ticket-lister" []
+    :middleware [otel-middleware]
     :tags ["tickets"]
     :query [params StandardUserQueryParams]
     :body [body data-schema/Paths]
@@ -30,6 +33,7 @@
     (ok (tickets/do-list-tickets params body)))
 
   (POST "/ticket-deleter" []
+    :middleware [otel-middleware]
     :tags ["tickets"]
     :query [params DeleteTicketQueryParams]
     :body [body schema/Tickets]

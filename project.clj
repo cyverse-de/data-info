@@ -31,6 +31,7 @@
                  [net.sf.opencsv/opencsv "2.3"]
                  [de.ubercode.clostache/clostache "1.4.0" :exclusions [org.clojure/core.incubator]]
                  [slingshot "0.12.2"]
+                 [org.cyverse/otel "0.2.1"]
                  [org.cyverse/clj-irods "0.2.1"]
                  [org.cyverse/clj-icat-direct "2.9.1"
                    :exclusions [[org.slf4j/slf4j-log4j12]

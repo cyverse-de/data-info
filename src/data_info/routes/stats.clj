@@ -1,5 +1,6 @@
 (ns data-info.routes.stats
   (:use [common-swagger-api.schema]
+        [otel.middleware :only [otel-middleware]]
         [data-info.routes.schemas.common]
         [data-info.routes.schemas.stats]
         [ring.util.http-response :only [ok]])
@@ -15,6 +16,7 @@
     :tags ["bulk"]
 
     (POST "/" []
+      :middleware [otel-middleware]
       :query [params StatQueryParams]
       :body [body data-schema/OptionalPathsOrDataIds]
       :responses schema/StatResponses
@@ -27,6 +29,7 @@
     :tags ["bulk"]
 
     (POST "/" []
+      :middleware [otel-middleware]
       :query [params FilteredStatQueryParams]
       :body [body data-schema/OptionalPathsOrDataIds]
       :responses (merge CommonResponses

@@ -1,5 +1,6 @@
 (ns data-info.routes.users
   (:use [common-swagger-api.schema]
+        [otel.middleware :only [otel-middleware]]
         [data-info.routes.schemas.common]
         [data-info.routes.schemas.users])
   (:require [data-info.services.users :as users]
@@ -11,6 +12,7 @@
     :tags ["users"]
 
     (GET "/:username/groups" [:as {uri :uri}]
+      :middleware [otel-middleware]
       :path-params [username :- (describe String "The username whose groups should be listed")]
       :query [{:keys [user]} StandardUserQueryParams]
       :return UserGroupsReturn
