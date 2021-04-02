@@ -32,11 +32,11 @@
                  [de.ubercode.clostache/clostache "1.4.0" :exclusions [org.clojure/core.incubator]]
                  [slingshot "0.12.2"]
                  [org.cyverse/otel "0.2.1"]
-                 [org.cyverse/clj-irods "0.2.1"]
-                 [org.cyverse/clj-icat-direct "2.9.1"
+                 [org.cyverse/clj-irods "0.2.2-SNAPSHOT"]
+                 [org.cyverse/clj-icat-direct "2.9.2"
                    :exclusions [[org.slf4j/slf4j-log4j12]
                                 [log4j]]]
-                 [org.cyverse/clj-jargon "2.8.13-SNAPSHOT"
+                 [org.cyverse/clj-jargon "2.8.13"
                    :exclusions [[org.slf4j/slf4j-log4j12]
                                 [log4j]]]
                  [org.cyverse/clojure-commons "2.8.3"]
