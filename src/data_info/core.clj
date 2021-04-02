@@ -6,16 +6,10 @@
             [data-info.util.config :as config]
             [data-info.amqp :as amqp]
             [data-info.events :as events]
-            [clojure.tools.nrepl.server :as nrepl]
             [me.raynes.fs :as fs]
             [common-cli.core :as ccli]
             [service-logging.thread-context :as tc]
             [data-info.services.icat :as icat]))
-
-
-(defn- start-nrepl
-  []
-  (nrepl/start-server :port 7888))
 
 
 (defn- iplant-conf-dir-file
@@ -66,8 +60,7 @@
 (defn lein-ring-init
   []
   (load-configuration-from-file)
-  (icat/configure-icat)
-  (start-nrepl))
+  (icat/configure-icat))
 
 
 (defn repl-init
