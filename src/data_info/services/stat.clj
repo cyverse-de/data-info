@@ -6,6 +6,8 @@
             [slingshot.slingshot :refer [throw+]]
             [otel.otel :as otel]
             [clj-icat-direct.icat :as icat]
+            [clj-irods.core :as rods]
+            [clj-irods.validate :refer [validate]]
             [clj-jargon.by-uuid :as uuid]
             [clj-jargon.item-info :as info]
             [clj-jargon.metadata :as meta]
@@ -43,8 +45,26 @@
   [included-keys & needed-keys]
   (some #(needs-key? included-keys %) needed-keys))
 
+(defmacro assoc-if-selected
+  "Adds keys and values to a map. If the key is in the set of requested keys then the value
+   is associated with the map. Otherwise, nil is associated with the map and the expression
+   used to calculate the value is not executed."
+  [m requested-keys & kvs]
+  (let [format-kv (fn [[k v]] [k `(when (needs-key? ~requested-keys ~k) ~v)])]
+    (concat `(assoc ~m) (mapcat format-kv (partition 2 kvs)))))
+
+(defn- new-get-types
+  "Gets the file type associated with the path."
+  [irods user zone path & {:keys [validate?] :or {validate? true}}]
+  (when validate?
+    (validate irods
+              [:path-exists path user zone]
+              [:user-exists user zone]
+              [:path-readable path user zone]))
+  @(rods/info-type irods user zone path))
+
 (defn- get-types
-  "Gets all of the filetypes associated with path."
+  "Gets the file type associated with path."
   [cm user path & {:keys [validate?] :or {validate? true}}]
   (when validate?
     (validators/path-exists cm path)
@@ -54,6 +74,10 @@
     (log/info "Retrieved types" path-types "from" path "for" (str user "."))
     (or (:value (first path-types) ""))))
 
+(defn- new-count-shares
+  [irods user path]
+  (let [user-filter (set (conj (cfg/perms-filter) user (cfg/irods-user)))]
+    (count (remove (comp user-filter :user) @(rods/list-user-permissions irods path)))))
 
 (defn- count-shares
   [cm user path]
@@ -61,6 +85,14 @@
         other-perm?  (fn [perm] (not (contains? filter-users (:user perm))))]
     (count (filterv other-perm? (perm/list-user-perms cm path)))))
 
+(defn- new-merge-counts
+  [stat-map irods user zone path included-keys]
+  (if (and (needs-any-key? included-keys :file-count :dir-count) (is-dir? stat-map))
+    (otel/with-span [s ["new-merge-counts"]]
+      (assoc-if-selected stat-map included-keys
+        :file-count @(rods/number-of-files-in-folder irods user zone path)
+        :dir-count  @(rods/number-of-folders-in-folder irods user zone path)))
+    stat-map))
 
 (defn- merge-counts
   [stat-map cm user path included-keys]
@@ -71,6 +103,11 @@
         :dir-count  (when (needs-key? included-keys :dir-count)  (icat/number-of-folders-in-folder user (cfg/irods-zone) path))))
     stat-map))
 
+(defn- new-merge-shares
+  [stat-map irods user path included-keys]
+  (if (and (needs-key? included-keys :share-count) (owns? stat-map))
+    (otel/with-span [s ["new-merge-shares"]]
+      (assoc stat-map :share-count (new-count-shares irods user path)))))
 
 (defn- merge-shares
   [stat-map cm user path included-keys]
@@ -79,7 +116,6 @@
       (assoc stat-map :share-count (count-shares cm user path)))
     stat-map))
 
-
 (defn- merge-label
   [stat-map user path included-keys]
   (if (needs-key? included-keys :label)
@@ -87,6 +123,14 @@
            :label (paths/path->label user path))
     stat-map))
 
+(defn- new-merge-type-info
+  [stat-map irods user zone path included-keys & {:keys [validate?] :or {validate? true}}]
+  (if (and (needs-any-key? included-keys :infoType :content-type) (not (is-dir? stat-map)))
+    (otel/with-span [s ["new-merge-type-info"]]
+      (assoc-if-selected stat-map included-keys
+        :infoType     (new-get-types irods user zone path :validate? validate?)
+        :content-type (irods/detect-media-type @(:jargon irods) path)))
+    stat-map))
 
 (defn- merge-type-info
   [stat-map cm user path included-keys & {:keys [validate?] :or {validate? true}}]
@@ -96,6 +140,19 @@
         :infoType     (when (needs-key? included-keys :infoType) (get-types cm user path :validate? validate?))
         :content-type (when (needs-key? included-keys :content-type) (irods/detect-media-type cm path))))
     stat-map))
+
+(defn new-decorate-stat
+  [irods user zone {:keys [path] :as stat} included-keys & {:keys [validate?] :or {validate? true}}]
+  (otel/with-span [s ["new-decorate-stat"]]
+    (-> stat
+        (assoc-if-selected included-keys
+          :id         @(rods/uuid irods user zone path)
+          :permission @(rods/permission irods user zone path))
+        (merge-label user path included-keys)
+        (new-merge-type-info irods user zone path included-keys :validate? validate?)
+        (new-merge-shares irods user path included-keys)
+        (new-merge-counts irods user zone path included-keys)
+        (select-keys included-keys))))
 
 (defn ^IPersistentMap decorate-stat
   [^IPersistentMap cm ^String user ^IPersistentMap stat included-keys & {:keys [validate?] :or {validate? true}}]
@@ -126,6 +183,18 @@
         excludes-set (get-filter-set exclude [])]
       (cset/intersection all-keys (cset/difference includes-set excludes-set))))
 
+(defn new-path-stat
+  [irods user path & {:keys [filter-include filter-exclude validate?]
+                      :or   {filter-include nil filter-exclude nil validate? true}}]
+  (otel/with-span [s ["new-path-stat" {:attributes {"path" path}}]]
+    (let [path          (ft/rm-last-slash path)
+          included-keys (process-filters filter-include filter-exclude)]
+      (when validate? (validate irods [:path-exists path user (cfg/irods-zone)]))
+      (let [base-stat (if (needs-any-key? included-keys :type :date-created :date-modified :file-size :md5)
+                        @(rods/stat irods user (cfg/irods-zone) path)
+                        {:path path})]
+        (new-decorate-stat irods user (cfg/irods-zone) base-stat included-keys :validate? validate?)))))
+
 (defn ^IPersistentMap path-stat
   [^IPersistentMap cm ^String user ^String path & {:keys [filter-include filter-exclude validate?] :or {filter-include nil filter-exclude nil validate? true}}]
   (otel/with-span [s ["path-stat" {:attributes {"path" path}}]]
@@ -154,48 +223,58 @@
 
 (defn- remove-missing-paths
   "Removes non-existent paths from a list of item paths."
-  [cm paths]
-  (filter (partial info/exists? cm) paths))
+  [irods user zone paths]
+  (let [path-missing? (fn [p] (or (nil? p) (= @(rods/object-type irods user zone p) :none)))]
+    (remove path-missing? paths)))
 
 (defn- check-stat-permissions
   "Validates the permissions on all items that a user is requesting stat information for."
-  [cm user validation-behavior paths]
-  (case (keyword validation-behavior)
-    :own   (validators/user-owns-paths cm user paths)
-    :write (validators/all-paths-writeable cm user paths)
-    :read  (validators/all-paths-readable cm user paths)
-    (validators/all-paths-readable cm user paths)))
+  [irods user validation-behavior paths]
+  (let [validator-for     {:own :path-owned :write :path-writeable :read :path-readable}
+        default-validator :path-readable
+        validator         (get validator-for (keyword validation-behavior) default-validator)]
+    (validate irods [validator paths user (cfg/irods-zone)])))
 
-(defn remove-inaccessible-paths
-  "Removes entries from a list of paths that the user cannot access."
-  [cm user validation-behavior paths]
+(defn- acceptable-permissions-for
+  "Returns the set of acceptable permissions for a given validation behavior."
+  [validation-behavior]
   (case (keyword validation-behavior)
-    :own   (filter (partial perm/owns? cm user) paths)
-    :write (filter (partial perm/is-writeable? cm user) paths)
-    :read  (filter (partial perm/is-readable? cm user) paths)
-    (filter (partial perm/is-readable? cm user) paths)))
+    :own   #{:own}
+    :write #{:own :write}
+    #{:own :write :read}))
+
+(defn- remove-inaccessible-paths
+  "Removes entries from a list of paths that the user cannot access."
+  [irods user validation-behavior paths]
+  (let [acceptable-permissions (acceptable-permissions-for validation-behavior)]
+    (filter
+     (fn [p] (get acceptable-permissions @(rods/permission irods user (cfg/irods-zone) p)))
+     paths)))
 
 (defn do-stat
   [{:keys [user validation-behavior filter-include filter-exclude ignore-missing ignore-inaccessible]
     :or   {filter-include nil filter-exclude nil ignore-missing false ignore-inaccessible false}}
    {paths :paths uuids :ids}]
-  (irods/with-jargon-exceptions [cm]
-    (validators/user-exists cm user)
-    (when-not ignore-missing (validators/all-uuids-exist cm uuids))
-    (let [uuid-paths       (get-uuid-paths cm uuids)
-          all-paths        (into paths (map second uuid-paths))
-          extant-paths     (if ignore-missing
-                             (remove-missing-paths cm all-paths)
-                             (do (validators/all-paths-exist cm all-paths) all-paths))
+  (irods/with-irods-exceptions {} irods
+    (validate irods
+              [:user-exists user (cfg/irods-zone)]
+              (when-not ignore-missing [:uuid-exists (remove nil? uuids)])
+              (when-not ignore-missing [:path-exists (remove nil? paths) (cfg/irods-user) (cfg/irods-zone)]))
+    (let [uuid-paths       @(rods/uuids->paths irods uuids)
+          all-paths        (into paths (remove nil? (map second uuid-paths)))
+          extant-paths     (remove-missing-paths irods user (cfg/irods-zone) all-paths)
           accessible-paths (if ignore-inaccessible
-                             (remove-inaccessible-paths cm user validation-behavior extant-paths)
-                             (do (check-stat-permissions cm user validation-behavior extant-paths) extant-paths))
+                             (remove-inaccessible-paths irods user validation-behavior extant-paths)
+                             (do (check-stat-permissions irods user validation-behavior extant-paths) extant-paths))
           uuid-paths       (filter (comp (set accessible-paths) second) uuid-paths)
           paths            (filter (set accessible-paths) paths)
           format-stat      (fn [path]
-                             (path-stat cm user path :filter-include filter-include :filter-exclude filter-exclude))]
+                             ;; TODO: update this to use clj-irods
+                             (new-path-stat irods user path
+                                            :filter-include filter-include
+                                            :filter-exclude filter-exclude))]
       {:paths (into {} (map (juxt keyword format-stat) paths))
-       :ids   (into {} (map (juxt first (comp format-stat second)) uuid-paths))})))
+       :ids   (into {} (map (juxt (comp keyword str first) (comp format-stat second)) uuid-paths))})))
 
 (with-pre-hook! #'do-stat
   (fn [params body]
