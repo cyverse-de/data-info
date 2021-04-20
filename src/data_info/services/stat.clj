@@ -107,7 +107,8 @@
   [stat-map irods user path included-keys]
   (if (and (needs-key? included-keys :share-count) (owns? stat-map))
     (otel/with-span [s ["new-merge-shares"]]
-      (assoc stat-map :share-count (new-count-shares irods user path)))))
+      (assoc stat-map :share-count (new-count-shares irods user path)))
+    stat-map))
 
 (defn- merge-shares
   [stat-map cm user path included-keys]

@@ -1,13 +1,14 @@
 (ns data-info.services.directory
   (:require [dire.core :refer [with-pre-hook! with-post-hook!]]
             [clj-icat-direct.icat :as icat]
+            [clj-irods.core :as rods]
+            [clj-irods.validate :refer [validate]]
             [clj-jargon.permissions :as perm]
             [data-info.services.stat :as stat]
             [data-info.util.config :as cfg]
             [data-info.util.logging :as dul]
             [data-info.util.irods :as irods]
-            [data-info.util.paths :as paths]
-            [data-info.util.validators :as validators])
+            [data-info.util.paths :as paths])
   (:import [clojure.lang ISeq]))
 
 
@@ -50,20 +51,21 @@
 
 (defn- list-directories
   "Lists the directories contained under path."
-  [user path]
-  (irods/with-jargon-exceptions [cm]
-    (validators/user-exists cm user)
-    (validators/path-exists cm path)
-    (validators/path-readable cm user path)
-    (validators/path-is-dir cm path)
-    (-> (stat/path-stat cm user path :filter-include [:id :label :path :date-created :date-modified :permission])
+  [user zone path]
+  (irods/with-irods-exceptions {} irods
+    (validate irods
+              [:user-exists user zone]
+              [:path-exists path user zone]
+              [:path-readable path user zone]
+              [:path-is-dir path user zone])
+    (-> (stat/new-path-stat irods user path :filter-include [:id :label :path :date-created :date-modified :permission])
         (assoc :folders (map (partial fmt-folder user)
                              (icat/list-folders-in-folder user (cfg/irods-zone) path))))))
 
 
 (defn do-directory
   [zone path-in-zone {user :user}]
-  {:folder (list-directories user (irods/abs-path zone path-in-zone))})
+  {:folder (list-directories user (cfg/irods-zone) (irods/abs-path zone path-in-zone))})
 
 (with-pre-hook! #'do-directory
   (fn [zone path params]
