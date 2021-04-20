@@ -58,7 +58,7 @@
               [:path-exists path user zone]
               [:path-readable path user zone]
               [:path-is-dir path user zone])
-    (-> (stat/new-path-stat irods user path :filter-include [:id :label :path :date-created :date-modified :permission])
+    (-> (stat/path-stat irods user path :filter-include [:id :label :path :date-created :date-modified :permission])
         (assoc :folders (map (partial fmt-folder user)
                              (icat/list-folders-in-folder user (cfg/irods-zone) path))))))
 

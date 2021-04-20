@@ -16,7 +16,7 @@
       (validate irods [:user-exists user zone])
       (when-not (exists? @(:jargon irods) user-home)
         (mkdirs @(:jargon irods) user-home))
-      (stat/new-path-stat irods user user-home :filter-include [:id :label :path :date-created :date-modified :permission]))))
+      (stat/path-stat irods user user-home :filter-include [:id :label :path :date-created :date-modified :permission]))))
 
 (defn do-homedir
   [{user :user}]

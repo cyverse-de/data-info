@@ -12,6 +12,7 @@
             [ring.middleware.multipart-params :as multipart]
             [otel.otel :as otel]
             [data-info.services.stat :as stat]
+            [data-info.services.stat.common :refer [process-filters]]
             [data-info.services.uuids :as uuids]
             [data-info.util.config :as cfg]
             [data-info.util.irods :as irods]
@@ -69,9 +70,9 @@
       ;; invalidation, since prior validations would have inaccurate info for this
       ;; new content
       (assoc
-        (stat/decorate-stat @(:jargon irods) user base-stat (stat/process-filters nil [:content-type :infoType]) :validate? false)
-        :infoType     final-info-type
-        :content-type media-type))))
+       (stat/decorate-stat irods user base-stat (process-filters nil [:content-type :infoType]) :validate? false)
+       :infoType     final-info-type
+       :content-type media-type))))
 
 (defn- create-at-path
   "Create a new file at dest-path from istream.
