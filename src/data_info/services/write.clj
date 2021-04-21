@@ -66,11 +66,9 @@
           base-stat (ops/copy-stream @(:jargon irods) @istream-ref user dest-path :set-owner? set-owner?)
           final-info-type (set-info-type @(:jargon irods) dest-path @info-type)]
       (log/info "Detected info-type:" @info-type ", final type:" final-info-type)
-      ;; we don't want to convert the below to clj-irods without cache
-      ;; invalidation, since prior validations would have inaccurate info for this
-      ;; new content
+      (rods/invalidate irods dest-path)
       (assoc
-       (stat/decorate-stat irods user base-stat (process-filters nil [:content-type :infoType]) :validate? false)
+       (stat/decorate-stat irods user (cfg/irods-zone) base-stat (process-filters nil [:content-type :infoType]) :validate? false)
        :infoType     final-info-type
        :content-type media-type))))
 

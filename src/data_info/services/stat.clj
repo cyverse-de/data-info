@@ -125,7 +125,6 @@
           uuid-paths       (filter (comp (set accessible-paths) second) uuid-paths)
           paths            (filter (set accessible-paths) paths)
           format-stat      (fn [path]
-                             ;; TODO: update this to use clj-irods
                              (path-stat irods user path
                                         :filter-include filter-include
                                         :filter-exclude filter-exclude))]

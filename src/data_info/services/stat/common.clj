@@ -15,7 +15,7 @@
   (= (:permission stat-map) :own))
 
 (defn needs-key?
-  "Determins whether or not a key is needed in a stat map. Note: the :permission key is needed by anything that uses
+  "Determines whether or not a key is needed in a stat map. Note: the :permission key is needed by anything that uses
    `owns?` and the :type key is needed by anything that uses `is-dir?`. In all other cases only requested keys are
    needed."
   [requested-keys needed-key?]
@@ -26,7 +26,7 @@
         false)))
 
 (defn needs-any-key?
-  "Determins whether or not any key in a set is needed in a stat map. Note: the :permission key is needed by anything
+  "Determines whether or not any key in a set is needed in a stat map. Note: the :permission key is needed by anything
    that uses `owns?` and the :type key is needed by anything that uses `is-dir?`. In all other cases only requested
    keys are needed."
   [included-keys & needed-keys]

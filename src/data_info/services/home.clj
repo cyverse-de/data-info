@@ -1,5 +1,6 @@
 (ns data-info.services.home
   (:require [dire.core :refer [with-pre-hook! with-post-hook!]]
+            [clj-irods.core :as rods]
             [clj-irods.validate :refer [validate]]
             [clj-jargon.item-info :refer [exists?]]
             [clj-jargon.item-ops :refer [mkdirs]]
@@ -15,7 +16,8 @@
     (irods/with-irods-exceptions {} irods
       (validate irods [:user-exists user zone])
       (when (= @(rods/object-type irods user zone user-home) :none)
-        (mkdirs @(:jargon irods) user-home))
+        (mkdirs @(:jargon irods) user-home)
+        (rods/invalidate irods user-home))
       (stat/path-stat irods user user-home :filter-include [:id :label :path :date-created :date-modified :permission]))))
 
 (defn do-homedir
