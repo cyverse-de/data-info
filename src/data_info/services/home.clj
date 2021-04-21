@@ -14,7 +14,7 @@
   (let [user-home (path/user-home-dir user)]
     (irods/with-irods-exceptions {} irods
       (validate irods [:user-exists user zone])
-      (when-not (exists? @(:jargon irods) user-home)
+      (when (= @(rods/object-type irods user zone user-home) :none)
         (mkdirs @(:jargon irods) user-home))
       (stat/path-stat irods user user-home :filter-include [:id :label :path :date-created :date-modified :permission]))))
 
