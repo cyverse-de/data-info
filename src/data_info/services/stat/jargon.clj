@@ -29,7 +29,7 @@
   [stat-map cm user path included-keys & {:keys [validate?] :or {validate? true}}]
   (if (and (needs-any-key? included-keys :infoType :content-type) (not (is-dir? stat-map)))
     (otel/with-span [s ["merge-type-info"]]
-      (assoc-if-selected included-keys stat-map
+      (assoc-if-selected stat-map included-keys
         :infoType     (get-types cm user path :validate? validate?)
         :content-type (irods/detect-media-type cm path)))
     stat-map))
@@ -51,7 +51,7 @@
   [stat-map cm user path included-keys]
   (if (and (needs-any-key? included-keys :file-count :dir-count) (is-dir? stat-map))
     (otel/with-span [s ["merge-counts"]]
-      (assoc-if-selected included-keys stat-map
+      (assoc-if-selected stat-map included-keys
         :file-count (icat/number-of-files-in-folder user (cfg/irods-zone) path)
         :dir-count  (icat/number-of-folders-in-folder user (cfg/irods-zone) path)))
     stat-map))
