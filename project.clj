@@ -33,7 +33,7 @@
                  [slingshot "0.12.2"]
                  [org.cyverse/otel "0.2.1"]
                  [org.cyverse/clj-irods "0.2.3-SNAPSHOT"]
-                 [org.cyverse/clj-icat-direct "2.9.1"
+                 [org.cyverse/clj-icat-direct "2.9.3"
                    :exclusions [[org.slf4j/slf4j-log4j12]
                                 [log4j]]]
                  [org.cyverse/clj-jargon "3.0.0-SNAPSHOT"
