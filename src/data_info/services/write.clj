@@ -12,6 +12,7 @@
             [ring.middleware.multipart-params :as multipart]
             [otel.otel :as otel]
             [data-info.services.stat :as stat]
+            [data-info.services.stat.common :refer [process-filters]]
             [data-info.services.uuids :as uuids]
             [data-info.util.config :as cfg]
             [data-info.util.irods :as irods]
@@ -65,13 +66,11 @@
           base-stat (ops/copy-stream @(:jargon irods) @istream-ref user dest-path :set-owner? set-owner?)
           final-info-type (set-info-type @(:jargon irods) dest-path @info-type)]
       (log/info "Detected info-type:" @info-type ", final type:" final-info-type)
-      ;; we don't want to convert the below to clj-irods without cache
-      ;; invalidation, since prior validations would have inaccurate info for this
-      ;; new content
+      (rods/invalidate irods dest-path)
       (assoc
-        (stat/decorate-stat @(:jargon irods) user base-stat (stat/process-filters nil [:content-type :infoType]) :validate? false)
-        :infoType     final-info-type
-        :content-type media-type))))
+       (stat/decorate-stat irods user (cfg/irods-zone) base-stat (process-filters nil [:content-type :infoType]) :validate? false)
+       :infoType     final-info-type
+       :content-type media-type))))
 
 (defn- create-at-path
   "Create a new file at dest-path from istream.

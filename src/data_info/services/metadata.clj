@@ -16,7 +16,8 @@
             [data-info.clients.metadata :as metadata]
             [data-info.services.directory :as directory]
             [data-info.services.page-tabular :as csv]
-            [data-info.services.stat :as stat]
+            [data-info.services.stat.common :refer [process-filters]]
+            [data-info.services.stat.jargon :as jargon-stat]
             [data-info.services.uuids :as uuids]
             [data-info.util.config :as cfg]
             [data-info.util.irods :as irods]
@@ -78,7 +79,7 @@
 (defn- get-readable-data-item
   "Gets a data-item's path and type and checks that it's readable"
   [cm user data-id]
-  (let [{:keys [path] :as data-item} (stat/uuid-stat cm user data-id :filter-include [:path :type])]
+  (let [{:keys [path] :as data-item} (jargon-stat/uuid-stat cm user data-id :filter-include [:path :type])]
     (validators/path-readable cm user path)
     data-item))
 
@@ -205,7 +206,7 @@
   "Gets the path, type, and id for data-ids and validates all the paths are writeable."
   [cm user data-ids]
   (validators/validate-num-paths data-ids)
-  (let [data-items (map #(stat/uuid-stat cm user % :filter-include [:path :type :id]) data-ids)
+  (let [data-items (map #(jargon-stat/uuid-stat cm user % :filter-include [:path :type :id]) data-ids)
         paths (map :path data-items)]
     (validators/all-paths-writeable cm user paths)
     data-items))
@@ -254,7 +255,7 @@
                           :avus)
         data-item (assoc data-item :metadata (concat irods-metadata metadata-avus))
         path->metadata (comp (partial get-data-item-metadata-for-save cm user recursive?)
-                             (partial stat/path-stat cm user))]
+                             (partial jargon-stat/path-stat cm user))]
     (if (and recursive? (stat-is-dir? data-item))
       (merge data-item
              (segregate-files-from-folders
@@ -274,7 +275,7 @@
   (irods/with-jargon-exceptions :client-user user [cm]
     (validators/user-exists cm user)
     (let [dest-dir (ft/dirname dest)
-          src-data (stat/uuid-stat cm user data-id)
+          src-data (jargon-stat/uuid-stat cm user data-id)
           src-path (:path src-data)]
       (validators/path-readable cm user src-path)
       (validators/path-exists cm dest-dir)
@@ -284,7 +285,7 @@
         (validators/validate-num-paths-under-folder user src-path))
 
       (with-in-str (build-metadata-for-save cm user src-data recursive?)
-        {:file (stat/decorate-stat cm user (copy-stream cm *in* user dest) (stat/process-filters nil nil))}))))
+        {:file (jargon-stat/decorate-stat cm user (copy-stream cm *in* user dest) (process-filters nil nil))}))))
 
 (defn do-metadata-save
   "Entrypoint for the API. Calls (metadata-save)."
@@ -343,7 +344,7 @@
   [user data-id]
   (irods/with-jargon-exceptions :client-user user [cm]
     (validators/user-exists cm user)
-    (let [{:keys [path] :as dir-stat} (stat/uuid-stat cm user data-id)
+    (let [{:keys [path] :as dir-stat} (jargon-stat/uuid-stat cm user data-id)
           md-dir-path                 (d1-metadata-dir-path path)
           md-path                     (ft/path-join md-dir-path "cyverse-metadata.xml")
           ore-path                    (ft/path-join md-dir-path "ore.xml")
@@ -377,7 +378,7 @@
 (defn- bulk-add-file-avus
   "Applies metadata from a list of attributes and values to the given path."
   [cm user attrs path values]
-  (let [{:keys [type id]} (stat/path-stat cm user path :filter-include [:type :id])
+  (let [{:keys [type id]} (jargon-stat/path-stat cm user path :filter-include [:type :id])
         avus (map (partial zipmap [:attr :value :unit]) (map vector attrs values (repeat "")))
         metadata {:avus avus}]
     (when-not (empty? avus)
