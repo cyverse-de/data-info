@@ -49,6 +49,7 @@
                  [org.cyverse/metadata-files "1.0.3"]
                  [org.cyverse/oai-ore "1.0.3"]
                  [org.cyverse/service-logging "2.8.2"]
+                 [net.logstash.logback/logstash-logback-encoder "4.11"]
                  [org.cyverse/event-messages "0.0.1"]
                  [com.novemberain/langohr "3.5.1"]
                  [slingshot "0.12.2"]]
