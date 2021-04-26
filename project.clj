@@ -29,6 +29,7 @@
                  [de.ubercode.clostache/clostache "1.4.0" :exclusions [org.clojure/core.incubator]]
                  [javax.servlet/servlet-api "2.5"]
                  [metosin/compojure-api "1.1.13"]
+                 [ring/ring-jetty-adapter "1.6.3"] ;; update this when underlying ring version changes, probably
                  [org.cyverse/otel "0.2.3"]
                  [org.cyverse/clj-irods "0.2.2"]
                  [org.cyverse/clj-icat-direct "2.9.3"
