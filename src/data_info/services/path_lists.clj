@@ -8,7 +8,8 @@
             [clj-jargon.item-info :as item-info]
             [clj-jargon.permissions :as perms]
             [data-info.services.filetypes :as filetypes]
-            [data-info.services.stat :as stat]
+            [data-info.services.stat.common :refer [process-filters]]
+            [data-info.services.stat.jargon :as jargon-stat]
             [data-info.util.config :as cfg]
             [data-info.util.irods :as irods]
             [data-info.util.validators :as validators]))
@@ -85,7 +86,7 @@
 
 (defn- get-top-level-file-stats
   [cm user path]
-  (stat/path-stat cm user path :filter-include [:path :infoType :label :permission :type]))
+  (jargon-stat/path-stat cm user path :filter-include [:path :infoType :label :permission :type]))
 
 (defn- paths->path-list
   "Filters the given paths and returns a string of these paths appended to an HT Path List header.
@@ -148,4 +149,4 @@
                                                 paths)
           path-list-file-stat (with-in-str path-list-contents (copy-stream cm *in* user dest))]
       (filetypes/add-type-to-validated-path cm dest path-list-info-type)
-      {:file (stat/decorate-stat cm user path-list-file-stat (stat/process-filters nil nil))})))
+      {:file (jargon-stat/decorate-stat cm user path-list-file-stat (process-filters nil nil))})))
