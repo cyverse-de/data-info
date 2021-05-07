@@ -7,7 +7,7 @@
       (string/trim (:out (sh "git" "rev-parse" "HEAD")))
       ""))
 
-(defproject org.cyverse/data-info "2.21.1-SNAPSHOT"
+(defproject org.cyverse/data-info "3.0.0-SNAPSHOT"
   :description "provides an HTTP API for interacting with iRODS"
   :url "https://github.com/cyverse-de/data-info"
   :license {:name "BSD"
@@ -27,7 +27,7 @@
                  [org.apache.tika/tika-core "1.26"]
                  [net.sf.opencsv/opencsv "2.3"]
                  [de.ubercode.clostache/clostache "1.4.0" :exclusions [org.clojure/core.incubator]]
-                 [org.cyverse/clj-irods "0.2.3-SNAPSHOT"]
+                 [org.cyverse/clj-irods "0.3.0-SNAPSHOT"]
                  [org.cyverse/clj-icat-direct "2.9.3"
                    :exclusions [[org.slf4j/slf4j-log4j12]
                                 [log4j]]]
@@ -37,7 +37,7 @@
                  [javax.servlet/servlet-api "2.5"]
                  [metosin/compojure-api "1.1.13"]
                  [ring/ring-jetty-adapter "1.6.3"] ;; update this when underlying ring version changes, probably
-                 [org.cyverse/otel "0.2.3"]
+                 [org.cyverse/otel "0.2.4"]
                  [org.cyverse/clojure-commons "3.0.6"]
                  [org.cyverse/common-cli "2.8.1"]
                  [org.cyverse/common-cfg "2.8.1"]
