@@ -63,6 +63,7 @@
             [jonase/eastwood "0.4.0"]]
   :profiles {:dev     {:plugins        [[lein-ring "0.12.5"]]
                        :resource-paths ["conf/test"]}
+             :repl    {:source-paths ["repl"]}
              :uberjar {:aot :all}}
   :main ^:skip-aot data-info.core
   :ring {:handler data-info.routes/app
