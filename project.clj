@@ -37,7 +37,6 @@
                  [javax.servlet/servlet-api "2.5"]
                  [metosin/compojure-api "1.1.13"]
                  [ring/ring-jetty-adapter "1.6.3"] ;; update this when underlying ring version changes, probably
-                 [io.aviso/pretty "1.1"]
                  [org.cyverse/otel "0.2.4"]
                  [org.cyverse/clojure-commons "3.0.6"]
                  [org.cyverse/common-cli "2.8.1"]

@@ -2,7 +2,6 @@
   (:use [slingshot.slingshot :only [try+]])
   (:require [data-info.util.config :as config]
             [data-info.util.irods :as irods]
-            [io.aviso.exception :as exception]
             [clojure.tools.logging :as log]
             [clojure.string :as string]
             [async-tasks-client.core :as async-tasks-client]))
@@ -61,5 +60,5 @@
        (end-fn async-task false)
        (catch Object _
          (log/error (:throwable &throw-context) "failed processing async task" async-task-id)
-         (add-completed-status async-task-id {:status "failed" :detail (exception/format-exception (:throwable &throw-context))})
+         (add-completed-status async-task-id {:status "failed"})
          (end-fn async-task true))))))
