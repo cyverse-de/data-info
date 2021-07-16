@@ -60,5 +60,5 @@
        (end-fn async-task false)
        (catch Object _
          (log/error (:throwable &throw-context) "failed processing async task" async-task-id)
-         (add-completed-status async-task-id {:status "failed"})
+         (add-completed-status async-task-id {:status "failed" :detail (pr-str (:throwable &throw-context))})
          (end-fn async-task true))))))
