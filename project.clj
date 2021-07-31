@@ -40,7 +40,7 @@
                  [org.cyverse/otel "0.2.4"]
                  [org.cyverse/clojure-commons "3.0.6"]
                  [org.cyverse/common-cli "2.8.1"]
-                 [org.cyverse/common-cfg "2.8.1"]
+                 [org.cyverse/common-cfg "2.8.2"]
                  [org.cyverse/common-swagger-api "3.1.0"]
                  [org.cyverse/heuristomancer "2.8.6"]
                  [org.cyverse/kameleon "3.0.5"]
