@@ -168,8 +168,11 @@
 
 (defn anon-file-url
   [path]
-  (let [aurl (url/url (cfg/anon-files-base-url))]
-    (str (-> aurl (assoc :path (apply ft/path-join (:path aurl) [(encode-mapped-anon-path (map-anon-url-path path))]))))))
+  (let [aurl (url/url (cfg/anon-files-base-url))
+        encoded-path (encode-mapped-anon-path (map-anon-url-path path))]
+    (-> aurl
+        (assoc :path (ft/path-join (:path aurl) encoded-path))
+        str)))
 
 (defn- anon-files-urls
   [paths]
