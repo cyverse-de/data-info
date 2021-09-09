@@ -13,7 +13,8 @@
             [data-info.util.paths :as paths]
             [data-info.util.config :as cfg]
             [data-info.util.irods :as irods]
-            [data-info.util.validators :as validators]))
+            [data-info.util.validators :as validators])
+  (:import java.net.URLEncoder))
 
 (defn- shared?
   ([cm share-with fpath]
@@ -160,10 +161,21 @@
     (when-not (nil? matching-key)
       (string/replace-first path matching-key (mappings matching-key)))))
 
+(defn- encode-mapped-anon-path
+  "Take a path that's been appropriately mapped, and URL encode it for use. This function will use %20 for spaces."
+  [mapped-path]
+  (as-> mapped-path p
+    (string/split p #"/")
+    (map #(string/replace (URLEncoder/encode %) #"\+" "%20") p)
+    (string/join "/" p)))
+
 (defn anon-file-url
   [path]
-  (let [aurl (url/url (cfg/anon-files-base-url))]
-    (str (-> aurl (assoc :path (apply ft/path-join (:path aurl) [(map-anon-url-path path)]))))))
+  (let [aurl (url/url (cfg/anon-files-base-url))
+        encoded-path (encode-mapped-anon-path (map-anon-url-path path))]
+    (-> aurl
+        (assoc :path (ft/path-join (:path aurl) encoded-path))
+        str)))
 
 (defn- anon-files-urls
   [paths]
