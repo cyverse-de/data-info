@@ -164,7 +164,10 @@
 (defn- encode-mapped-anon-path
   "Take a path that's been appropriately mapped, and URL encode it for use. This function will use %20 for spaces."
   [mapped-path]
-  (string/join "/" (map #(string/replace (URLEncoder/encode %) #"\+" "%20") (string/split mapped-path #"/"))))
+  (as-> mapped-path p
+    (string/split p #"/")
+    (map #(string/replace (URLEncoder/encode %) #"\+" "%20") p)
+    (string/join "/" p)))
 
 (defn anon-file-url
   [path]
