@@ -10,12 +10,15 @@
 
 (defn- spec
   []
-  (icat-db-spec
-    (cfg/icat-host)
-    (cfg/icat-user)
-    (cfg/icat-password)
-    :port (cfg/icat-port)
-    :db   (cfg/icat-db)))
+  (assoc
+    (icat-db-spec
+      (cfg/icat-host)
+      (cfg/icat-user)
+      (cfg/icat-password)
+      :port (cfg/icat-port)
+      :db   (cfg/icat-db))
+    :test-connection-on-checkin true
+    :idle-connection-test-period 60))
 
 (defn configure-icat
   "Configures the connection pool to the ICAT database."
