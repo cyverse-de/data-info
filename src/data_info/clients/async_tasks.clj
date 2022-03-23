@@ -4,6 +4,7 @@
             [data-info.util.irods :as irods]
             [clojure.tools.logging :as log]
             [clojure.string :as string]
+            [otel.otel :as otel]
             [async-tasks-client.core :as async-tasks-client]))
 
 
@@ -37,28 +38,37 @@
 
 (defn run-async-thread
   [async-task-id thread-function prefix]
-  (let [^Runnable task-thread (fn [] (thread-function async-task-id))]
-    (.start (Thread. task-thread (str prefix "-" (string/replace async-task-id #".*/tasks/" "")))))
-  async-task-id)
+  (otel/with-span [outer-span ["run-async-thread" {:kind :producer :attributes {"async-task-id" (str async-task-id)}}]]
+    (let [^Runnable task-thread (fn []
+                                  (with-open [_ (otel/span-scope outer-span)]
+                                    (otel/with-span [s ["async thread" {:kind :consumer :attributes {"async-task-id" (str async-task-id)}}]]
+                                      (thread-function async-task-id))))]
+      (.start (Thread. task-thread (str prefix "-" (string/replace async-task-id #".*/tasks/" "")))))
+    async-task-id))
 
 (defn paths-async-thread
   ([async-task-id jargon-fn end-fn]
    (paths-async-thread async-task-id jargon-fn end-fn true))
   ([async-task-id jargon-fn end-fn use-client-user?]
-   (let [{:keys [username] :as async-task} (get-by-id async-task-id)
-         update-fn (fn [path action]
-                     (log/info "Updating async task:" async-task-id ":" path action)
-                     (add-status async-task-id {:status "running" :detail (format "%s: %s" path (name action))}))]
-     (try+
-       (add-status async-task-id {:status "started"})
-       (if use-client-user?
-         (irods/with-jargon-exceptions :client-user username [cm]
-           (jargon-fn cm async-task update-fn))
-         (irods/with-jargon-exceptions [cm]
-           (jargon-fn cm async-task update-fn)))
-       (add-completed-status async-task-id {:status "completed"})
-       (end-fn async-task false)
-       (catch Object _
-         (log/error (:throwable &throw-context) "failed processing async task" async-task-id)
-         (add-completed-status async-task-id {:status "failed" :detail (pr-str (:throwable &throw-context))})
-         (end-fn async-task true))))))
+   (otel/with-span [s ["paths-async-thread" {:attributes {"async-task-id" (str async-task-id)}}]]
+     (let [{:keys [username] :as async-task} (get-by-id async-task-id)
+           update-fn (fn [path action]
+                       (otel/with-span [s ["update-fn"]]
+                         (log/info "Updating async task:" async-task-id ":" path action)
+                         (add-status async-task-id {:status "running" :detail (format "%s: %s" path (name action))})))]
+       (try+
+         (add-status async-task-id {:status "started"})
+         (if use-client-user?
+           (irods/with-jargon-exceptions :client-user username [cm]
+             (otel/with-span [s ["jargon-fn" {:attributes {"client-user" username}}]]
+               (jargon-fn cm async-task update-fn)))
+           (irods/with-jargon-exceptions [cm]
+             (otel/with-span [s ["jargon-fn"]]
+               (jargon-fn cm async-task update-fn))))
+         (add-completed-status async-task-id {:status "completed"})
+         (otel/with-span [s ["end-fn"]]
+           (end-fn async-task false))
+         (catch Object _
+           (log/error (:throwable &throw-context) "failed processing async task" async-task-id)
+           (add-completed-status async-task-id {:status "failed" :detail (pr-str (:throwable &throw-context))})
+           (end-fn async-task true)))))))

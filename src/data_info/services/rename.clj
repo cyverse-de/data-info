@@ -12,7 +12,8 @@
             [data-info.util.config :as cfg]
             [data-info.util.irods :as irods]
             [data-info.util.logging :as dul]
-            [data-info.util.validators :as validators]))
+            [data-info.util.validators :as validators]
+            [otel.otel :as otel]))
 
 (defn- source->dest
   [source-path dest-path]
@@ -56,45 +57,47 @@
 (defn- move-paths
   "As 'user', moves objects in 'sources' into the directory in 'dest', establishing an asynchronous task and processing in another thread."
   [user sources dest]
-  (let [all-paths  (apply merge (mapv #(hash-map (source->dest %1 dest) %1) sources))
-        dest-paths (keys all-paths)
-        sources    (mapv ft/rm-last-slash sources)
-        dest       (ft/rm-last-slash dest)]
-    (irods/with-jargon-exceptions :client-user user [cm]
-      (validators/user-exists cm user)
-      (validators/all-paths-exist cm sources)
-      (validators/all-paths-exist cm [dest])
-      (validators/path-is-dir cm dest)
-      (validators/user-owns-paths cm user sources)
-      (validators/path-writeable cm user dest)
-      (validators/no-paths-exist cm dest-paths))
-    (let [async-task-id (async-tasks/run-async-thread
-                          (new-task "data-move" user {:sources sources :destination dest})
-                          move-paths-thread "data-move")]
-      {:user user :sources sources :dest dest :async-task-id async-task-id})))
+  (otel/with-span [s ["move-paths"]]
+    (let [all-paths  (apply merge (mapv #(hash-map (source->dest %1 dest) %1) sources))
+          dest-paths (keys all-paths)
+          sources    (mapv ft/rm-last-slash sources)
+          dest       (ft/rm-last-slash dest)]
+      (irods/with-jargon-exceptions :client-user user [cm]
+        (validators/user-exists cm user)
+        (validators/all-paths-exist cm sources)
+        (validators/all-paths-exist cm [dest])
+        (validators/path-is-dir cm dest)
+        (validators/user-owns-paths cm user sources)
+        (validators/path-writeable cm user dest)
+        (validators/no-paths-exist cm dest-paths))
+      (let [async-task-id (async-tasks/run-async-thread
+                            (new-task "data-move" user {:sources sources :destination dest})
+                            move-paths-thread "data-move")]
+        {:user user :sources sources :dest dest :async-task-id async-task-id}))))
 
 (defn- rename-path
   "As 'user', move 'source' to 'dest', establishing an asynchronous task and processing in another thread."
   [user source dest]
-  (let [source    (ft/rm-last-slash source)
-        dest      (ft/rm-last-slash dest)
-        src-base  (ft/basename source)
-        dest-base (ft/basename dest)]
-    (if (= source dest)
-      {:source source :dest dest :user user}
-      (do
-        (irods/with-jargon-exceptions :client-user user [cm]
-          (validators/user-exists cm user)
-          (validators/all-paths-exist cm [source (ft/dirname dest)])
-          (validators/path-is-dir cm (ft/dirname dest))
-          (validators/user-owns-path cm user source)
-          (if-not (= (ft/dirname source) (ft/dirname dest))
-            (validators/path-writeable cm user (ft/dirname dest)))
-          (validators/path-not-exists cm dest))
-        (let [async-task-id (async-tasks/run-async-thread
-                              (new-task "data-rename" user {:source source :destination dest})
-                              rename-path-thread "data-rename")]
-          {:user user :source source :dest dest :async-task-id async-task-id})))))
+  (otel/with-span [s ["rename-path"]]
+    (let [source    (ft/rm-last-slash source)
+          dest      (ft/rm-last-slash dest)
+          src-base  (ft/basename source)
+          dest-base (ft/basename dest)]
+      (if (= source dest)
+        {:source source :dest dest :user user}
+        (do
+          (irods/with-jargon-exceptions :client-user user [cm]
+            (validators/user-exists cm user)
+            (validators/all-paths-exist cm [source (ft/dirname dest)])
+            (validators/path-is-dir cm (ft/dirname dest))
+            (validators/user-owns-path cm user source)
+            (if-not (= (ft/dirname source) (ft/dirname dest))
+              (validators/path-writeable cm user (ft/dirname dest)))
+            (validators/path-not-exists cm dest))
+          (let [async-task-id (async-tasks/run-async-thread
+                                (new-task "data-rename" user {:source source :destination dest})
+                                rename-path-thread "data-rename")]
+            {:user user :source source :dest dest :async-task-id async-task-id}))))))
 
 (defn- rename-uuid
   "Rename by UUID: given a user, a source file UUID, and a new name, rename within the same folder."
