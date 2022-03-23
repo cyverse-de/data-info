@@ -7,6 +7,9 @@ spec:
   selector:
     matchLabels:
       de-app: data-info
+  strategy:
+    rollingUpdate:
+      maxSurge: 200%
   template:
     metadata:
       labels:
