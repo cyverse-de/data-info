@@ -68,6 +68,16 @@ spec:
               configMapKeyRef:
                 name: java-tool-options
                 key: high
+          - name: OTEL_TRACES_EXPORTER
+            valueFrom:
+              secretKeyRef:
+                name: configs
+                key: OTEL_TRACES_EXPORTER
+          - name: OTEL_EXPORTER_JAEGER_ENDPOINT
+            valueFrom:
+              secretKeyRef:
+                name: configs
+                key: OTEL_EXPORTER_JAEGER_ENDPOINT
         ports:
           - name: listen-port
             containerPort: 60000
@@ -78,6 +88,14 @@ spec:
           initialDelaySeconds: 60
           periodSeconds: 20
           timeoutSeconds: 10
+        startupProbe:
+          httpGet:
+            path: /
+            port: 60000
+          initialDelaySeconds: 60
+          periodSeconds: 20
+          timeoutSeconds: 10
+          failureThreshold: 30
         readinessProbe:
           httpGet:
             path: /
