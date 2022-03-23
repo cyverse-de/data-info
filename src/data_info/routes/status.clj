@@ -12,6 +12,7 @@
 
 (defroutes status
     (GET "/" [:as {:keys [uri server-name server-port]}]
+      :middleware [otel-middleware]
       :query [{:keys [expecting]} StatusParams]
       :return DataInfoStatusResponse
       :tags ["service-info"]
@@ -23,6 +24,7 @@
                   :iRODS (status/irods-running?)))))
 
     (GET "/admin/config" [:as {:keys [uri]}]
+      :middleware [otel-middleware]
       :return (describe s/Any "A map of configuration keys to values.")
       :tags ["service-info"]
       :summary "Configuration Information"

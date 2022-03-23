@@ -139,11 +139,19 @@
   (let [jargon-fn (fn [cm async-task update-fn]
                     (update-fn "delete trash" :begin)
                     (let [{:keys [username data]} async-task
-                          trash-list (:trash-paths data)]
+                          trash-list (:trash-paths data)
+                          errs (atom [])]
                       (doseq [trash-path trash-list]
                         (update-fn trash-path :begin-delete)
-                        (delete cm trash-path true)
-                        (update-fn trash-path :end-delete)))
+                        (try+
+                          (delete cm trash-path true)
+                          (catch Object e
+                            (log/error (:throwable &throw-context) "error processing async task" async-task-id)
+                            (swap! errs conj e)
+                            (update-fn trash-path :error-deleting)))
+                        (update-fn trash-path :end-delete))
+                      (if (> 0 (count @errs))
+                        (throw+ @errs)))
                     (update-fn "delete trash" :end))
         end-fn (fn [async-task failed?]
                  (notifications/send-notification
