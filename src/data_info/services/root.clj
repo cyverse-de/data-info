@@ -78,6 +78,6 @@
 
 (defn user-base-paths
   [user]
-  (irods/with-jargon-exceptions [cm]
-    (validators/user-exists cm user)
+  (irods/with-irods-exceptions {:use-icat-transaction false} irods
+    (validate irods [:user-exists user (cfg/irods-zone)])
     (get-base-paths user)))
