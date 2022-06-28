@@ -3,7 +3,9 @@
         [clj-jargon.item-ops :only [move move-all]]
         [slingshot.slingshot :only [try+ throw+]])
   (:require [clojure.tools.logging :as log]
+            [clojure.string :as string]
             [clojure-commons.file-utils :as ft]
+            [clojure-commons.error-codes :as error]
             [dire.core :refer [with-pre-hook! with-post-hook!]]
             [data-info.clients.async-tasks :as async-tasks]
             [data-info.clients.notifications :as notifications]
@@ -18,6 +20,42 @@
 (defn- source->dest
   [source-path dest-path]
   (ft/path-join dest-path (ft/basename source-path)))
+
+(defn- validate-unlocked
+  [paths]
+  ;; We need to:
+  ;; Fetch all async tasks that could cause it to be locked (data-move, data-rename, data-delete, data-delete-trash, data-restore)
+  ;; statuses registered, started, running, detected-stalled (so, not completed/failed mostly)
+  ;; or we can just only include non-completed ones, i.e. EndDateSince sometime in the future + include null end
+  ;; Pull out their paths.
+  ;; data-move: sources, destination
+  ;; data-rename: source, destination
+  ;; data-delete: paths, trash-paths (not that the latter is real likely)
+  ;; data-delete-trash: trash-paths
+  ;; data-restore: paths, restoration-paths
+  ;; Then we need to check all of `paths` to see if any of them matches any of the paths we fetched. These should either match exactly, or match something up through a slash in the path passed to us (i.e., a folder -- we don't want to lock /x/y/zarbee if someone is moving /x/y/za to /x/y/zb or whatever)
+  (let [far-future "9999-12-31T23:59:59Z"
+        eligible-async-task-types ["data-move" "data-rename" "data-delete" "data-delete-trash" "data-restore"]
+        eligible-tasks (async-tasks/get-by-filter {:type eligible-async-task-types
+                                                   :include_null_end true
+                                                   :end_date_since far-future})
+        extract-paths (fn [task]
+                        (condp = (:type task)
+                          :data-move (concat [(:destination (:data task))] (:sources (:data task)))
+                          :data-rename (map #(get (:data task) %) [:destination :source])
+                          :data-delete (concat (:paths (:data task)) (vals (:trash-paths (:data task))))
+                          :data-delete-trash (:trash-paths (:data task))
+                          :data-restore (concat (:paths (:data task)) (map :restored-path (vals (:restoration-paths (:data task)))))
+                          nil)) ;; ugh, gross
+        locked-paths (reduce conj #{} (mapcat extract-paths eligible-tasks))
+        path-matches (fn [path] (or
+                                  (get locked-paths path)
+                                  (some #(string/starts-with? (str % "/") path)
+                                        locked-paths)))
+        matching-paths (filterv path-matches paths)]
+    (if matching-paths
+      (throw+ {:error_code error/ERR_CONFLICT
+               :paths      matching-paths}))))
 
 (defn- move-paths-thread
   [async-task-id]
@@ -62,6 +100,7 @@
           dest-paths (keys all-paths)
           sources    (mapv ft/rm-last-slash sources)
           dest       (ft/rm-last-slash dest)]
+      (validate-unlocked (concat sources dest-paths))
       (irods/with-jargon-exceptions :client-user user [cm]
         (validators/user-exists cm user)
         (validators/all-paths-exist cm sources)
@@ -86,6 +125,7 @@
       (if (= source dest)
         {:source source :dest dest :user user}
         (do
+          (validate-unlocked [source dest])
           (irods/with-jargon-exceptions :client-user user [cm]
             (validators/user-exists cm user)
             (validators/all-paths-exist cm [source (ft/dirname dest)])

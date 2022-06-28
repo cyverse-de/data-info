@@ -38,7 +38,7 @@
                  [metosin/compojure-api "1.1.13"]
                  [ring/ring-jetty-adapter "1.6.3"] ;; update this when underlying ring version changes, probably
                  [org.cyverse/otel "0.2.5"]
-                 [org.cyverse/clojure-commons "3.0.6"]
+                 [org.cyverse/clojure-commons "3.0.7-SNAPSHOT"]
                  [org.cyverse/common-cli "2.8.1"]
                  [org.cyverse/common-cfg "2.8.2"]
                  [org.cyverse/common-swagger-api "3.1.0"]
