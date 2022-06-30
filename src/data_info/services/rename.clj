@@ -21,7 +21,7 @@
   [source-path dest-path]
   (ft/path-join dest-path (ft/basename source-path)))
 
-(defn- validate-unlocked
+(defn validate-unlocked
   [paths]
   ;; We need to:
   ;; Fetch all async tasks that could cause it to be locked (data-move, data-rename, data-delete, data-delete-trash, data-restore)
