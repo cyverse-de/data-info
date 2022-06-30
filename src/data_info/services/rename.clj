@@ -53,7 +53,7 @@
                                   (some #(string/starts-with? (str % "/") path)
                                         locked-paths)))
         matching-paths (filterv path-matches paths)]
-    (if matching-paths
+    (if (seq matching-paths)
       (throw+ {:error_code error/ERR_CONFLICT
                :paths      matching-paths}))))
 
