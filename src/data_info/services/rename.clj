@@ -39,13 +39,13 @@
         eligible-tasks (async-tasks/get-by-filter {:type eligible-async-task-types
                                                    :include_null_end true
                                                    :end_date_since far-future})
-        extract-paths (fn [task]
-                        (condp = (:type task)
-                          :data-move (concat [(:destination (:data task))] (:sources (:data task)))
-                          :data-rename (map #(get (:data task) %) [:destination :source])
-                          :data-delete (concat (:paths (:data task)) (vals (:trash-paths (:data task))))
-                          :data-delete-trash (:trash-paths (:data task))
-                          :data-restore (concat (:paths (:data task)) (map :restored-path (vals (:restoration-paths (:data task)))))
+        extract-paths (fn [{:keys [data type]}]
+                        (condp = type
+                          :data-move (concat [(:destination data)] (:sources data))
+                          :data-rename (map #(get data %) [:destination :source])
+                          :data-delete (concat (:paths data) (vals (:trash-paths data)))
+                          :data-delete-trash (:trash-paths data)
+                          :data-restore (concat (:paths data) (map :restored-path (vals (:restoration-paths data))))
                           nil)) ;; ugh, gross
         locked-paths (reduce conj #{} (mapcat extract-paths eligible-tasks))
         path-matches (fn [path] (or
