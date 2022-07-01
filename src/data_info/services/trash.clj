@@ -103,13 +103,14 @@
                              (if-not (.startsWith path (paths/user-trash-path user))
                                {path (randomized-trash-path user path)}
                                {}))
-                           paths))
-             async-task-id (async-tasks/run-async-thread
-                             (rename/new-task "data-delete" user {:paths paths :trash-paths trash-paths})
-                             delete-paths-thread "data-delete")]
-         {:paths paths
-          :trash-paths trash-paths
-          :async-task-id async-task-id}))))
+                           paths))]
+         (rename/validate-unlocked (concat paths (vals trash-paths)))
+         (let [async-task-id (async-tasks/run-async-thread
+                               (rename/new-task "data-delete" user {:paths paths :trash-paths trash-paths})
+                               delete-paths-thread "data-delete")]
+           {:paths paths
+            :trash-paths trash-paths
+            :async-task-id async-task-id})))))
 
 (defn- delete-uuid
   "Delete by UUID: given a user and a data item UUID, delete that data item, returning a list of filenames deleted."
@@ -164,13 +165,14 @@
   (irods/with-jargon-exceptions [cm]
     (validators/user-exists cm user)
     (let [trash-dir  (paths/user-trash-path user)
-          trash-list (mapv (fn [^IRODSFile file] (.getAbsolutePath file)) (list-in-dir cm (ft/rm-last-slash trash-dir)))
-          async-task-id (async-tasks/run-async-thread
-                          (rename/new-task "data-delete-trash" user {:trash-paths trash-list})
-                          delete-trash-thread "data-delete-trash")]
-      {:trash trash-dir
-       :paths trash-list
-       :async-task-id async-task-id})))
+          trash-list (mapv (fn [^IRODSFile file] (.getAbsolutePath file)) (list-in-dir cm (ft/rm-last-slash trash-dir)))]
+      (rename/validate-unlocked trash-list)
+      (let [async-task-id (async-tasks/run-async-thread
+                            (rename/new-task "data-delete-trash" user {:trash-paths trash-list})
+                            delete-trash-thread "data-delete-trash")]
+        {:trash trash-dir
+         :paths trash-list
+         :async-task-id async-task-id}))))
 
 (defn- restore-to-homedir?
   "Whether to restore a given file to the home directory.
@@ -284,11 +286,12 @@
         (let [retval (apply merge (mapv
                                     (fn [path]
                                       {path (restoration-paths cm user path)})
-                                    paths))
-              async-task-id (async-tasks/run-async-thread
-                              (rename/new-task "data-restore" user {:paths paths :restoration-paths retval})
-                              restore-paths-thread "data-restore")]
-         {:restored retval :async-task-id async-task-id})))))
+                                    paths))]
+          (rename/validate-unlocked (concat paths (map :restored-path (vals retval))))
+          (let [async-task-id (async-tasks/run-async-thread
+                                (rename/new-task "data-restore" user {:paths paths :restoration-paths retval})
+                                restore-paths-thread "data-restore")]
+           {:restored retval :async-task-id async-task-id}))))))
 
 (defn do-delete
   [{user :user} {paths :paths}]
