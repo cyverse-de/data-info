@@ -47,7 +47,8 @@
                           :data-delete-trash (:trash-paths data)
                           :data-restore (concat (:paths data) (map :restored-path (vals (:restoration-paths data))))
                           nil)) ;; ugh, gross
-        locked-paths (reduce conj #{} (mapcat extract-paths eligible-tasks))
+        mapcat-paths (mapcat extract-paths eligible-tasks)
+        locked-paths (reduce conj #{} mapcat-paths)
         path-matches (fn [path] (or
                                   (get locked-paths path)
                                   (some #(string/starts-with? (str % "/") path)
@@ -55,6 +56,7 @@
         matching-paths (filterv path-matches paths)]
     (log/warn "validate-unlocked details")
     (log/warn (map :id eligible-tasks))
+    (log/warn mapcat-paths)
     (log/warn locked-paths)
     (log/warn matching-paths)
     (if (seq matching-paths)
