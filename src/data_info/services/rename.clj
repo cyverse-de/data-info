@@ -53,6 +53,10 @@
                                   (some #(string/starts-with? (str % "/") path)
                                         locked-paths)))
         matching-paths (filterv path-matches paths)]
+    (log/warn "validate-unlocked details")
+    (log/warn (map :id eligible-tasks))
+    (log/warn locked-paths)
+    (log/warn matching-paths)
     (if (seq matching-paths)
       (throw+ {:error_code error/ERR_CONFLICT
                :paths      matching-paths}))))
