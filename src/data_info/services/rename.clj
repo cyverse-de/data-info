@@ -41,11 +41,12 @@
                                                    :end_date_since far-future})
         extract-paths (fn [{:keys [data type]}]
                         (condp = type
-                          :data-move (concat [(:destination data)] (:sources data))
-                          :data-rename (map #(get data %) [:destination :source])
-                          :data-delete (concat (:paths data) (vals (:trash-paths data)))
-                          :data-delete-trash (:trash-paths data)
-                          :data-restore (concat (:paths data) (map :restored-path (vals (:restoration-paths data))))
+                          "data-move"         (concat [(:destination data)] (:sources data))
+                          "data-rename"       (map #(get data %) [:destination :source])
+                          "data-delete"       (concat (:paths data) (vals (:trash-paths data)))
+                          "data-delete-trash" (:trash-paths data)
+                          "data-restore"      (concat (:paths data)
+                                                      (map :restored-path (vals (:restoration-paths data))))
                           nil)) ;; ugh, gross
         mapcat-paths (mapcat extract-paths eligible-tasks)
         locked-paths (reduce conj #{} mapcat-paths)
