@@ -5,18 +5,40 @@
             [clojure-commons.config :as cc]
             [clojure-commons.error-codes :as ce]
             [clojure.tools.logging :as log]
+            [clojure.java.shell :as shell]
+            [clojure.string :as string]
             [common-cfg.cfg :as cfg]
             [metadata-client.core :as metadata-client]
-            [async-tasks-client.core :as async-tasks-client]))
+            [async-tasks-client.core :as async-tasks-client])
+  (:import [java.net InetAddress]
+           [java.util UUID]))
 
 (def docs-uri "/docs")
 
+(def service-identifier
+  (memoize (fn []
+             (try
+               (log/info "Getting hostname via shell")
+               (-> (shell/sh "hostname") :out string/trim)
+               (catch Exception _e
+                 (try
+                   (log/info "Getting hostname via /etc/hostname")
+                   (string/trim (slurp "/etc/hostname"))
+                   (catch Exception _e
+                     (try
+                       (log/info "Getting hostname via java.net.InetAddress")
+                       (.getHostName (InetAddress/getLocalHost))
+                       (catch Exception _e
+                         (log/info "Using a random UUID as service identifier")
+                         (str (UUID/randomUUID)))))))))))
+
 (def svc-info
-  {:desc     "DE service for data information logic and iRODS interactions."
-   :app-name "data-info"
-   :group-id "org.cyverse"
-   :art-id   "data-info"
-   :service  "data-info"})
+  {:desc        "DE service for data information logic and iRODS interactions."
+   :app-name    "data-info"
+   :group-id    "org.cyverse"
+   :art-id      "data-info"
+   :service     "data-info"
+   :instance-id (service-identifier)})
 
 (def ^:private props
   "A ref for storing the configuration properties."

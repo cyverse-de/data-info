@@ -89,7 +89,7 @@
   (async-tasks/create-task
     {:type type
      :username user
-     :data data
+     :data (assoc data :instance-id (cfg/service-identifier))
      :statuses [{:status "registered"}]
      :behaviors [{:type "statuschangetimeout"
                   :data {:statuses [{:start_status "running" :end_status "detected-stalled" :timeout "10m"}]}}]}))
