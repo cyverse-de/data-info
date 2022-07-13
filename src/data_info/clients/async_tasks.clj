@@ -55,7 +55,7 @@
            update-fn (fn [path action]
                        (otel/with-span [s ["update-fn"]]
                          (log/info "Updating async task:" async-task-id ":" path action)
-                         (add-status async-task-id {:status "running" :detail (format "%s: %s" path (name action))})))]
+                         (add-status async-task-id {:status "running" :detail (format "[%s] %s: %s" (config/service-identifier) path (name action))})))]
        (try+
          (add-status async-task-id {:status "started"})
          (if use-client-user?
@@ -65,10 +65,10 @@
            (irods/with-jargon-exceptions [cm]
              (otel/with-span [s ["jargon-fn"]]
                (jargon-fn cm async-task update-fn))))
-         (add-completed-status async-task-id {:status "completed"})
+         (add-completed-status async-task-id {:status "completed" :detail (str "[" (config/service-identifier) "]")})
          (otel/with-span [s ["end-fn"]]
            (end-fn async-task false))
          (catch Object _
            (log/error (:throwable &throw-context) "failed processing async task" async-task-id)
-           (add-completed-status async-task-id {:status "failed" :detail (pr-str (:throwable &throw-context))})
+           (add-completed-status async-task-id {:status "failed" :detail (format "[%s] %s" (config/service-identifier) (pr-str (:throwable &throw-context)))})
            (end-fn async-task true)))))))

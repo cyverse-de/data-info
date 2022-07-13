@@ -90,7 +90,7 @@
     {:type type
      :username user
      :data (assoc data :instance-id (cfg/service-identifier))
-     :statuses [{:status "registered"}]
+     :statuses [{:status "registered" :detail (str "[" (cfg/service-identifier) "]")}]
      :behaviors [{:type "statuschangetimeout"
                   :data {:statuses [{:start_status "running" :end_status "detected-stalled" :timeout "10m"}]}}]}))
 
