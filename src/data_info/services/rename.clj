@@ -39,9 +39,12 @@
         eligible-tasks (async-tasks/get-by-filter {:type eligible-async-task-types
                                                    :include_null_end true
                                                    :end_date_since far-future})
+        add-destination-to-basenames (fn [destination sources]
+                                       (map #(ft/path-join destination %) (map ft/basename sources)))
         extract-paths (fn [{:keys [data type]}]
                         (condp = type
-                          "data-move"         (concat [(:destination data)] (:sources data))
+                          "data-move"         (concat (add-destination-to-basenames (:destination data) (:sources data))
+                                                      (:sources data))
                           "data-rename"       (map #(get data %) [:destination :source])
                           "data-delete"       (concat (:paths data) (vals (:trash-paths data)))
                           "data-delete-trash" (:trash-paths data)
