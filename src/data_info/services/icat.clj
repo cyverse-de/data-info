@@ -17,8 +17,9 @@
       (cfg/icat-password)
       :port (cfg/icat-port)
       :db   (cfg/icat-db))
+    :idle-timeout (* 60 60) ;; reduce to 1 hour instead of korma's 3
     :test-connection-on-checkin true
-    :idle-connection-test-period 60))
+    :idle-connection-test-period (* 5 60)))
 
 (defn configure-icat
   "Configures the connection pool to the ICAT database."
