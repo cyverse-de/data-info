@@ -64,8 +64,8 @@
          locked-paths (reduce conj #{} (mapcat extract-paths eligible-tasks))
          path-matches (fn [path] (or
                                    (get locked-paths path)
-                                   (some #(string/starts-with? (str % "/") path) locked-paths) ;; locked path + '/' prefix of new path
-                                   (some #(string/starts-with? (str path "/") %) locked-paths) ;; new path + '/' prefix of locked path
+                                   (some #(string/starts-with? (ft/add-trailing-slash %) path) locked-paths) ;; locked path + '/' prefix of new path
+                                   (some #(string/starts-with? (ft/add-trailing-slash path) %) locked-paths) ;; new path + '/' prefix of locked path
                                    ))
          matching-paths (filterv path-matches paths)]
      (if (seq matching-paths)
