@@ -22,42 +22,55 @@
   (ft/path-join dest-path (ft/basename source-path)))
 
 (defn validate-unlocked
-  [paths]
-  ;; We need to:
-  ;; Fetch all async tasks that could cause it to be locked (data-move, data-rename, data-delete, data-delete-trash, data-restore)
-  ;; statuses registered, started, running, detected-stalled (so, not completed/failed mostly)
-  ;; or we can just only include non-completed ones, i.e. EndDateSince sometime in the future + include null end
-  ;; Pull out their paths.
-  ;; data-move: sources, destination
-  ;; data-rename: source, destination
-  ;; data-delete: paths, trash-paths (not that the latter is real likely)
-  ;; data-delete-trash: trash-paths
-  ;; data-restore: paths, restoration-paths
-  ;; Then we need to check all of `paths` to see if any of them matches any of the paths we fetched. These should either match exactly, or match something up through a slash in the path passed to us (i.e., a folder -- we don't want to lock /x/y/zarbee if someone is moving /x/y/za to /x/y/zb or whatever)
-  (let [far-future "9999-12-31T23:59:59Z"
-        eligible-async-task-types ["data-move" "data-rename" "data-delete" "data-delete-trash" "data-restore"]
-        eligible-tasks (async-tasks/get-by-filter {:type eligible-async-task-types
-                                                   :include_null_end true
-                                                   :end_date_since far-future})
-        extract-paths (fn [{:keys [data type]}]
-                        (condp = type
-                          "data-move"         (concat [(:destination data)] (:sources data))
-                          "data-rename"       (map #(get data %) [:destination :source])
-                          "data-delete"       (concat (:paths data) (vals (:trash-paths data)))
-                          "data-delete-trash" (:trash-paths data)
-                          "data-restore"      (concat (:paths data)
-                                                      (map :restored-path (vals (:restoration-paths data))))
-                          nil)) ;; ugh, gross
-        mapcat-paths (mapcat extract-paths eligible-tasks)
-        locked-paths (reduce conj #{} mapcat-paths)
-        path-matches (fn [path] (or
-                                  (get locked-paths path)
-                                  (some #(string/starts-with? (str % "/") path)
-                                        locked-paths)))
-        matching-paths (filterv path-matches paths)]
-    (if (seq matching-paths)
-      (throw+ {:error_code error/ERR_CONFLICT
-               :paths      matching-paths}))))
+  ([sources dests]
+   (validate-unlocked (concat sources dests)))
+  ([paths]
+   ;; We need to:
+   ;; Fetch all async tasks that could cause it to be locked (data-move, data-rename, data-delete, data-delete-trash, data-restore)
+   ;; only include non-completed ones, i.e. EndDateSince sometime in the future + include null end
+   ;; Pull out their paths.
+   ;; data-move: sources, destination
+   ;; data-rename: source, destination
+   ;; data-delete: paths, trash-paths (not that the latter is real likely)
+   ;; data-delete-trash: trash-paths
+   ;; data-restore: paths, restoration-paths
+   ;; Then we need to check the paths. No source or destination can be the source or destination of another move.
+   ;; This includes exact matches but also prefix matches in both directions:
+   ;; If a locked source plus '/' is a prefix of a new source, we're moving the new source with both processes
+   ;; If a locked destination plus '/' is a prefix of a new source, we're trying to move the new source out while it's still being moved in
+   ;; If a new source plus '/' is a prefix of a locked source, we're moving the locked source with both processes
+   ;; If a new source plus '/' is a prefix of a locked destination, we're  trying to move something in while part of it (the locked dest) is being moved out
+   ;; Locked source + '/' prefix of new dest, we're moving new dest in while the parent is being moved out
+   ;; Locked dest + '/' prefix of new dest, we're moving stuff into new dest with two processes
+   ;; New dest + '/' prefix of locked source, we might be moving stuff into locked source while it's being moved out
+   ;; New dest + '/' prefix of locked dest, we're moving stuff into locked dest with two processes
+   (let [far-future "9999-12-31T23:59:59Z"
+         eligible-async-task-types ["data-move" "data-rename" "data-delete" "data-delete-trash" "data-restore"]
+         eligible-tasks (async-tasks/get-by-filter {:type eligible-async-task-types
+                                                    :include_null_end true
+                                                    :end_date_since far-future})
+         add-destination-to-basenames (fn [destination sources]
+                                        (map #(ft/path-join destination %) (map ft/basename sources)))
+         extract-paths (fn [{:keys [data type]}]
+                         (condp = type
+                           "data-move"         (concat (add-destination-to-basenames (:destination data) (:sources data))
+                                                       (:sources data))
+                           "data-rename"       (map #(get data %) [:destination :source])
+                           "data-delete"       (concat (:paths data) (vals (:trash-paths data)))
+                           "data-delete-trash" (:trash-paths data)
+                           "data-restore"      (concat (:paths data)
+                                                       (map :restored-path (vals (:restoration-paths data))))
+                           nil))
+         locked-paths (reduce conj #{} (mapcat extract-paths eligible-tasks))
+         path-matches (fn [path] (or
+                                   (get locked-paths path)
+                                   (some #(string/starts-with? (ft/add-trailing-slash %) path) locked-paths) ;; locked path + '/' prefix of new path
+                                   (some #(string/starts-with? (ft/add-trailing-slash path) %) locked-paths) ;; new path + '/' prefix of locked path
+                                   ))
+         matching-paths (filterv path-matches paths)]
+     (if (seq matching-paths)
+       (throw+ {:error_code error/ERR_CONFLICT
+                :paths      matching-paths})))))
 
 (defn- move-paths-thread
   [async-task-id]
@@ -102,7 +115,7 @@
           dest-paths (keys all-paths)
           sources    (mapv ft/rm-last-slash sources)
           dest       (ft/rm-last-slash dest)]
-      (validate-unlocked (concat sources dest-paths))
+      (validate-unlocked sources dest-paths)
       (irods/with-jargon-exceptions :client-user user [cm]
         (validators/user-exists cm user)
         (validators/all-paths-exist cm sources)

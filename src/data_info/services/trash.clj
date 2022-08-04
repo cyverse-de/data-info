@@ -104,7 +104,7 @@
                                {path (randomized-trash-path user path)}
                                {}))
                            paths))]
-         (rename/validate-unlocked (concat paths (vals trash-paths)))
+         (rename/validate-unlocked paths (vals trash-paths))
          (let [async-task-id (async-tasks/run-async-thread
                                (rename/new-task "data-delete" user {:paths paths :trash-paths trash-paths})
                                delete-paths-thread "data-delete")]
@@ -287,7 +287,7 @@
                                     (fn [path]
                                       {path (restoration-paths cm user path)})
                                     paths))]
-          (rename/validate-unlocked (concat paths (map :restored-path (vals retval))))
+          (rename/validate-unlocked paths (map :restored-path (vals retval)))
           (let [async-task-id (async-tasks/run-async-thread
                                 (rename/new-task "data-restore" user {:paths paths :restoration-paths retval})
                                 restore-paths-thread "data-restore")]
