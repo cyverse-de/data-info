@@ -5,9 +5,12 @@
   (:require [clojure.string :as string]
             [clojure-commons.file-utils :as ft]
             [clj-icat-direct.icat :as icat]
-            [clj-jargon.item-info :as item-info]
+            [clj-irods.core :as rods]
+            [clj-irods.validate :refer [validate]]
             [clj-jargon.permissions :as perms]
+            [otel.otel :as otel]
             [data-info.services.filetypes :as filetypes]
+            [data-info.services.stat :as stat]
             [data-info.services.stat.common :refer [process-filters]]
             [data-info.services.stat.jargon :as jargon-stat]
             [data-info.util.config :as cfg]
@@ -85,29 +88,31 @@
          (not folders-only?))))
 
 (defn- get-top-level-file-stats
-  [cm user path]
-  (jargon-stat/path-stat cm user path :filter-include [:path :infoType :label :permission :type]))
+  [irods user path]
+  (stat/path-stat irods user path :filter-include [:path :infoType :label :permission :type]))
 
 (defn- paths->path-list
   "Filters the given paths and returns a string of these paths appended to an HT Path List header.
    Throws an error if the filtering params result in no matching paths."
-  [cm user path-list-file-identifier name-pattern info-types folders-only? recursive? paths]
-  (let [{folder-paths true file-paths false} (group-by (partial item-info/is-dir? cm) paths)
-        files          (->> file-paths
-                            (map (partial get-top-level-file-stats cm user))
-                            (filter (keep-top-level-file? info-types)))
-        folders        (->> folder-paths
-                            (mapcat (partial folder-listing user info-types folders-only? recursive?))
-                            (mapcat (partial list-item-with-subitems user info-types folders-only? recursive?)))
-        filtered-paths (->> (concat files folders)
-                            (filter (partial keep-data-item? name-pattern folders-only?))
-                            (map :path))]
+  [irods user path-list-file-identifier name-pattern info-types folders-only? recursive? paths]
+  (otel/with-span [s ["paths->path-list"]]
+    (let [zone-from-path (fn [path] (first (remove empty? (string/split path #"/"))))
+          {folder-paths true file-paths false} (group-by #(= @(rods/object-type irods user (zone-from-path %) %) :dir) paths)
+          files          (->> file-paths
+                              (map (partial get-top-level-file-stats irods user))
+                              (filter (keep-top-level-file? info-types)))
+          folders        (->> folder-paths
+                              (mapcat (partial folder-listing user info-types folders-only? recursive?))
+                              (mapcat (partial list-item-with-subitems user info-types folders-only? recursive?)))
+          filtered-paths (->> (concat files folders)
+                              (filter (partial keep-data-item? name-pattern folders-only?))
+                              (map :path))]
 
-    (when (empty? filtered-paths)
-      (throw+ {:error_code ERR_NOT_FOUND
-               :reason "No paths matched the request."}))
+      (when (empty? filtered-paths)
+        (throw+ {:error_code ERR_NOT_FOUND
+                 :reason "No paths matched the request."}))
 
-    (string/join "\n" (concat [path-list-file-identifier] filtered-paths))))
+      (string/join "\n" (concat [path-list-file-identifier] filtered-paths)))))
 
 (defn- info-type->file-identifier
   "Returns the appropriate Path List file identifier for the given `path-list-info-type`."
@@ -117,12 +122,14 @@
     (cfg/multi-input-path-list-identifier)))
 
 (defn- validate-request-paths
-  [cm user dest paths]
-  (let [dest-dir (ft/dirname dest)]
-    (validators/path-exists cm dest-dir)
-    (validators/path-writeable cm user dest-dir)
-    (validators/path-not-exists cm dest)
-    (validators/all-paths-exist cm paths)
+  [irods user dest paths]
+  (let [dest-dir (ft/dirname dest)
+        zone     (first (remove empty? (string/split dest-dir #"/")))]
+    (validate irods
+              [:path-exists dest-dir user zone]
+              [:path-writeable dest-dir user zone]
+              [:path-not-exists dest user zone]
+              [:path-exists paths user zone])
     (doseq [path paths]
       (validators/not-base-path user path))))
 
@@ -136,17 +143,19 @@
   [{:keys [user dest path-list-info-type name-pattern info-type folders-only recursive]
     :or   {path-list-info-type (cfg/ht-path-list-info-type)}}
    {:keys [paths]}]
-  (irods/with-jargon-exceptions :client-user user [cm]
-    (validate-request-paths cm user dest paths)
+  (otel/with-span [s ["create-path-list"]]
+    (irods/with-irods-exceptions {:jargon-opts {:client-user user}} irods
+      (validate-request-paths irods user dest paths)
 
-    (let [path-list-contents  (paths->path-list cm
-                                                user
-                                                (info-type->file-identifier path-list-info-type)
-                                                name-pattern
-                                                info-type
-                                                folders-only
-                                                recursive
-                                                paths)
-          path-list-file-stat (with-in-str path-list-contents (copy-stream cm *in* user dest))]
-      (filetypes/add-type-to-validated-path cm dest path-list-info-type)
-      {:file (jargon-stat/decorate-stat cm user path-list-file-stat (process-filters nil nil))})))
+      (let [path-list-contents  (paths->path-list irods 
+                                                  user
+                                                  (info-type->file-identifier path-list-info-type)
+                                                  name-pattern
+                                                  info-type
+                                                  folders-only
+                                                  recursive
+                                                  paths)
+            path-list-file-stat (with-in-str path-list-contents (copy-stream @(:jargon irods) *in* user dest))]
+        (filetypes/add-type-to-validated-path @(:jargon irods) dest path-list-info-type)
+        (rods/invalidate irods dest)
+        {:file (stat/decorate-stat irods user (cfg/irods-zone) path-list-file-stat (process-filters nil nil))}))))
