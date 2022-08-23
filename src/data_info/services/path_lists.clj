@@ -40,27 +40,29 @@
 (defn- folder-listing
   "Fetches a folder's contents, listing files, folders, or both depending on the given parameters."
   [user info-types folders-only? recursive? path]
-  (map fmt-entry
-       (icat/paged-folder-listing
-         :user           user
-         :zone           (cfg/irods-zone)
-         :folder-path    path
-         :info-types     info-types
-         :entity-type    (filter-entity-type recursive? folders-only?)
-         :sort-column    :full-path
-         :sort-direction :asc
-         :limit          nil
-         :offset         0)))
+  (otel/with-span [s ["folder-listing"]]
+    (map fmt-entry
+         (icat/paged-folder-listing
+           :user           user
+           :zone           (cfg/irods-zone)
+           :folder-path    path
+           :info-types     info-types
+           :entity-type    (filter-entity-type recursive? folders-only?)
+           :sort-column    :full-path
+           :sort-direction :asc
+           :limit          nil
+           :offset         0))))
 
 (defn- list-item-with-subitems
   [user info-types folders-only? recursive? {:keys [path] :as data-item}]
   "If given a file, returns that file as the only item in a list.
    If given a folder, returns that folder in a list, and the list may include the folder's subfolder/files
    depending on the given parameters."
-  (let [sub-listing (when (and recursive? (stat-is-dir? data-item))
-                      (mapcat (partial list-item-with-subitems user info-types folders-only? recursive?)
-                              (folder-listing user info-types folders-only? recursive? path)))]
-    (concat [data-item] sub-listing)))
+  (otel/with-span [s ["list-item-with-subitems"]]
+    (let [sub-listing (when (and recursive? (stat-is-dir? data-item))
+                        (mapcat (partial list-item-with-subitems user info-types folders-only? recursive?)
+                                (folder-listing user info-types folders-only? recursive? path)))]
+      (concat [data-item] sub-listing))))
 
 (defn- keep-top-level-file?
   "A filter predicate to keep only files with an info-type that matches one in the given `info-types` list,
