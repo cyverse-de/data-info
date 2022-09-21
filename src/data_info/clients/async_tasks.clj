@@ -54,10 +54,17 @@
      (let [{:keys [username] :as async-task} (get-by-id async-task-id)
            update-fn (fn [path action]
                        (otel/with-span [s ["update-fn"]]
-                         (log/info "Updating async task:" async-task-id ":" path action)
-                         (add-status async-task-id {:status "running" :detail (format "[%s] %s: %s" (config/service-identifier) path (name action))})))]
+                         (try+
+                           (log/info "Updating async task:" async-task-id ":" path action)
+                           (add-status async-task-id {:status "running" :detail (format "[%s] %s: %s" (config/service-identifier) path (name action))})
+
+                           (catch Object _
+                             (log/error (:throwable &throw-context) "failed updating async task")))))]
        (try+
-         (add-status async-task-id {:status "started"})
+         (try+
+           (add-status async-task-id {:status "started"})
+           (catch Object _
+             (log/error (:throwable &throw-context) "failed updating async task with started status")))
          (if use-client-user?
            (irods/with-jargon-exceptions :client-user username [cm]
              (otel/with-span [s ["jargon-fn" {:attributes {"client-user" username}}]]
@@ -65,10 +72,16 @@
            (irods/with-jargon-exceptions [cm]
              (otel/with-span [s ["jargon-fn"]]
                (jargon-fn cm async-task update-fn))))
-         (add-completed-status async-task-id {:status "completed" :detail (str "[" (config/service-identifier) "]")})
+         (try+
+           (add-completed-status async-task-id {:status "completed" :detail (str "[" (config/service-identifier) "]")})
+           (catch Object _
+             (log/error (:throwable &throw-context) "failed updating async task with completed status")))
          (otel/with-span [s ["end-fn"]]
            (end-fn async-task false))
          (catch Object _
            (log/error (:throwable &throw-context) "failed processing async task" async-task-id)
-           (add-completed-status async-task-id {:status "failed" :detail (format "[%s] %s" (config/service-identifier) (pr-str (:throwable &throw-context)))})
+           (try+
+             (add-completed-status async-task-id {:status "failed" :detail (format "[%s] %s" (config/service-identifier) (pr-str (:throwable &throw-context)))})
+             (catch Object _
+               (log/error (:throwable &throw-context) "failed updating async task with completed status")))
            (end-fn async-task true)))))))
