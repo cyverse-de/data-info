@@ -1,5 +1,5 @@
 (ns data-info.clients.async-tasks
-  (:use [slingshot.slingshot :only [try+]])
+  (:use [slingshot.slingshot :only [try+ throw+]])
   (:require [data-info.util.config :as config]
             [data-info.util.irods :as irods]
             [clojure.tools.logging :as log]
@@ -7,6 +7,18 @@
             [otel.otel :as otel]
             [async-tasks-client.core :as async-tasks-client]))
 
+;; https://stackoverflow.com/questions/12068640/retrying-something-3-times-before-throwing-an-exception-in-clojure
+;; updated to use slingshot try+/throw+
+(defn- retry
+  [retries f & args]
+  (let [res (try+ {::value (apply f args)}
+                 (catch Object e
+                   (if (zero? retries)
+                     (throw+)
+                     {::exception e})))]
+    (if (::exception res)
+      (recur (dec retries) f args)
+      (::value res))))
 
 (defn get-by-id
   [id]
@@ -56,13 +68,13 @@
                        (otel/with-span [s ["update-fn"]]
                          (try+
                            (log/info "Updating async task:" async-task-id ":" path action)
-                           (add-status async-task-id {:status "running" :detail (format "[%s] %s: %s" (config/service-identifier) path (name action))})
+                           (retry 3 add-status async-task-id {:status "running" :detail (format "[%s] %s: %s" (config/service-identifier) path (name action))})
 
                            (catch Object _
                              (log/error (:throwable &throw-context) "failed updating async task")))))]
        (try+
          (try+
-           (add-status async-task-id {:status "started"})
+           (retry 3 add-status async-task-id {:status "started"})
            (catch Object _
              (log/error (:throwable &throw-context) "failed updating async task with started status")))
          (if use-client-user?
@@ -73,7 +85,8 @@
              (otel/with-span [s ["jargon-fn"]]
                (jargon-fn cm async-task update-fn))))
          (try+
-           (add-completed-status async-task-id {:status "completed" :detail (str "[" (config/service-identifier) "]")})
+           ;; For the completed statuses we want a lot of retries because the presence or absence of an end date controls locking behavior
+           (retry 100 add-completed-status async-task-id {:status "completed" :detail (str "[" (config/service-identifier) "]")})
            (catch Object _
              (log/error (:throwable &throw-context) "failed updating async task with completed status")))
          (otel/with-span [s ["end-fn"]]
@@ -81,7 +94,7 @@
          (catch Object _
            (log/error (:throwable &throw-context) "failed processing async task" async-task-id)
            (try+
-             (add-completed-status async-task-id {:status "failed" :detail (format "[%s] %s" (config/service-identifier) (pr-str (:throwable &throw-context)))})
+             (retry 100 add-completed-status async-task-id {:status "failed" :detail (format "[%s] %s" (config/service-identifier) (pr-str (:throwable &throw-context)))})
              (catch Object _
                (log/error (:throwable &throw-context) "failed updating async task with completed status")))
            (end-fn async-task true)))))))
