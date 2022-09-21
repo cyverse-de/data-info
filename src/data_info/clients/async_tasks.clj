@@ -1,5 +1,5 @@
 (ns data-info.clients.async-tasks
-  (:use [slingshot.slingshot :only [try+]])
+  (:use [slingshot.slingshot :only [try+ throw+]])
   (:require [data-info.util.config :as config]
             [data-info.util.irods :as irods]
             [clojure.tools.logging :as log]
@@ -7,6 +7,19 @@
             [otel.otel :as otel]
             [async-tasks-client.core :as async-tasks-client]))
 
+;; https://stackoverflow.com/questions/12068640/retrying-something-3-times-before-throwing-an-exception-in-clojure
+;; updated to use slingshot try+/throw+ and allow a configurable handler function
+;; you can pass something like (fn [e t] (throw+ (:throwable t))) to rethrow if the retries fail
+(defn- retry-with-handler
+  [retries handler f & args]
+  (let [res (try+ {::value (apply f args)}
+                 (catch Object e
+                   (if (zero? retries)
+                     (handler e &throw-context)
+                     {::exception e})))]
+    (if (::exception res)
+      (recur (dec retries) handler f args)
+      (::value res))))
 
 (defn get-by-id
   [id]
@@ -54,17 +67,14 @@
      (let [{:keys [username] :as async-task} (get-by-id async-task-id)
            update-fn (fn [path action]
                        (otel/with-span [s ["update-fn"]]
-                         (try+
-                           (log/info "Updating async task:" async-task-id ":" path action)
-                           (add-status async-task-id {:status "running" :detail (format "[%s] %s: %s" (config/service-identifier) path (name action))})
-
-                           (catch Object _
-                             (log/error (:throwable &throw-context) "failed updating async task")))))]
+                         (log/info "Updating async task:" async-task-id ":" path action)
+                         (retry-with-handler 3
+                           (fn [e t] (log/error (:throwable t) "failed updating async task"))
+                           add-status async-task-id {:status "running" :detail (format "[%s] %s: %s" (config/service-identifier) path (name action))})))]
        (try+
-         (try+
-           (add-status async-task-id {:status "started"})
-           (catch Object _
-             (log/error (:throwable &throw-context) "failed updating async task with started status")))
+         (retry-with-handler 3
+           (fn [e t] (log/error (:throwable t) "failed updating async task with started status"))
+           add-status async-task-id {:status "started"})
          (if use-client-user?
            (irods/with-jargon-exceptions :client-user username [cm]
              (otel/with-span [s ["jargon-fn" {:attributes {"client-user" username}}]]
@@ -72,16 +82,15 @@
            (irods/with-jargon-exceptions [cm]
              (otel/with-span [s ["jargon-fn"]]
                (jargon-fn cm async-task update-fn))))
-         (try+
-           (add-completed-status async-task-id {:status "completed" :detail (str "[" (config/service-identifier) "]")})
-           (catch Object _
-             (log/error (:throwable &throw-context) "failed updating async task with completed status")))
+           ;; For the completed statuses we want a lot of retries because the presence or absence of an end date controls locking behavior
+           (retry-with-handler 100
+             (fn [e t] (log/error (:throwable t) "failed updating async task with completed status"))
+             add-completed-status async-task-id {:status "completed" :detail (str "[" (config/service-identifier) "]")})
          (otel/with-span [s ["end-fn"]]
            (end-fn async-task false))
          (catch Object _
            (log/error (:throwable &throw-context) "failed processing async task" async-task-id)
-           (try+
-             (add-completed-status async-task-id {:status "failed" :detail (format "[%s] %s" (config/service-identifier) (pr-str (:throwable &throw-context)))})
-             (catch Object _
-               (log/error (:throwable &throw-context) "failed updating async task with completed status")))
+           (retry-with-handler 100
+             (fn [e t] (log/error (:throwable t) "failed updating async task with completed status"))
+             add-completed-status async-task-id {:status "failed" :detail (format "[%s] %s" (config/service-identifier) (pr-str (:throwable &throw-context)))})
            (end-fn async-task true)))))))
