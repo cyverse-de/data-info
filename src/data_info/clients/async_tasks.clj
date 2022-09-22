@@ -34,8 +34,8 @@
                                      (apply retry-with-handler retries handler f args)
                                      (catch Object o
                                        {::error o})))))
-    (delay (if (::error @ag)
-      (throw+ (::error @ag))
+    (delay (if-let [err (::error @ag)]
+      (throw+ err)
       @ag))))
 
 (defn get-by-id
