@@ -52,8 +52,7 @@
 
 (defn add-status
   [id status]
-  (async-tasks-client/add-status (config/async-tasks-client) id status)
-  (log/info "successfully added status"))
+  (async-tasks-client/add-status (config/async-tasks-client) id status))
 
 (defn add-completed-status
   [id status]
