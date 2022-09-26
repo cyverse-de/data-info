@@ -20,7 +20,8 @@
                    (s/optional-key :members)
                    [NonBlankString]}] ;; need to split out to proper defschema
       :responses (merge CommonResponses
-                        {200 {:schema s/Any
+                        {200 {:schema {:group-name NonBlankString
+                                       (s/optional-key :members) [NonBlankString]}
                               :description "Successful response"}})
       :summary "Create group"
       :description (str "Create an IRODS group given a name and a list of members")
