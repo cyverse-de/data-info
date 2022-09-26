@@ -2,7 +2,7 @@
   (:use [common-swagger-api.schema]
         [otel.middleware :only [otel-middleware]]
         [data-info.routes.schemas.users])
-  (:require [data-info.services.users :as users]
+  (:require [data-info.services.groups :as groups]
             [schema.core :as s]
             [ring.util.http-response :refer [ok]]))
 
@@ -13,14 +13,18 @@
 
     (POST "/" []
       :middleware [otel-middleware]
-      :query [{:keys [user]} StandardUserQueryParams]
-      :body [body s/Any] ;; obviously not
+      :query [params StandardUserQueryParams]
+      :body [body {:group-name
+                   NonBlankString
+
+                   (s/optional-key :members)
+                   [NonBlankString]}] ;; need to split out to proper defschema
       :responses (merge CommonResponses
                         {200 {:schema s/Any
                               :description "Successful response"}})
       :summary "Create group"
-      :description (str "Create an IRODS group given a name")
-      (ok {}))
+      :description (str "Create an IRODS group given a name and a list of members")
+      (ok (groups/create-group params body)))
 
     (context ["/:group-name"] []
       :path-params [group-name :- (describe NonBlankString "The name of an iRODS group, with or without zone qualification")]
