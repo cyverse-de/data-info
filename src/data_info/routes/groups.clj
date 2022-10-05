@@ -33,13 +33,13 @@
 
       (GET "/" []
         :middleware [otel-middleware]
-        :query [{:keys [user]} StandardUserQueryParams]
+        :query [params StandardUserQueryParams]
         :responses (merge CommonResponses
                           {200 {:schema Group
                                 :description "Successful response"}})
         :summary "List group members"
         :description (str "List an IRODS group & members given a name")
-        (ok {}))
+        (ok (groups/get-group params group-name)))
 
       (PUT "/" []
         :middleware [otel-middleware]
