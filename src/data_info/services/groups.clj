@@ -5,18 +5,23 @@
             [clojure.string :as string]
             [data-info.services.users :as di-users]
             [data-info.util.config :as cfg]
-            [data-info.util.irods :as irods]))
+            [data-info.util.irods :as irods]
+            [data-info.util.validators :as validators]))
 
 (defn get-group
   [{user :user} group-name]
   (irods/with-jargon-exceptions [cm]
-    ;; validate
+    (validators/user-exists cm user)
+    (validators/group-exists cm group-name)
     {:group-name group-name :members (users/list-group-members cm group-name)}))
 
 (defn create-group
   [{user :user} {group-name :group-name members :members}]
   (irods/with-jargon-exceptions [cm]
-    ;; need to validate
+    (validators/user-exists cm user)
+    (validators/user-is-group-admin cm user)
+    (validators/group-does-not-exist cm group-name)
+    (validators/all-users-exist cm members)
     (users/create-user-group cm group-name)
     (when (seq members)
       (dorun (map
@@ -27,7 +32,10 @@
 (defn update-group-members
   [{user :user :as params} {members :members} group-name]
   (irods/with-jargon-exceptions [cm]
-    ;; validate
+    (validators/user-exists cm user)
+    (validators/user-is-group-admin cm user)
+    (validators/group-exists cm group-name)
+    (validators/all-users-exist cm members)
     (let [current-members (users/list-group-members cm group-name)]
       (loop [old-members (sort current-members)
              new-members (sort members)]
@@ -62,6 +70,8 @@
 (defn delete-group
   [{user :user} group-name]
   (irods/with-jargon-exceptions [cm]
-    ;; validate
-    (users/delete-user-group cm group-name)
+    (validators/user-exists cm user)
+    (validators/user-is-group-admin cm user)
+    (when (users/group-exists? cm group-name)
+      (users/delete-user-group cm group-name))
     nil))
