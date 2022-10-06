@@ -43,21 +43,21 @@
 
       (PUT "/" []
         :middleware [otel-middleware]
-        :query [{:keys [user]} StandardUserQueryParams]
-        :body [body GroupMembers] ;; obviously not
+        :query [params StandardUserQueryParams]
+        :body [body GroupMembers]
         :responses (merge CommonResponses
                           {200 {:schema Group
                                 :description "Successful response"}})
         :summary "Update group members"
         :description (str "Update an IRODS group's members")
-        (ok {}))
+        (ok (groups/update-group-members params body group-name)))
 
       (DELETE "/" []
         :middleware [otel-middleware]
-        :query [{:keys [user]} StandardUserQueryParams]
+        :query [params StandardUserQueryParams]
         :responses (merge CommonResponses
                           {200 {:schema s/Any ;; probably could be better
                                 :description "Successful response"}})
         :summary "Delete group"
         :description (str "Delete an IRODS group's members")
-        (ok {})))))
+        (ok (groups/delete-group params group-name))))))
