@@ -20,7 +20,7 @@
     (POST "/" []
       :middleware [otel-middleware]
       :query [params StandardUserQueryParams]
-      :body [body Group] ;; need to split out to proper defschema
+      :body [body Group]
       :responses (merge CommonResponses
                         {200 {:schema Group
                               :description "Successful response"}})
