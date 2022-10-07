@@ -56,8 +56,7 @@
         :middleware [otel-middleware]
         :query [params StandardUserQueryParams]
         :responses (merge CommonResponses
-                          {200 {:schema s/Any ;; probably could be better
-                                :description "Successful response"}})
+                          {200 {:description "Successful response"}})
         :summary "Delete group"
         :description (str "Delete an IRODS group's members")
         (ok (groups/delete-group params group-name))))))
