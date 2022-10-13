@@ -7,11 +7,11 @@
             [ring.util.http-response :refer [ok]]))
 
 (s/defschema Group
-  {:group-name NonBlankString
+  {:name NonBlankString
    :members [NonBlankString]})
 
 (s/defschema GroupMembers
-  (dissoc Group :group-name))
+  (dissoc Group :name))
 
 (defroutes groups-routes
   (context "/groups" []

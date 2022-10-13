@@ -13,10 +13,10 @@
   (irods/with-jargon-exceptions [cm]
     (validators/user-exists cm user)
     (validators/group-exists cm group-name)
-    {:group-name group-name :members (users/list-group-members cm group-name)}))
+    {:name group-name :members (users/list-group-members cm group-name)}))
 
 (defn create-group
-  [{user :user} {group-name :group-name members :members}]
+  [{user :user} {group-name :name members :members}]
   (irods/with-jargon-exceptions [cm]
     (validators/user-exists cm user)
     (validators/user-is-group-admin cm user)
@@ -27,7 +27,7 @@
       (dorun (map
                (partial users/add-to-group cm group-name)
                members)))
-    {:group-name group-name :members (users/list-group-members cm group-name)}))
+    {:name group-name :members (users/list-group-members cm group-name)}))
 
 (defn update-group-members
   [{user :user :as params} {members :members} group-name]
@@ -65,7 +65,7 @@
 
             :else
             (throw+ {:error "Couldn't figure out what to do with users" :new n :old c}))))
-      {:group-name group-name :members (users/list-group-members cm group-name)})))
+      {:name group-name :members (users/list-group-members cm group-name)})))
 
 (defn delete-group
   [{user :user} group-name]
