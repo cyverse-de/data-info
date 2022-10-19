@@ -1,8 +1,10 @@
 (ns data-info.routes.groups
-  (:use [common-swagger-api.schema]
+  (:use [clojure-commons.error-codes]
+        [common-swagger-api.schema]
         [otel.middleware :only [otel-middleware]]
         [data-info.routes.schemas.users])
   (:require [data-info.services.groups :as groups]
+            [common-swagger-api.schema.data :as data-schema]
             [schema.core :as s]
             [ring.util.http-response :refer [ok]]))
 
@@ -13,6 +15,33 @@
 (s/defschema GroupMembers
   (dissoc Group :name))
 
+(s/defschema GroupErrorResponses
+  (merge ErrorResponseUnchecked
+         {(s/optional-key :user) NonBlankString
+          (s/optional-key :users) [NonBlankString]
+          (s/optional-key :group) NonBlankString}))
+
+(s/defschema CreateErrorCodes
+  (apply s/enum (conj data-schema/CommonErrorCodeResponses ERR_NOT_A_USER ERR_EXISTS)))
+
+(s/defschema GetUpdateErrorCodes
+  (apply s/enum (conj data-schema/CommonErrorCodeResponses ERR_NOT_A_USER ERR_DOES_NOT_EXIST)))
+
+(s/defschema DeleteErrorCodes
+  (apply s/enum (conj data-schema/CommonErrorCodeResponses ERR_NOT_A_USER)))
+
+(s/defschema CreateErrorResponses
+  (assoc GroupErrorResponses
+         :error_code CreateErrorCodes))
+
+(s/defschema GetUpdateErrorResponses
+  (assoc GroupErrorResponses
+         :error_code GetUpdateErrorCodes))
+
+(s/defschema DeleteErrorResponses
+  (assoc GroupErrorResponses
+         :error_code DeleteErrorCodes))
+
 (defroutes groups-routes
   (context "/groups" []
     :tags ["groups"]
@@ -22,6 +51,10 @@
       :query       [params StandardUserQueryParams]
       :body        [body Group]
       :responses   (merge CommonResponses
+                          {500 {:schema CreateErrorResponses
+                                :description data-schema/CommonErrorCodeDocs}}
+                          {403 {:schema ErrorResponseForbidden
+                                :description "No access to group administration"}}
                           {200 {:schema Group
                                 :description "Successful response"}})
       :summary     "Create group"
@@ -35,6 +68,8 @@
         :middleware  [otel-middleware]
         :query       [params StandardUserQueryParams]
         :responses   (merge CommonResponses
+                            {500 {:schema GetUpdateErrorResponses
+                                  :description data-schema/CommonErrorCodeDocs}}
                             {200 {:schema Group
                                   :description "Successful response"}})
         :summary     "List group members"
@@ -46,6 +81,10 @@
         :query       [params StandardUserQueryParams]
         :body        [body GroupMembers]
         :responses   (merge CommonResponses
+                            {500 {:schema GetUpdateErrorResponses
+                                  :description data-schema/CommonErrorCodeDocs}}
+                            {403 {:schema ErrorResponseForbidden
+                                  :description "No access to group administration"}}
                             {200 {:schema Group
                                   :description "Successful response"}})
         :summary     "Update group members"
@@ -56,6 +95,10 @@
         :middleware  [otel-middleware]
         :query       [params StandardUserQueryParams]
         :responses   (merge CommonResponses
+                            {500 {:schema DeleteErrorResponses
+                                  :description data-schema/CommonErrorCodeDocs}}
+                            {403 {:schema ErrorResponseForbidden
+                                  :description "No access to group administration"}}
                             {200 {:description "Successful response"}})
         :summary     "Delete group"
         :description "Delete an IRODS group's members"
