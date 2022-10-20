@@ -17,6 +17,12 @@
   [name]
   (str name \# (cfg/irods-zone)))
 
+(defn ensure-qualified
+  [name]
+  (if (re-find #"#" name)
+    name
+    (qualify-username name)))
+
 (defn do-list-qualified-user-groups
   [user username]
   (irods/with-jargon-exceptions :client-user user [cm]

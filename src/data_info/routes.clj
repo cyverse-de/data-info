@@ -11,6 +11,7 @@
             [data-info.routes.data :as data-routes]
             [data-info.routes.exists :as exists-routes]
             [data-info.routes.filetypes :as filetypes-routes]
+            [data-info.routes.groups :as groups-routes]
             [data-info.routes.path-lists :as path-lists]
             [data-info.routes.permissions :as permission-routes]
             [data-info.routes.navigation :as navigation-routes]
@@ -41,7 +42,8 @@
                    {:name "bulk", :description "Bulk Operations"}
                    {:name "navigation", :description "Navigation"}
                    {:name "users", :description "User Operations"}
-                   {:name "filetypes", :description "File Type Metadata"}]}})
+                   {:name "filetypes", :description "File Type Metadata"}
+                   {:name "groups", :description "Group Operations"}]}})
   (middleware
     [add-user-to-context
      wrap-query-params
@@ -64,4 +66,5 @@
     ticket-routes/ticket-routes
     trash-routes/trash
     users-routes/users-routes
+    groups-routes/groups-routes
     (undocumented (route/not-found (svc/unrecognized-path-response)))))

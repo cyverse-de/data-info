@@ -196,6 +196,23 @@
     (init/with-jargon (cfg/jargon-cfg) [cm]
       (user-exists cm user))))
 
+(defn user-is-group-admin
+  [cm username]
+  (let [user (user/user cm username)]
+    (when-not (some #{(:type user)} [:admin :group-admin])
+      (throw+ {:error_code error/ERR_FORBIDDEN})))) ;; maybe a better code, but idk
+
+(defn group-exists
+  [cm group]
+  (when-not (user/group-exists? cm group)
+    (throw+ {:error_code error/ERR_DOES_NOT_EXIST
+             :group group})))
+
+(defn group-does-not-exist
+  [cm group]
+  (when (user/group-exists? cm group)
+    (throw+ {:error_code error/ERR_EXISTS
+             :group group})))
 
 (defn user-owns-path
   [cm user path]
