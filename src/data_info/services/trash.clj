@@ -9,6 +9,7 @@
   (:require [clojure.tools.logging :as log]
             [clojure-commons.file-utils :as ft]
             [dire.core :refer [with-pre-hook! with-post-hook!]]
+            [data-info.amqp :as amqp]
             [data-info.clients.async-tasks :as async-tasks]
             [data-info.clients.notifications :as notifications]
             [data-info.util.config :as cfg]
@@ -155,6 +156,8 @@
                         (throw+ @errs)))
                     (update-fn "delete trash" :end))
         end-fn (fn [async-task failed?]
+                 ;; Request an updated number either way
+                 (amqp/publish-msg (str "index.usage.data.user." (:username async-task)) "Update requested by data-info")
                  (notifications/send-notification
                    (notifications/empty-trash-notification (:username async-task) failed?)))]
     (async-tasks/paths-async-thread async-task-id jargon-fn end-fn false))) ;; no client user, for backwards compatibility
