@@ -44,33 +44,34 @@
    ;; Locked dest + '/' prefix of new dest, we're moving stuff into new dest with two processes
    ;; New dest + '/' prefix of locked source, we might be moving stuff into locked source while it's being moved out
    ;; New dest + '/' prefix of locked dest, we're moving stuff into locked dest with two processes
-   (let [far-future "9999-12-31T23:59:59Z"
-         eligible-async-task-types ["data-move" "data-rename" "data-delete" "data-delete-trash" "data-restore"]
-         eligible-tasks (async-tasks/get-by-filter {:type eligible-async-task-types
-                                                    :include_null_end true
-                                                    :end_date_since far-future})
-         add-destination-to-basenames (fn [destination sources]
-                                        (map #(ft/path-join destination %) (map ft/basename sources)))
-         extract-paths (fn [{:keys [data type]}]
-                         (condp = type
-                           "data-move"         (concat (add-destination-to-basenames (:destination data) (:sources data))
-                                                       (:sources data))
-                           "data-rename"       (map #(get data %) [:destination :source])
-                           "data-delete"       (concat (:paths data) (vals (:trash-paths data)))
-                           "data-delete-trash" (:trash-paths data)
-                           "data-restore"      (concat (:paths data)
-                                                       (map :restored-path (vals (:restoration-paths data))))
-                           nil))
-         locked-paths (reduce conj #{} (mapcat extract-paths eligible-tasks))
-         path-matches (fn [path] (or
-                                   (get locked-paths path)
-                                   (some #(string/starts-with? (ft/add-trailing-slash %) path) locked-paths) ;; locked path + '/' prefix of new path
-                                   (some #(string/starts-with? (ft/add-trailing-slash path) %) locked-paths) ;; new path + '/' prefix of locked path
-                                   ))
-         matching-paths (filterv path-matches paths)]
-     (if (seq matching-paths)
-       (throw+ {:error_code error/ERR_CONFLICT
-                :paths      matching-paths})))))
+   (otel/with-span [s ["validate-unlocked"]]
+     (let [far-future "9999-12-31T23:59:59Z"
+           eligible-async-task-types ["data-move" "data-rename" "data-delete" "data-delete-trash" "data-restore"]
+           eligible-tasks (async-tasks/get-by-filter {:type eligible-async-task-types
+                                                      :include_null_end true
+                                                      :end_date_since far-future})
+           add-destination-to-basenames (fn [destination sources]
+                                          (map #(ft/path-join destination %) (map ft/basename sources)))
+           extract-paths (fn [{:keys [data type]}]
+                           (condp = type
+                             "data-move"         (concat (add-destination-to-basenames (:destination data) (:sources data))
+                                                         (:sources data))
+                             "data-rename"       (map #(get data %) [:destination :source])
+                             "data-delete"       (concat (:paths data) (vals (:trash-paths data)))
+                             "data-delete-trash" (:trash-paths data)
+                             "data-restore"      (concat (:paths data)
+                                                         (map :restored-path (vals (:restoration-paths data))))
+                             nil))
+           locked-paths (reduce conj #{} (mapcat extract-paths eligible-tasks))
+           path-matches (fn [path] (or
+                                     (get locked-paths path)
+                                     (some #(string/starts-with? (ft/add-trailing-slash %) path) locked-paths) ;; locked path + '/' prefix of new path
+                                     (some #(string/starts-with? (ft/add-trailing-slash path) %) locked-paths) ;; new path + '/' prefix of locked path
+                                     ))
+           matching-paths (filterv path-matches paths)]
+       (if (seq matching-paths)
+         (throw+ {:error_code error/ERR_CONFLICT
+                  :paths      matching-paths}))))))
 
 (defn- move-paths-thread
   [async-task-id]
