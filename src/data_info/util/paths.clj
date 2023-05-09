@@ -15,12 +15,12 @@
 
 (defn ^String base-trash-path
   []
-  (item/trash-base-dir (cfg/irods-zone) (cfg/irods-user)))
+  (item/trash-base-dir (cfg/irods-zone)))
 
 
 (defn ^String user-trash-path
   [^String user]
-  (ft/path-join (base-trash-path) user))
+  (item/trash-base-dir (cfg/irods-zone) user))
 
 
 (defn ^Boolean in-trash?

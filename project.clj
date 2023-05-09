@@ -31,7 +31,7 @@
                  [org.cyverse/clj-icat-direct "2.9.4"
                    :exclusions [[org.slf4j/slf4j-log4j12]
                                 [log4j]]]
-                 [org.cyverse/clj-jargon "3.0.4"
+                 [org.cyverse/clj-jargon "3.1.0-SNAPSHOT"
                    :exclusions [[org.slf4j/slf4j-log4j12]
                                 [log4j]]]
                  [javax.servlet/servlet-api "2.5"]
