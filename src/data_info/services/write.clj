@@ -64,7 +64,7 @@
           media-type (irods/detect-media-type (:jargon irods) dest-path istream-ref)
           info-type (get-info-type istream-ref)
           base-stat (ops/copy-stream @(:jargon irods) @istream-ref user dest-path :set-owner? set-owner?)
-          final-info-type (set-info-type @(:jargon irods) dest-path @info-type)]
+          final-info-type (irods/with-jargon-exceptions [admin-cm] (set-info-type admin-cm dest-path @info-type))]
       (log/info "Detected info-type:" @info-type ", final type:" final-info-type)
       (rods/invalidate irods dest-path)
       (assoc
