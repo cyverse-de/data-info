@@ -149,7 +149,7 @@
     (irods/with-irods-exceptions {:jargon-opts {:client-user user}} irods
       (validate-request-paths irods user dest paths)
 
-      (let [path-list-contents  (paths->path-list irods 
+      (let [path-list-contents  (paths->path-list irods
                                                   user
                                                   (info-type->file-identifier path-list-info-type)
                                                   name-pattern
@@ -158,6 +158,7 @@
                                                   recursive
                                                   paths)
             path-list-file-stat (with-in-str path-list-contents (copy-stream @(:jargon irods) *in* user dest))]
-        (filetypes/add-type-to-validated-path @(:jargon irods) dest path-list-info-type)
+        (irods/with-jargon-exceptions [admin-cm]
+          (filetypes/add-type-to-validated-path admin-cm dest path-list-info-type))
         (rods/invalidate irods dest)
         {:file (stat/decorate-stat irods user (cfg/irods-zone) path-list-file-stat (process-filters nil nil))}))))
