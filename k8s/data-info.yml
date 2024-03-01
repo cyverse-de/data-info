@@ -49,9 +49,11 @@ spec:
           requests:
             cpu: "160m"
             memory: "1Gi"
+            ephemeral-storage: "1Gi"
           limits:
             cpu: "4000m"
             memory: "3Gi"
+            ephemeral-storage: "1Gi"
         args:
           - --config
           - /etc/iplant/de/data-info.properties
