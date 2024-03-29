@@ -86,7 +86,7 @@
                    (when (seq trashed-paths)
                      (notifications/send-notification
                        (notifications/trash-notification (:username async-task) trashed-paths trash-paths failed?)))))]
-    (async-tasks/paths-async-thread async-task-id jargon-fn end-fn false))) ;; we don't use a client user so we can delete tickets
+    (async-tasks/paths-async-thread async-task-id jargon-fn end-fn false :jargon))) ;; we don't use a client user so we can delete tickets
 
 (defn- delete-paths
   ([user paths]
@@ -160,7 +160,7 @@
                  (amqp/publish-msg (str "index.usage.data.user." (:username async-task)) "Update requested by data-info")
                  (notifications/send-notification
                    (notifications/empty-trash-notification (:username async-task) failed?)))]
-    (async-tasks/paths-async-thread async-task-id jargon-fn end-fn false))) ;; no client user, for backwards compatibility
+    (async-tasks/paths-async-thread async-task-id jargon-fn end-fn false :jargon))) ;; no client user, for backwards compatibility
 
 (defn- delete-trash
   "Permanently delete the contents of a user's trash directory."
