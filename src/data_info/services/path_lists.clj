@@ -189,4 +189,5 @@
     (let [async-task-id (async-tasks/run-async-thread
                           (rename/new-task "create-path-list" user {:dest dest :path-list-info-type path-list-info-type :name-pattern name-pattern :info-type info-type :folders-only folders-only :recursive recursive :paths paths})
                           create-path-list-thread "create-path-list")]
-      {:async-task-id async-task-id})))
+      {:file {:path dest}
+       :async-task-id async-task-id})))
