@@ -10,6 +10,7 @@
             [clj-jargon.permissions :as perms]
             [otel.otel :as otel]
             [data-info.clients.async-tasks :as async-tasks]
+            [data-info.clients.notifications :as notifications]
             [data-info.services.filetypes :as filetypes]
             [data-info.services.rename :as rename]
             [data-info.services.stat :as stat]
@@ -169,7 +170,13 @@
   (let [irods-fn (fn [irods async-task update-fn]
                    (let [{:keys [username data]} async-task]
                      (create-path-list* irods data (:paths data))))
-        end-fn (fn [async-task failed?])]
+        end-fn (fn [async-task failed?]
+                   (notifications/send-notification
+                     (notifications/path-list-notification
+                       (:username async-task)
+                       (:paths async-task)
+                       (:dest async-task)
+                       failed?)))]
     (async-tasks/paths-async-thread async-task-id irods-fn end-fn true :irods)))
 
 (defn create-path-list
