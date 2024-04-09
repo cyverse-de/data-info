@@ -169,13 +169,13 @@
   [async-task-id]
   (let [irods-fn (fn [irods async-task update-fn]
                    (let [{:keys [username data]} async-task]
-                     (create-path-list* irods data (:paths data))))
+                     (create-path-list* irods data (select-keys data [:paths]))))
         end-fn (fn [async-task failed?]
                    (notifications/send-notification
                      (notifications/path-list-notification
                        (:username async-task)
-                       (:paths async-task)
-                       (:dest async-task)
+                       (:paths (:data async-task))
+                       (:dest (:data async-task))
                        failed?)))]
     (async-tasks/paths-async-thread async-task-id irods-fn end-fn true :irods)))
 
