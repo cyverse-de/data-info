@@ -77,9 +77,9 @@
     async-task-id))
 
 (defn paths-async-thread
-  ([async-task-id irods-fn end-fn]
-   (paths-async-thread async-task-id irods-fn end-fn true :jargon))
-  ([async-task-id irods-fn end-fn use-client-user? conn-type]
+  ([async-task-id jargon-fn end-fn]
+   (paths-async-thread async-task-id jargon-fn end-fn true))
+  ([async-task-id jargon-fn end-fn use-client-user?]
    (otel/with-span [s ["paths-async-thread" {:attributes {"async-task-id" (str async-task-id)}}]]
      (let [pool (make-threadpool (str async-task-id "-async-tasks-update") 1)
            {:keys [username] :as async-task} (get-by-id async-task-id)
@@ -95,24 +95,16 @@
            (fn [e t] (log/error (:throwable t) "failed updating async task with started status"))
            add-status async-task-id {:status "started"}))
          (if use-client-user?
-           (if (= conn-type :jargon)
-             (irods/with-jargon-exceptions :client-user username [cm]
-               (otel/with-span [s ["irods-fn" {:attributes {"client-user" username}}]]
-                 (irods-fn cm async-task update-fn)))
-             (irods/with-irods-exceptions {:jargon-opts {:client-user username}} irods
-               (otel/with-span [s ["irods-fn" {:attributes {"client-user" username}}]]
-                 (irods-fn irods async-task update-fn))))
-           (if (= conn-type :jargon)
-             (irods/with-jargon-exceptions [cm]
-               (otel/with-span [s ["irods-fn"]]
-                 (irods-fn cm async-task update-fn)))
-             (irods/with-irods-exceptions {} irods
-               (otel/with-span [s ["irods-fn"]]
-                 (irods-fn irods async-task update-fn)))))
-         ;; For the completed statuses we want a lot of retries because the presence or absence of an end date controls locking behavior
-         (deref (retry-via-threadpool pool 100
-           (fn [e t] (log/error (:throwable t) "failed updating async task with completed status"))
-           add-completed-status async-task-id {:status "completed" :detail (str "[" (config/service-identifier) "]")}))
+           (irods/with-jargon-exceptions :client-user username [cm]
+             (otel/with-span [s ["jargon-fn" {:attributes {"client-user" username}}]]
+               (jargon-fn cm async-task update-fn)))
+           (irods/with-jargon-exceptions [cm]
+             (otel/with-span [s ["jargon-fn"]]
+               (jargon-fn cm async-task update-fn))))
+           ;; For the completed statuses we want a lot of retries because the presence or absence of an end date controls locking behavior
+           (deref (retry-via-threadpool pool 100
+             (fn [e t] (log/error (:throwable t) "failed updating async task with completed status"))
+             add-completed-status async-task-id {:status "completed" :detail (str "[" (config/service-identifier) "]")}))
          (otel/with-span [s ["end-fn"]]
            (end-fn async-task false))
          (catch Object _

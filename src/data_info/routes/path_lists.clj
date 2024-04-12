@@ -15,8 +15,7 @@
           :middleware [otel-middleware]
           :query [params PathListSaveQueryParams]
           :body [body (describe Paths "The folder or file paths to process for the HT Path List file contents.")]
-          :responses {200 {:schema      {:file (describe FilteredStatInfo "File info")
-                                         :async-task-id (describe NonBlankString "An asynchronous task ID for the path list creation being handled in the background")}
+          :responses {200 {:schema      FileStat
                            :description "File info for the saved HT Path List file."}}
           :summary "Create an HT Path List File"
           :description

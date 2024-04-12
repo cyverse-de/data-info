@@ -62,13 +62,6 @@
      :message (str (completed-text failed?) " restoring " (string/join ", " start-paths) " to " (string/join ", " end-paths))}
     user "restore" end-paths))
 
-(defn path-list-notification
-  [user input-paths created-path failed?]
-  (amend-notification
-    {:subject (str (completed-text failed?) " creating path list " created-path " from " (count input-paths) " file(s)/folder(s)")
-     :message (str (completed-text failed?) " creating path list " created-path " from: " (string/join ", " input-paths))}
-    user "path-list" created-path))
-
 (defn empty-trash-notification
   [user failed?]
   {:type "data"

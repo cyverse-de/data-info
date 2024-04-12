@@ -6,7 +6,6 @@
             [schema.core :as s]))
 
 (def FileStat stats-schema/FileStat)
-(def FilteredStatInfo stats-schema/FilteredStatInfo)
 
 (s/defschema StatQueryParams
   (merge StandardUserQueryParams
