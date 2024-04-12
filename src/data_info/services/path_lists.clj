@@ -9,7 +9,10 @@
             [clj-irods.validate :refer [validate]]
             [clj-jargon.permissions :as perms]
             [otel.otel :as otel]
+            [data-info.clients.async-tasks :as async-tasks]
+            [data-info.clients.notifications :as notifications]
             [data-info.services.filetypes :as filetypes]
+            [data-info.services.rename :as rename]
             [data-info.services.stat :as stat]
             [data-info.services.stat.common :refer [process-filters]]
             [data-info.services.stat.jargon :as jargon-stat]
@@ -135,30 +138,56 @@
     (doseq [path paths]
       (validators/not-base-path user path))))
 
-(defn create-path-list
+(defn create-path-list*
   "Creates an HT Path List file from the given set of paths and filtering params.
    The resulting HT Path List file will contain only file or only folder paths (depending on the `folders-only` param),
    but no paths of folders in the initial given list will be included.
    If `recursive` is true, then all subfolders (plus all their files and subfolders)
    of any given folder paths are parsed and filtered as well.
    Throws an error if the filtering params result in no matching paths."
+  [irods {:keys [user dest path-list-info-type name-pattern info-type folders-only recursive]
+    :or   {path-list-info-type (cfg/ht-path-list-info-type)}}
+   {:keys [paths]}]
+  (otel/with-span [s ["create-path-list"]]
+    (validate-request-paths irods user dest paths)
+
+    (let [path-list-contents  (paths->path-list irods
+                                                user
+                                                (info-type->file-identifier path-list-info-type)
+                                                name-pattern
+                                                info-type
+                                                folders-only
+                                                recursive
+                                                paths)
+          path-list-file-stat (with-in-str path-list-contents (copy-stream @(:jargon irods) *in* user dest))]
+      (irods/with-jargon-exceptions [admin-cm]
+        (filetypes/add-type-to-validated-path admin-cm dest path-list-info-type))
+      (rods/invalidate irods dest)
+      {:file (stat/decorate-stat irods user (cfg/irods-zone) path-list-file-stat (process-filters nil nil))})))
+
+(defn- create-path-list-thread
+  [async-task-id]
+  (let [irods-fn (fn [irods async-task update-fn]
+                   (let [{:keys [username data]} async-task]
+                     (create-path-list* irods data (select-keys data [:paths]))))
+        end-fn (fn [async-task failed?]
+                   (notifications/send-notification
+                     (notifications/path-list-notification
+                       (:username async-task)
+                       (:paths (:data async-task))
+                       (:dest (:data async-task))
+                       failed?)))]
+    (async-tasks/paths-async-thread async-task-id irods-fn end-fn true :irods)))
+
+(defn create-path-list
   [{:keys [user dest path-list-info-type name-pattern info-type folders-only recursive]
     :or   {path-list-info-type (cfg/ht-path-list-info-type)}}
    {:keys [paths]}]
   (otel/with-span [s ["create-path-list"]]
     (irods/with-irods-exceptions {:jargon-opts {:client-user user}} irods
-      (validate-request-paths irods user dest paths)
-
-      (let [path-list-contents  (paths->path-list irods
-                                                  user
-                                                  (info-type->file-identifier path-list-info-type)
-                                                  name-pattern
-                                                  info-type
-                                                  folders-only
-                                                  recursive
-                                                  paths)
-            path-list-file-stat (with-in-str path-list-contents (copy-stream @(:jargon irods) *in* user dest))]
-        (irods/with-jargon-exceptions [admin-cm]
-          (filetypes/add-type-to-validated-path admin-cm dest path-list-info-type))
-        (rods/invalidate irods dest)
-        {:file (stat/decorate-stat irods user (cfg/irods-zone) path-list-file-stat (process-filters nil nil))}))))
+      (validate-request-paths irods user dest paths))
+    (let [async-task-id (async-tasks/run-async-thread
+                          (rename/new-task "create-path-list" user {:dest dest :path-list-info-type path-list-info-type :name-pattern name-pattern :info-type info-type :folders-only folders-only :recursive recursive :paths paths})
+                          create-path-list-thread "create-path-list")]
+      {:file {:path dest}
+       :async-task-id async-task-id})))
