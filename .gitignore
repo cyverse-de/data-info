@@ -30,3 +30,5 @@ test2junit
 telepresence.log
 data-info.properties
 .eastwood
+.clj-kondo
+.lsp

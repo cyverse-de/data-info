@@ -27,8 +27,8 @@
                  [org.apache.tika/tika-core "2.9.1"]
                  [net.sf.opencsv/opencsv "2.3"]
                  [de.ubercode.clostache/clostache "1.4.0" :exclusions [org.clojure/core.incubator]]
-                 [org.cyverse/clj-irods "0.3.4"]
-                 [org.cyverse/clj-icat-direct "2.9.4"
+                 [org.cyverse/clj-irods "0.3.5"]
+                 [org.cyverse/clj-icat-direct "2.9.5"
                    :exclusions [[org.slf4j/slf4j-log4j12]
                                 [log4j]]]
                  [org.cyverse/clj-jargon "3.1.0"
