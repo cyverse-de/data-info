@@ -5,7 +5,6 @@
             [data-info.routes :as routes]
             [data-info.util.config :as config]
             [data-info.amqp :as amqp]
-            [data-info.events :as events]
             [me.raynes.fs :as fs]
             [common-cli.core :as ccli]
             [service-logging.thread-context :as tc]
@@ -69,13 +68,6 @@
   (icat/configure-icat))
 
 
-(defn listen-for-events
-  []
-  (let [exchange-cfg (events/exchange-config)
-        queue-cfg    (events/queue-config)]
-    (amqp/connect exchange-cfg queue-cfg {"events.data-info.ping" events/ping-handler})))
-
-
 (defn- cli-options
   []
   [["-c" "--config PATH" "Path to the config file"
@@ -101,5 +93,4 @@
         (ccli/exit 1 "The config file is not readable."))
       (load-configuration-from-file (:config options))
       (icat/configure-icat)
-      (.start (Thread. listen-for-events))
       (run-jetty))))
