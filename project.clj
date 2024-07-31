@@ -51,7 +51,7 @@
                  [org.cyverse/metadata-files "2.1.1"]
                  [org.cyverse/oai-ore "1.0.4-SNAPSHOT"]
                  [org.cyverse/service-logging "2.8.4"]
-                 [com.novemberain/langohr "3.5.1"]
+                 [com.novemberain/langohr "5.4.0"]
                  [slingshot "0.12.2"]]
   :eastwood {:exclude-namespaces [data-info.routes.schemas.tickets
                                   data-info.routes.schemas.stats
