@@ -27,8 +27,8 @@
                  [org.apache.tika/tika-core "2.9.2" :exclusions [org.slf4j/slf4j-api]]
                  [net.sf.opencsv/opencsv "2.3"]
                  [de.ubercode.clostache/clostache "1.4.0" :exclusions [org.clojure/core.incubator]]
-                 [org.cyverse/clj-irods "0.3.5"]
-                 [org.cyverse/clj-icat-direct "2.9.5"
+                 [org.cyverse/clj-irods "0.3.6"]
+                 [org.cyverse/clj-icat-direct "2.9.6"
                    :exclusions [[org.slf4j/slf4j-api]
                                 [org.slf4j/slf4j-log4j12]
                                 [log4j]]]
@@ -49,7 +49,7 @@
                  [org.cyverse/metadata-client "3.1.2"]
                  [org.cyverse/async-tasks-client "0.0.5"]
                  [org.cyverse/metadata-files "2.1.1"]
-                 [org.cyverse/oai-ore "1.0.4-SNAPSHOT"]
+                 [org.cyverse/oai-ore "1.0.4"]
                  [org.cyverse/service-logging "2.8.4"]
                  [com.novemberain/langohr "5.4.0"]
                  [slingshot "0.12.2"]]
