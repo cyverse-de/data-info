@@ -1,6 +1,5 @@
 (ns data-info.routes.status
   (:use [common-swagger-api.schema]
-        [otel.middleware :only [otel-middleware]]
         [data-info.routes.schemas.status])
   (:require [clojure-commons.service :as commons-service]
             [clojure-commons.error-codes :as ce]
@@ -12,7 +11,6 @@
 
 (defroutes status
     (GET "/" [:as {:keys [uri server-name server-port]}]
-      :middleware [otel-middleware]
       :query [{:keys [expecting]} StatusParams]
       :return DataInfoStatusResponse
       :tags ["service-info"]
@@ -24,7 +22,6 @@
                   :iRODS (status/irods-running?)))))
 
     (GET "/admin/config" [:as {:keys [uri]}]
-      :middleware [otel-middleware]
       :return (describe s/Any "A map of configuration keys to values.")
       :tags ["service-info"]
       :summary "Configuration Information"

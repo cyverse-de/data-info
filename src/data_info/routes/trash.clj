@@ -1,7 +1,6 @@
 (ns data-info.routes.trash
   (:use [common-swagger-api.schema]
         [common-swagger-api.schema.data :only [OptionalPaths]]
-        [otel.middleware :only [otel-middleware]]
         [data-info.routes.schemas.common]
         [data-info.routes.schemas.trash])
   (:require [data-info.services.trash :as trash]
@@ -9,7 +8,6 @@
 
 (defroutes trash
     (DELETE "/trash" [:as {uri :uri}]
-      :middleware [otel-middleware]
       :tags ["data"]
       :query [params StandardUserQueryParams]
       :return Trash
@@ -19,7 +17,6 @@
       (svc/trap uri trash/do-delete-trash params))
 
     (POST "/deleter" [:as {uri :uri}]
-      :middleware [otel-middleware]
       :tags ["bulk"]
       :query [params StandardUserQueryParams]
       :body [body (describe Paths "The paths to move to the trash")]
@@ -32,7 +29,6 @@
       (svc/trap uri trash/do-delete params body))
 
     (POST "/restorer" [:as {uri :uri}]
-      :middleware [otel-middleware]
       :tags ["bulk"]
       :query [params StandardUserQueryParams]
       :body [body (describe OptionalPaths "The paths to restore, or an empty or missing list to restore the whole trash")]
@@ -49,7 +45,6 @@
       :tags ["data-by-id"]
 
       (DELETE "/" [:as {uri :uri}]
-        :middleware [otel-middleware]
         :query [params StandardUserQueryParams]
         :return TrashPaths
         :summary "Delete Data Item"
@@ -60,7 +55,6 @@
         (svc/trap uri trash/do-delete-uuid params data-id))
 
       (DELETE "/children" [:as {uri :uri}]
-        :middleware [otel-middleware]
         :query [params StandardUserQueryParams]
         :return TrashPaths
         :summary "Delete Data Item Contents"

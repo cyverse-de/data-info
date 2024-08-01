@@ -6,7 +6,6 @@
             [clojure-commons.file-utils :as ft]
             [clj-irods.core :as rods]
             [clj-irods.validate :refer [validate]]
-            [otel.otel :as otel]
             [dire.core :refer [with-pre-hook! with-post-hook!]]
             [data-info.services.uuids :as uuids]
             [data-info.util.config :as cfg]
@@ -16,25 +15,24 @@
 (defn- read-file-chunk
   "Reads a chunk of a file starting at 'position' and reading a chunk of length 'chunk-size'."
   [user path-or-uuid position chunk-size uuid?]
-  (otel/with-span [s ["read-file-chunk"]]
-    (irods/with-irods-exceptions {:use-icat-transaction false} irods
-      (future (force (:jargon irods)))
+  (irods/with-irods-exceptions {:use-icat-transaction false} irods
+    (future (force (:jargon irods)))
+    (validate irods
+              [:user-exists user (cfg/irods-zone)])
+    (let [path (ft/rm-last-slash
+                (if uuid?
+                  @(rods/uuid->path irods path-or-uuid)
+                  path-or-uuid))]
       (validate irods
-                [:user-exists user (cfg/irods-zone)])
-      (let [path (ft/rm-last-slash
-                   (if uuid?
-                     @(rods/uuid->path irods path-or-uuid)
-                     path-or-uuid))]
-        (validate irods
-                  [:path-exists path user (cfg/irods-zone)]
-                  [:path-is-file path user (cfg/irods-zone)]
-                  [:path-readable path user (cfg/irods-zone)])
-        {:path       path
-         :user       user
-         :start      (str position)
-         :chunk-size (str chunk-size)
-         :file-size  (str @(rods/file-size irods user (cfg/irods-zone) path))
-         :chunk      (read-at-position @(:jargon irods) path position chunk-size)}))))
+                [:path-exists path user (cfg/irods-zone)]
+                [:path-is-file path user (cfg/irods-zone)]
+                [:path-readable path user (cfg/irods-zone)])
+      {:path       path
+       :user       user
+       :start      (str position)
+       :chunk-size (str chunk-size)
+       :file-size  (str @(rods/file-size irods user (cfg/irods-zone) path))
+       :chunk      (read-at-position @(:jargon irods) path position chunk-size)})))
 
 (defn do-read-chunk-uuid
   [{user :user position :position chunk-size :size} data-id]

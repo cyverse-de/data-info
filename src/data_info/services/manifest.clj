@@ -6,7 +6,6 @@
             [clojure-commons.file-utils :as ft]
             [clj-irods.core :as rods]
             [clj-irods.validate :refer [validate]]
-            [otel.otel :as otel]
             [dire.core :refer [with-pre-hook! with-post-hook!]]
             [data-info.util.validators :as validators]
             [data-info.util.irods :as irods]
@@ -19,28 +18,26 @@
 
 (defn- extract-urls
   [irods user fpath]
-  (otel/with-span [s ["extract-urls"]]
-    (let [readable (anon-readable? irods fpath)]
-      (future (if @readable [(format-anon-files-url fpath)] [])))))
+  (let [readable (anon-readable? irods fpath)]
+    (future (if @readable [(format-anon-files-url fpath)] []))))
 
 (defn- manifest
   [user path-or-uuid uuid?]
-  (otel/with-span [s ["manifest"]]
-    (irods/with-irods-exceptions {:use-icat-transaction false} irods
-      (validate irods [:user-exists user (cfg/irods-zone)])
-      (let [path (ft/rm-last-slash
-                   (if uuid?
-                     @(rods/uuid->path irods path-or-uuid)
-                     path-or-uuid))]
-        (validate irods
-                  [:path-exists path user (cfg/irods-zone)]
-                  [:path-is-file path user (cfg/irods-zone)]
-                  [:path-readable path user (cfg/irods-zone)])
-        (let [urls (extract-urls irods user path)
-              info-type (rods/info-type irods user (cfg/irods-zone) path)]
-          {:content-type (irods/detect-media-type (:jargon irods) path)
-           :infoType     (or @info-type "unknown")
-           :urls @urls})))))
+  (irods/with-irods-exceptions {:use-icat-transaction false} irods
+    (validate irods [:user-exists user (cfg/irods-zone)])
+    (let [path (ft/rm-last-slash
+                (if uuid?
+                  @(rods/uuid->path irods path-or-uuid)
+                  path-or-uuid))]
+      (validate irods
+                [:path-exists path user (cfg/irods-zone)]
+                [:path-is-file path user (cfg/irods-zone)]
+                [:path-readable path user (cfg/irods-zone)])
+      (let [urls (extract-urls irods user path)
+            info-type (rods/info-type irods user (cfg/irods-zone) path)]
+        {:content-type (irods/detect-media-type (:jargon irods) path)
+         :infoType     (or @info-type "unknown")
+         :urls @urls}))))
 
 (defn do-manifest-uuid
   [user data-id]

@@ -39,7 +39,6 @@
                  [javax.servlet/servlet-api "2.5"]
                  [metosin/compojure-api "1.1.14"]
                  [ring/ring-jetty-adapter "1.12.2" :exclusions [org.slf4j/slf4j-api]]
-                 [org.cyverse/otel "0.2.6"]
                  [org.cyverse/clojure-commons "3.0.8"]
                  [org.cyverse/common-cli "2.8.2"]
                  [org.cyverse/common-cfg "2.8.3"]
@@ -63,8 +62,7 @@
             [lein-ancient "0.7.0"]
             [test2junit "1.4.4"]]
   :profiles {:dev     {:plugins        [[lein-ring "0.12.5"]]
-                       :resource-paths ["conf/test"]
-                       :jvm-opts       ["-Dotel.javaagent.enabled=false"]}
+                       :resource-paths ["conf/test"]}
              :repl    {:source-paths ["repl"]}
              :uberjar {:aot :all}}
   :main ^:skip-aot data-info.core
@@ -73,4 +71,4 @@
          :port 31360
          :auto-reload? false}
   :uberjar-exclusions [#".*[.]SF" #"LICENSE" #"NOTICE"]
-  :jvm-opts ["-Dlogback.configurationFile=/etc/iplant/de/logging/data-info-logging.xml" "-javaagent:./opentelemetry-javaagent.jar" "-Dotel.resource.attributes=service.name=data-info"])
+  :jvm-opts ["-Dlogback.configurationFile=/etc/iplant/de/logging/data-info-logging.xml"])

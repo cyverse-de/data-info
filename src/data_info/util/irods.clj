@@ -7,7 +7,6 @@
             [clj-jargon.init :as init]
             [clj-jargon.item-ops :as ops]
             [clj-jargon.metadata :as meta]
-            [otel.otel :as otel]
             [clojure-commons.error-codes :as error]
             [clojure-commons.file-utils :as file]
             [data-info.util.config :as cfg])
@@ -72,9 +71,8 @@
   [cm ^String path & [istream-ref]]
   (let [^InputStream istream (if istream-ref @istream-ref (ops/input-stream cm path))]
     (try+
-      (otel/with-span [s ["Tika detect (InputStream)"]]
-        (.detect (Tika.) istream))
-      (finally (when-not istream-ref (otel/with-span [s ["close istream"]] (.close istream)))))))
+     (.detect (Tika.) istream)
+     (finally (when-not istream-ref (.close istream))))))
 
 (defn ^String detect-media-type
   "detects the media type of a given file
@@ -86,12 +84,11 @@
    Returns:
      It returns the media type."
   ([cm ^String path & [istream-ref]]
-   (otel/with-span [s ["detect-media-type"]]
-     (let [path-type (.detect (Tika.) (file/basename path))]
-       (if (or (= path-type "application/octet-stream")
-               (= path-type "text/plain"))
-         (detect-media-type-from-contents (if (delay? cm) @cm cm) path istream-ref)
-         path-type))))
+   (let [path-type (.detect (Tika.) (file/basename path))]
+     (if (or (= path-type "application/octet-stream")
+             (= path-type "text/plain"))
+       (detect-media-type-from-contents (if (delay? cm) @cm cm) path istream-ref)
+       path-type)))
 
   ([^String path]
    (with-jargon-exceptions :lazy true [cm]
