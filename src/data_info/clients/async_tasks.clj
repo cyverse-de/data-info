@@ -91,7 +91,8 @@
                                    (fn [e t] (log/error (:throwable t) "failed updating async task with started status"))
                                    add-status async-task-id {:status "started"}))
       (if use-client-user?
-        (irods/with-jargon-exceptions :client-user username [cm] jargon-fn)
+        (irods/with-jargon-exceptions :client-user username [cm]
+          (jargon-fn cm async-task update-fn))
         (irods/with-jargon-exceptions [cm] (jargon-fn cm async-task update-fn)))
       ;; For the completed statuses we want a lot of retries because the presence or absence of an end date controls
       ;; locking behavior
