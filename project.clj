@@ -26,7 +26,6 @@
                  [me.raynes/fs "1.4.6"]
                  [org.apache.tika/tika-core "2.9.2" :exclusions [org.slf4j/slf4j-api]]
                  [net.sf.opencsv/opencsv "2.3"]
-                 [de.ubercode.clostache/clostache "1.4.0" :exclusions [org.clojure/core.incubator]]
                  [org.cyverse/clj-irods "0.3.6"]
                  [org.cyverse/clj-icat-direct "2.9.6"
                    :exclusions [[org.slf4j/slf4j-api]
@@ -39,7 +38,7 @@
                  [javax.servlet/servlet-api "2.5"]
                  [metosin/compojure-api "1.1.14"]
                  [ring/ring-jetty-adapter "1.12.2" :exclusions [org.slf4j/slf4j-api]]
-                 [org.cyverse/clojure-commons "3.0.8"]
+                 [org.cyverse/clojure-commons "3.0.9-SNAPSHOT"]
                  [org.cyverse/common-cli "2.8.2"]
                  [org.cyverse/common-cfg "2.8.3"]
                  [org.cyverse/common-swagger-api "3.4.5"]
