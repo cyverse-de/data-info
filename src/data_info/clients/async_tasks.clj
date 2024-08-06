@@ -66,7 +66,8 @@
 (defn run-async-thread
   [async-task-id thread-function prefix]
   (let [^Runnable task-thread (fn [] (thread-function async-task-id))]
-    (.start (Thread. task-thread (str prefix "-" (string/replace async-task-id #".*/tasks/" ""))))))
+    (.start (Thread. task-thread (str prefix "-" (string/replace async-task-id #".*/tasks/" "")))))
+  async-task-id)
 
 (defn create-update-fn [async-task-id pool]
   (fn [path action]
@@ -109,4 +110,5 @@
                 add-completed-status async-task-id
                 {:status "failed"
                  :detail (format "[%s] %s" (config/service-identifier) (pr-str (:throwable &throw-context)))}))
-        (end-fn async-task true))))))
+        (end-fn async-task true))))
+   (log/info "Finished processing async task " async-task-id)))
