@@ -7,7 +7,7 @@
       (string/trim (:out (sh "git" "rev-parse" "HEAD")))
       ""))
 
-(defproject org.cyverse/data-info "3.0.0-SNAPSHOT"
+(defproject org.cyverse/data-info "3.0.2-SNAPSHOT"
   :description "provides an HTTP API for interacting with iRODS"
   :url "https://github.com/cyverse-de/data-info"
   :license {:name "BSD"
@@ -22,7 +22,7 @@
                                 [com.fasterxml.jackson.core/jackson-databind]
                                 [com.fasterxml.jackson.core/jackson-core]]]
                  [com.cemerick/url "0.1.1" :exclusions [com.cemerick/clojurescript.test]]
-                 [org.cyverse/dire "0.5.5-SNAPSHOT"]
+                 [org.cyverse/dire "0.5.5"]
                  [me.raynes/fs "1.4.6"]
                  [org.apache.tika/tika-core "2.9.2" :exclusions [org.slf4j/slf4j-api]]
                  [net.sf.opencsv/opencsv "2.3"]
@@ -38,7 +38,7 @@
                  [javax.servlet/servlet-api "2.5"]
                  [metosin/compojure-api "1.1.14"]
                  [ring/ring-jetty-adapter "1.12.2" :exclusions [org.slf4j/slf4j-api]]
-                 [org.cyverse/clojure-commons "3.0.9-SNAPSHOT"]
+                 [org.cyverse/clojure-commons "3.0.9"]
                  [org.cyverse/common-cli "2.8.2"]
                  [org.cyverse/common-cfg "2.8.3"]
                  [org.cyverse/common-swagger-api "3.4.5"]
