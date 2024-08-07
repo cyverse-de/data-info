@@ -1,7 +1,6 @@
 (ns data-info.routes.data
   (:use [common-swagger-api.routes]
         [common-swagger-api.schema]
-        [otel.middleware :only [otel-middleware]]
         [data-info.routes.schemas.common]
         [data-info.routes.schemas.data]
         [data-info.routes.schemas.stats])
@@ -24,7 +23,6 @@
     :tags ["data"]
 
     (GET "/uuid" [:as {uri :uri}]
-      :middleware [otel-middleware]
       :query [params PathToUUIDParams]
       :return PathToUUIDReturn
       :summary "Get the UUID for a path"
@@ -33,7 +31,6 @@
       (svc/trap uri uuids/do-simple-uuid-for-path params))
 
     (GET "/path/:zone/*" [:as {{zone :zone path :*} :params uri :uri}]
-      :middleware [otel-middleware]
       :query [params FolderListingParams]
       :no-doc true
       (ce/trap uri entry/dispatch-path-to-resource zone path params))
@@ -60,7 +57,7 @@
     (POST "/" [:as {uri :uri}]
       :query [params FileUploadQueryParams]
       :multipart-params [file :- s/Any]
-      :middleware [otel-middleware write/wrap-multipart-create]
+      :middleware [write/wrap-multipart-create]
       :return FileStat
       :summary "Upload a file"
       :description (str
@@ -69,7 +66,6 @@
       (svc/trap uri write/do-upload params file))
 
     (POST "/directories" [:as {uri :uri}]
-      :middleware [otel-middleware]
       :tags ["bulk"]
       :query [params StandardUserQueryParams]
       :body [body (describe Paths "The paths to create.")]
@@ -91,13 +87,11 @@ with characters in a runtime-configurable parameter. Currently, this parameter l
 
       ; add both versions to catch multiple types of path passing
       (GET "/manifest/*" [:as {{path :*} :params uri :uri}]
-        :middleware [otel-middleware]
         :query [{:keys [user]} StandardUserQueryParams]
         :no-doc true
         (svc/trap uri manifest/do-manifest user (str "/" path)))
 
       (GET "/manifest/:path" [:as {uri :uri}]
-        :middleware [otel-middleware]
         :query [{:keys [user]} StandardUserQueryParams]
         :path-params [path :- String]
         :return Manifest
@@ -108,13 +102,11 @@ with characters in a runtime-configurable parameter. Currently, this parameter l
         (svc/trap uri manifest/do-manifest user (str "/" path)))
 
       (GET "/chunks/*" [:as {{path :*} :params uri :uri}]
-        :middleware [otel-middleware]
         :query [params ChunkParams]
         :no-doc true
         (svc/trap uri page-file/do-read-chunk params (str "/" path)))
 
       (GET "/chunks/:path" [:as {uri :uri}]
-        :middleware [otel-middleware]
         :query [params ChunkParams]
         :path-params [path :- String]
         :return ChunkReturn
@@ -126,13 +118,11 @@ with characters in a runtime-configurable parameter. Currently, this parameter l
         (svc/trap uri page-file/do-read-chunk params (str "/" path)))
 
       (GET "/chunks-tabular/*" [:as {{path :*} :params uri :uri}]
-        :middleware [otel-middleware]
         :query [params TabularChunkParams]
         :no-doc true
         (svc/trap uri page-tabular/do-read-csv-chunk params (str "/" path)))
 
       (GET "/chunks-tabular/:path" [:as {uri :uri}]
-        :middleware [otel-middleware]
         :query [params TabularChunkParams]
         :path-params [path :- String]
         :return (doc-only TabularChunkReturn TabularChunkDoc)
@@ -148,7 +138,6 @@ with characters in a runtime-configurable parameter. Currently, this parameter l
       :tags ["data-by-id"]
 
       (HEAD "/" [:as {uri :uri}]
-        :middleware [otel-middleware]
         :query [{:keys [user]} StandardUserQueryParams]
         :responses {200 {:description "User has read permissions for given data item."}
                     403 {:description "User does not have read permissions for given data item."}
@@ -161,7 +150,7 @@ with characters in a runtime-configurable parameter. Currently, this parameter l
       (PUT "/" [:as {uri :uri}]
         :query [params StandardUserQueryParams]
         :multipart-params [file :- s/Any]
-        :middleware [otel-middleware write/wrap-multipart-overwrite]
+        :middleware [write/wrap-multipart-overwrite]
         :return FileStat
         :summary "Overwrite Contents"
         :description (str
@@ -170,7 +159,6 @@ with characters in a runtime-configurable parameter. Currently, this parameter l
         (svc/trap uri write/do-upload params file))
 
       (GET "/manifest" [:as {uri :uri}]
-        :middleware [otel-middleware]
         :query [{:keys [user]} StandardUserQueryParams]
         :return Manifest
         :summary "Return file manifest"
@@ -180,7 +168,6 @@ with characters in a runtime-configurable parameter. Currently, this parameter l
         (svc/trap uri manifest/do-manifest-uuid user data-id))
 
       (GET "/chunks" [:as {uri :uri}]
-        :middleware [otel-middleware]
         :query [params ChunkParams]
         :return ChunkReturn
         :summary "Get File Chunk"
@@ -191,7 +178,6 @@ with characters in a runtime-configurable parameter. Currently, this parameter l
         (svc/trap uri page-file/do-read-chunk-uuid params data-id))
 
       (GET "/chunks-tabular" [:as {uri :uri}]
-        :middleware [otel-middleware]
         :query [params TabularChunkParams]
         :return (doc-only TabularChunkReturn TabularChunkDoc)
         :summary "Get Tabular File Chunk"
@@ -202,7 +188,6 @@ with characters in a runtime-configurable parameter. Currently, this parameter l
         (svc/trap uri page-tabular/do-read-csv-chunk-uuid params data-id))
 
       (POST "/metadata/save" [:as {uri :uri}]
-        :middleware [otel-middleware]
         :query [params StandardUserQueryParams]
         :body [body (describe MetadataSaveRequest "The metadata save request.")]
         :return FileStat
@@ -221,7 +206,6 @@ with characters in a runtime-configurable parameter. Currently, this parameter l
         (svc/trap uri meta/do-metadata-save data-id params body))
 
       (POST "/ore/save" [:as {uri :uri}]
-        :middleware [otel-middleware]
         :query [params StandardUserQueryParams]
         :summary "Generating an OAI-ORE File for a Data Set"
         :description (str

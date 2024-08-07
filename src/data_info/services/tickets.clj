@@ -5,7 +5,7 @@
   (:require [clojure.tools.logging :as log]
             [clojure.string :as string]
             [clojure-commons.file-utils :as ft]
-            [clostache.parser :as stache]
+            [clojure-commons.template :refer [render]]
             [dire.core :refer [with-pre-hook! with-post-hook!]]
             [data-info.util.logging :as dul]
             [data-info.util.config :as cfg]
@@ -29,9 +29,9 @@
 
 (defn- render-ticket-tmpl
   [cm ticket-map tmpl]
-  (stache/render tmpl {:url       (cfg/kifshare-external-url)
-                       :ticket-id (:ticket-id ticket-map)
-                       :filename  (ft/basename (:path ticket-map))}))
+  (render tmpl {:url       (cfg/kifshare-external-url)
+                :ticket-id (:ticket-id ticket-map)
+                :filename  (ft/basename (:path ticket-map))}))
 
 (defn- url-join
   [url path]

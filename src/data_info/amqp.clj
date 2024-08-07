@@ -28,14 +28,6 @@
       (handler channel metadata msg)
       (log/error (format "[amqp/message-router] [%s] [%s] unroutable" routing-key (String. msg))))))
 
-(defn connect
-  [exchange-cfg queue-cfg handlers]
-  (let [channel (lch/open (rmq/connect {:uri (config/amqp-uri)}))]
-    (log/info (format "[amqp/connect] [%s]" (config/amqp-uri)))
-    (declare-exchange channel exchange-cfg)
-    (declare-queue channel exchange-cfg queue-cfg (keys handlers))
-    (lc/blocking-subscribe channel (:name queue-cfg) (partial message-router handlers))))
-
 (defn publish-msg
   [routing-key msg]
   (try+

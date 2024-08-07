@@ -8,7 +8,6 @@
             [clj-irods.core :as rods]
             [clj-irods.validate :refer [validate]]
             [clj-jargon.permissions :as perms]
-            [otel.otel :as otel]
             [data-info.services.filetypes :as filetypes]
             [data-info.services.stat :as stat]
             [data-info.services.stat.common :refer [process-filters]]
@@ -40,29 +39,27 @@
 (defn- folder-listing
   "Fetches a folder's contents, listing files, folders, or both depending on the given parameters."
   [user info-types folders-only? recursive? path]
-  (otel/with-span [s ["folder-listing"]]
-    (map fmt-entry
-         (icat/paged-folder-listing
-           :user           user
-           :zone           (cfg/irods-zone)
-           :folder-path    path
-           :info-types     info-types
-           :entity-type    (filter-entity-type recursive? folders-only?)
-           :sort-column    :full-path
-           :sort-direction :asc
-           :limit          nil
-           :offset         0))))
+  (map fmt-entry
+       (icat/paged-folder-listing
+        :user           user
+        :zone           (cfg/irods-zone)
+        :folder-path    path
+        :info-types     info-types
+        :entity-type    (filter-entity-type recursive? folders-only?)
+        :sort-column    :full-path
+        :sort-direction :asc
+        :limit          nil
+        :offset         0)))
 
 (defn- list-item-with-subitems
   [user info-types folders-only? recursive? {:keys [path] :as data-item}]
   "If given a file, returns that file as the only item in a list.
    If given a folder, returns that folder in a list, and the list may include the folder's subfolder/files
    depending on the given parameters."
-  (otel/with-span [s ["list-item-with-subitems"]]
-    (let [sub-listing (when (and recursive? (stat-is-dir? data-item))
-                        (mapcat (partial list-item-with-subitems user info-types folders-only? recursive?)
-                                (folder-listing user info-types folders-only? recursive? path)))]
-      (concat [data-item] sub-listing))))
+  (let [sub-listing (when (and recursive? (stat-is-dir? data-item))
+                      (mapcat (partial list-item-with-subitems user info-types folders-only? recursive?)
+                              (folder-listing user info-types folders-only? recursive? path)))]
+    (concat [data-item] sub-listing)))
 
 (defn- keep-top-level-file?
   "A filter predicate to keep only files with an info-type that matches one in the given `info-types` list,
@@ -97,24 +94,23 @@
   "Filters the given paths and returns a string of these paths appended to an HT Path List header.
    Throws an error if the filtering params result in no matching paths."
   [irods user path-list-file-identifier name-pattern info-types folders-only? recursive? paths]
-  (otel/with-span [s ["paths->path-list"]]
-    (let [zone-from-path (fn [path] (first (remove empty? (string/split path #"/"))))
-          {folder-paths true file-paths false} (group-by #(= @(rods/object-type irods user (zone-from-path %) %) :dir) paths)
-          files          (->> file-paths
-                              (map (partial get-top-level-file-stats irods user))
-                              (filter (keep-top-level-file? info-types)))
-          folders        (->> folder-paths
-                              (mapcat (partial folder-listing user info-types folders-only? recursive?))
-                              (mapcat (partial list-item-with-subitems user info-types folders-only? recursive?)))
-          filtered-paths (->> (concat files folders)
-                              (filter (partial keep-data-item? name-pattern folders-only?))
-                              (map :path))]
+  (let [zone-from-path (fn [path] (first (remove empty? (string/split path #"/"))))
+        {folder-paths true file-paths false} (group-by #(= @(rods/object-type irods user (zone-from-path %) %) :dir) paths)
+        files          (->> file-paths
+                            (map (partial get-top-level-file-stats irods user))
+                            (filter (keep-top-level-file? info-types)))
+        folders        (->> folder-paths
+                            (mapcat (partial folder-listing user info-types folders-only? recursive?))
+                            (mapcat (partial list-item-with-subitems user info-types folders-only? recursive?)))
+        filtered-paths (->> (concat files folders)
+                            (filter (partial keep-data-item? name-pattern folders-only?))
+                            (map :path))]
 
-      (when (empty? filtered-paths)
-        (throw+ {:error_code ERR_NOT_FOUND
-                 :reason "No paths matched the request."}))
+    (when (empty? filtered-paths)
+      (throw+ {:error_code ERR_NOT_FOUND
+               :reason "No paths matched the request."}))
 
-      (string/join "\n" (concat [path-list-file-identifier] filtered-paths)))))
+    (string/join "\n" (concat [path-list-file-identifier] filtered-paths))))
 
 (defn- info-type->file-identifier
   "Returns the appropriate Path List file identifier for the given `path-list-info-type`."
@@ -145,20 +141,19 @@
   [{:keys [user dest path-list-info-type name-pattern info-type folders-only recursive]
     :or   {path-list-info-type (cfg/ht-path-list-info-type)}}
    {:keys [paths]}]
-  (otel/with-span [s ["create-path-list"]]
-    (irods/with-irods-exceptions {:jargon-opts {:client-user user}} irods
-      (validate-request-paths irods user dest paths)
+  (irods/with-irods-exceptions {:jargon-opts {:client-user user}} irods
+    (validate-request-paths irods user dest paths)
 
-      (let [path-list-contents  (paths->path-list irods
-                                                  user
-                                                  (info-type->file-identifier path-list-info-type)
-                                                  name-pattern
-                                                  info-type
-                                                  folders-only
-                                                  recursive
-                                                  paths)
-            path-list-file-stat (with-in-str path-list-contents (copy-stream @(:jargon irods) *in* user dest))]
-        (irods/with-jargon-exceptions [admin-cm]
-          (filetypes/add-type-to-validated-path admin-cm dest path-list-info-type))
-        (rods/invalidate irods dest)
-        {:file (stat/decorate-stat irods user (cfg/irods-zone) path-list-file-stat (process-filters nil nil))}))))
+    (let [path-list-contents  (paths->path-list irods
+                                                user
+                                                (info-type->file-identifier path-list-info-type)
+                                                name-pattern
+                                                info-type
+                                                folders-only
+                                                recursive
+                                                paths)
+          path-list-file-stat (with-in-str path-list-contents (copy-stream @(:jargon irods) *in* user dest))]
+      (irods/with-jargon-exceptions [admin-cm]
+        (filetypes/add-type-to-validated-path admin-cm dest path-list-info-type))
+      (rods/invalidate irods dest)
+      {:file (stat/decorate-stat irods user (cfg/irods-zone) path-list-file-stat (process-filters nil nil))})))

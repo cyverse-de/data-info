@@ -1,14 +1,12 @@
 (ns data-info.routes.filetypes
   (:use [common-swagger-api.schema]
         [common-swagger-api.schema.filetypes]
-        [otel.middleware :only [otel-middleware]]
         [data-info.routes.schemas.common])
   (:require [data-info.services.filetypes :as filetypes]
             [data-info.util.service :as svc]))
 
 (defroutes filetypes-operations
   (GET "/file-types" [:as {uri :uri}]
-    :middleware [otel-middleware]
     :tags ["filetypes"]
     :return TypesList
     :summary "List File Types"
@@ -16,7 +14,6 @@
     (svc/trap uri filetypes/do-type-list))
 
   (PUT "/data/:data-id/type" [:as {uri :uri}]
-    :middleware [otel-middleware]
     :tags ["data-by-id"]
     :query [params StandardUserQueryParams]
     :path-params [data-id :- DataIdPathParam]

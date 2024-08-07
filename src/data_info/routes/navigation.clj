@@ -1,6 +1,5 @@
 (ns data-info.routes.navigation
   (:use [common-swagger-api.schema]
-        [otel.middleware :only [otel-middleware]]
         [data-info.routes.schemas.common :only [get-error-code-block]]
         [ring.util.http-response :only [ok]])
   (:require [common-swagger-api.schema.data.navigation :as schema]
@@ -15,7 +14,6 @@
     :tags ["navigation"]
 
     (GET "/base-paths" [:as {uri :uri}]
-      :middleware [otel-middleware]
       :query [{:keys [user]} StandardUserQueryParams]
       :return schema/UserBasePaths
       :summary "Get User's Base Paths"
@@ -26,7 +24,6 @@
       (svc/trap uri root/user-base-paths user))
 
     (GET "/home" [:as {uri :uri}]
-      :middleware [otel-middleware]
       :query [params StandardUserQueryParams]
       :return schema/RootListing
       :summary "Get User's Home Dir"
@@ -38,7 +35,6 @@
       (svc/trap uri home/do-homedir params))
 
     (GET "/root" [:as {uri :uri}]
-      :middleware [otel-middleware]
       :query [{:keys [user]} StandardUserQueryParams]
       :responses schema/NavigationRootResponses
       :summary schema/NavigationRootSummary
@@ -46,7 +42,6 @@
       (ok (root/do-root-listing user)))
 
     (GET "/path/:zone/*" [:as {{path :*} :params uri :uri}]
-      :middleware [otel-middleware]
       :path-params [zone :- String]
       :query [params StandardUserQueryParams]
       :responses schema/NavigationResponses

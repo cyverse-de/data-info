@@ -1,6 +1,5 @@
 (ns data-info.routes.path-lists
   (:use [common-swagger-api.schema]
-        [otel.middleware :only [otel-middleware]]
         [data-info.routes.schemas.common]
         [data-info.routes.schemas.path-lists]
         [data-info.routes.schemas.stats])
@@ -12,7 +11,6 @@
            :tags ["bulk"]
 
     (POST "/" [:as {uri :uri}]
-          :middleware [otel-middleware]
           :query [params PathListSaveQueryParams]
           :body [body (describe Paths "The folder or file paths to process for the HT Path List file contents.")]
           :responses {200 {:schema      FileStat

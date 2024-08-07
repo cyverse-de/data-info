@@ -1,6 +1,5 @@
 (ns data-info.services.stat
   (:require [dire.core :refer [with-pre-hook! with-post-hook!]]
-            [otel.otel :as otel]
             [clj-irods.core :as rods]
             [clj-irods.validate :refer [validate]]
             [clojure-commons.file-utils :as ft]
@@ -30,52 +29,47 @@
 (defn- merge-counts
   [stat-map irods user zone path included-keys]
   (if (and (needs-any-key? included-keys :file-count :dir-count) (is-dir? stat-map))
-    (otel/with-span [s ["merge-counts"]]
-      (assoc-if-selected stat-map included-keys
-        :file-count @(rods/number-of-files-in-folder irods user zone path)
-        :dir-count  @(rods/number-of-folders-in-folder irods user zone path)))
+    (assoc-if-selected stat-map included-keys
+                       :file-count @(rods/number-of-files-in-folder irods user zone path)
+                       :dir-count  @(rods/number-of-folders-in-folder irods user zone path))
     stat-map))
 
 (defn- merge-shares
   [stat-map irods user path included-keys]
   (if (and (needs-key? included-keys :share-count) (owns? stat-map))
-    (otel/with-span [s ["merge-shares"]]
-      (assoc stat-map :share-count (count-shares irods user path)))
+    (assoc stat-map :share-count (count-shares irods user path))
     stat-map))
 
 (defn- merge-type-info
   [stat-map irods user zone path included-keys & {:keys [validate?] :or {validate? true}}]
   (if (and (needs-any-key? included-keys :infoType :content-type) (not (is-dir? stat-map)))
-    (otel/with-span [s ["merge-type-info"]]
-      (assoc-if-selected stat-map included-keys
-        :infoType     (get-types irods user zone path :validate? validate?)
-        :content-type (irods/detect-media-type @(:jargon irods) path)))
+    (assoc-if-selected stat-map included-keys
+                       :infoType     (get-types irods user zone path :validate? validate?)
+                       :content-type (irods/detect-media-type @(:jargon irods) path))
     stat-map))
 
 (defn decorate-stat
   [irods user zone {:keys [path] :as stat} included-keys & {:keys [validate?] :or {validate? true}}]
-  (otel/with-span [s ["decorate-stat"]]
-    (-> stat
-        (assoc-if-selected included-keys
-          :id         @(rods/uuid irods user zone path)
-          :permission @(rods/permission irods user zone path))
-        (merge-label user path included-keys)
-        (merge-type-info irods user zone path included-keys :validate? validate?)
-        (merge-shares irods user path included-keys)
-        (merge-counts irods user zone path included-keys)
-        (select-keys included-keys))))
+  (-> stat
+      (assoc-if-selected included-keys
+                         :id         @(rods/uuid irods user zone path)
+                         :permission @(rods/permission irods user zone path))
+      (merge-label user path included-keys)
+      (merge-type-info irods user zone path included-keys :validate? validate?)
+      (merge-shares irods user path included-keys)
+      (merge-counts irods user zone path included-keys)
+      (select-keys included-keys)))
 
 (defn path-stat
   [irods user path & {:keys [filter-include filter-exclude validate?]
                       :or   {filter-include nil filter-exclude nil validate? true}}]
-  (otel/with-span [s ["path-stat" {:attributes {"path" path}}]]
-    (let [path          (ft/rm-last-slash path)
-          included-keys (process-filters filter-include filter-exclude)]
-      (when validate? (validate irods [:path-exists path user (cfg/irods-zone)]))
-      (let [base-stat (if (needs-any-key? included-keys :type :date-created :date-modified :file-size :md5)
-                        @(rods/stat irods user (cfg/irods-zone) path)
-                        {:path path})]
-        (decorate-stat irods user (cfg/irods-zone) base-stat included-keys :validate? validate?)))))
+  (let [path          (ft/rm-last-slash path)
+        included-keys (process-filters filter-include filter-exclude)]
+    (when validate? (validate irods [:path-exists path user (cfg/irods-zone)]))
+    (let [base-stat (if (needs-any-key? included-keys :type :date-created :date-modified :file-size :md5)
+                      @(rods/stat irods user (cfg/irods-zone) path)
+                      {:path path})]
+      (decorate-stat irods user (cfg/irods-zone) base-stat included-keys :validate? validate?))))
 
 (defn- remove-missing-paths
   "Removes non-existent paths from a list of item paths."

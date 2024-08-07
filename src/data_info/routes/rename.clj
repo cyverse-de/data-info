@@ -1,6 +1,5 @@
 (ns data-info.routes.rename
   (:use [common-swagger-api.schema]
-        [otel.middleware :only [otel-middleware]]
         [data-info.routes.schemas.common]
         [data-info.routes.schemas.rename])
   (:require [data-info.services.rename :as rename]
@@ -8,7 +7,6 @@
 
 (defroutes rename-routes
   (POST "/mover" [:as {uri :uri}]
-    :middleware [otel-middleware]
     :tags ["bulk"]
     :query [params StandardUserQueryParams]
     :body [body (describe MultiRenameRequest "The paths to rename and their destination.")]
@@ -24,7 +22,6 @@
     :tags ["data-by-id"]
 
     (PUT "/name" [:as {uri :uri}]
-      :middleware [otel-middleware]
       :query [params StandardUserQueryParams]
       :body [body (describe Filename "The new name of the data item.")]
       :return RenameResult
@@ -36,7 +33,6 @@
       (svc/trap uri rename/do-rename-uuid params body data-id))
 
     (PUT "/dir" [:as {uri :uri}]
-      :middleware [otel-middleware]
       :query [params StandardUserQueryParams]
       :body [body (describe Dirname "The new directory name of the data item.")]
       :return RenameResult
@@ -48,7 +44,6 @@
       (svc/trap uri rename/do-move-uuid params body data-id))
 
     (PUT "/children/dir" [:as {uri :uri}]
-      :middleware [otel-middleware]
       :query [params StandardUserQueryParams]
       :body [body (describe Dirname "The new directory name of the data items.")]
       :return MultiRenameResult

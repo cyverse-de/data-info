@@ -29,29 +29,29 @@
 
 (defapi app
   (swagger-routes
-    {:ui config/docs-uri
-     :options {:ui {:supported-submit-methods ["get", "post", "put", "delete", "patch", "head"]
-                    :validator-url            nil}}
-     :data {:info {:title "Discovery Environment Data Info API"
-                   :description "Documentation for the Discovery Environment Data Info REST API"
-                   :version "2.8.0"}
-            :tags [{:name "service-info", :description "Service Information"}
-                   {:name "data-by-id", :description "Data Operations (by ID)"}
-                   {:name "data", :description "Data Operations"}
-                   {:name "tickets", :description "Ticket Operations"}
-                   {:name "bulk", :description "Bulk Operations"}
-                   {:name "navigation", :description "Navigation"}
-                   {:name "users", :description "User Operations"}
-                   {:name "filetypes", :description "File Type Metadata"}
-                   {:name "groups", :description "Group Operations"}]}})
-  (middleware
-    [add-user-to-context
-     wrap-query-params
-     wrap-lcase-params
-     params/wrap-keyword-params
-     [wrap-exceptions cx/exception-handlers]
-     util/req-logger
-     log-validation-errors]
+   {:ui      config/docs-uri
+    :options {:ui {:supported-submit-methods ["get", "post", "put", "delete", "patch", "head"]
+                   :validator-url            nil}}
+    :data    {:info {:title       "Discovery Environment Data Info API"
+                     :description "Documentation for the Discovery Environment Data Info REST API"
+                     :version     "2.8.0"}
+              :tags [{:name "service-info", :description "Service Information"}
+                     {:name "data-by-id", :description "Data Operations (by ID)"}
+                     {:name "data", :description "Data Operations"}
+                     {:name "tickets", :description "Ticket Operations"}
+                     {:name "bulk", :description "Bulk Operations"}
+                     {:name "navigation", :description "Navigation"}
+                     {:name "users", :description "User Operations"}
+                     {:name "filetypes", :description "File Type Metadata"}
+                     {:name "groups", :description "Group Operations"}]}})
+  (context "/" []
+    :middleware [add-user-to-context
+                 wrap-query-params
+                 wrap-lcase-params
+                 params/wrap-keyword-params
+                 [wrap-exceptions cx/exception-handlers]
+                 util/req-logger
+                 log-validation-errors]
     status-routes/status
     data-routes/data-operations
     rename-routes/rename-routes

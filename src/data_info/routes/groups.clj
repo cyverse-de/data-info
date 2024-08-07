@@ -1,7 +1,6 @@
 (ns data-info.routes.groups
   (:use [clojure-commons.error-codes]
         [common-swagger-api.schema]
-        [otel.middleware :only [otel-middleware]]
         [data-info.routes.schemas.users])
   (:require [data-info.services.groups :as groups]
             [common-swagger-api.schema.data :as data-schema]
@@ -47,7 +46,6 @@
     :tags ["groups"]
 
     (POST "/" []
-      :middleware  [otel-middleware]
       :query       [params StandardUserQueryParams]
       :body        [body Group]
       :responses   (merge CommonResponses
@@ -65,7 +63,6 @@
       :path-params [group-name :- (describe NonBlankString "The name of an iRODS group, with or without zone qualification")]
 
       (GET "/" []
-        :middleware  [otel-middleware]
         :query       [params StandardUserQueryParams]
         :responses   (merge CommonResponses
                             {500 {:schema GetUpdateErrorResponses
@@ -77,7 +74,6 @@
         (ok (groups/get-group params group-name)))
 
       (PUT "/" []
-        :middleware  [otel-middleware]
         :query       [params StandardUserQueryParams]
         :body        [body GroupMembers]
         :responses   (merge CommonResponses
@@ -92,7 +88,6 @@
         (ok (groups/update-group-members params body group-name)))
 
       (DELETE "/" []
-        :middleware  [otel-middleware]
         :query       [params StandardUserQueryParams]
         :responses   (merge CommonResponses
                             {500 {:schema DeleteErrorResponses

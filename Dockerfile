@@ -1,12 +1,12 @@
-FROM clojure:openjdk-17-lein-alpine
+FROM clojure:temurin-22-lein-jammy
 
 WORKDIR /usr/src/app
 
-RUN apk add --no-cache git
+RUN apt-get update && \
+    apt-get install -y git && \
+    rm -rf /var/lib/apt/lists/*
 
-RUN ln -s "/opt/openjdk-17/bin/java" "/bin/data-info"
-
-ENV OTEL_TRACES_EXPORTER none
+RUN ln -s "/opt/java/openjdk/bin/java" "/bin/data-info"
 
 COPY project.clj /usr/src/app/
 RUN lein deps
@@ -14,10 +14,10 @@ RUN lein deps
 COPY conf/main/logback.xml /usr/src/app/
 COPY . /usr/src/app
 
-RUN lein uberjar && \
+RUN lein do clean, uberjar && \
     cp target/data-info-standalone.jar .
 
-ENTRYPOINT ["data-info", "-Dlogback.configurationFile=/etc/iplant/de/logging/data-info-logging.xml", "-javaagent:/usr/src/app/opentelemetry-javaagent.jar", "-Dotel.resource.attributes=service.name=data-info", "-cp", ".:data-info-standalone.jar", "data_info.core"]
+ENTRYPOINT ["data-info", "-Dlogback.configurationFile=/etc/iplant/de/logging/data-info-logging.xml", "-cp", ".:data-info-standalone.jar", "data_info.core"]
 CMD ["--help"]
 
 ARG git_commit=unknown

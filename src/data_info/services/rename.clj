@@ -14,8 +14,7 @@
             [data-info.util.config :as cfg]
             [data-info.util.irods :as irods]
             [data-info.util.logging :as dul]
-            [data-info.util.validators :as validators]
-            [otel.otel :as otel]))
+            [data-info.util.validators :as validators]))
 
 (defn- source->dest
   [source-path dest-path]
@@ -44,34 +43,33 @@
    ;; Locked dest + '/' prefix of new dest, we're moving stuff into new dest with two processes
    ;; New dest + '/' prefix of locked source, we might be moving stuff into locked source while it's being moved out
    ;; New dest + '/' prefix of locked dest, we're moving stuff into locked dest with two processes
-   (otel/with-span [s ["validate-unlocked"]]
-     (let [far-future "9999-12-31T23:59:59Z"
-           eligible-async-task-types ["data-move" "data-rename" "data-delete" "data-delete-trash" "data-restore"]
-           eligible-tasks (async-tasks/get-by-filter {:type eligible-async-task-types
-                                                      :include_null_end true
-                                                      :end_date_since far-future})
-           add-destination-to-basenames (fn [destination sources]
-                                          (map #(ft/path-join destination %) (map ft/basename sources)))
-           extract-paths (fn [{:keys [data type]}]
-                           (condp = type
-                             "data-move"         (concat (add-destination-to-basenames (:destination data) (:sources data))
-                                                         (:sources data))
-                             "data-rename"       (map #(get data %) [:destination :source])
-                             "data-delete"       (concat (:paths data) (vals (:trash-paths data)))
-                             "data-delete-trash" (:trash-paths data)
-                             "data-restore"      (concat (:paths data)
-                                                         (map :restored-path (vals (:restoration-paths data))))
-                             nil))
-           locked-paths (reduce conj #{} (mapcat extract-paths eligible-tasks))
-           path-matches (fn [path] (or
-                                     (get locked-paths path)
-                                     (some #(string/starts-with? (ft/add-trailing-slash %) path) locked-paths) ;; locked path + '/' prefix of new path
-                                     (some #(string/starts-with? (ft/add-trailing-slash path) %) locked-paths) ;; new path + '/' prefix of locked path
-                                     ))
-           matching-paths (filterv path-matches paths)]
-       (if (seq matching-paths)
-         (throw+ {:error_code error/ERR_CONFLICT
-                  :paths      matching-paths}))))))
+   (let [far-future "9999-12-31T23:59:59Z"
+         eligible-async-task-types ["data-move" "data-rename" "data-delete" "data-delete-trash" "data-restore"]
+         eligible-tasks (async-tasks/get-by-filter {:type eligible-async-task-types
+                                                    :include_null_end true
+                                                    :end_date_since far-future})
+         add-destination-to-basenames (fn [destination sources]
+                                        (map #(ft/path-join destination %) (map ft/basename sources)))
+         extract-paths (fn [{:keys [data type]}]
+                         (condp = type
+                           "data-move"         (concat (add-destination-to-basenames (:destination data) (:sources data))
+                                                       (:sources data))
+                           "data-rename"       (map #(get data %) [:destination :source])
+                           "data-delete"       (concat (:paths data) (vals (:trash-paths data)))
+                           "data-delete-trash" (:trash-paths data)
+                           "data-restore"      (concat (:paths data)
+                                                       (map :restored-path (vals (:restoration-paths data))))
+                           nil))
+         locked-paths (reduce conj #{} (mapcat extract-paths eligible-tasks))
+         path-matches (fn [path] (or
+                                  (get locked-paths path)
+                                  (some #(string/starts-with? (ft/add-trailing-slash %) path) locked-paths) ;; locked path + '/' prefix of new path
+                                  (some #(string/starts-with? (ft/add-trailing-slash path) %) locked-paths) ;; new path + '/' prefix of locked path
+                                  ))
+         matching-paths (filterv path-matches paths)]
+     (if (seq matching-paths)
+       (throw+ {:error_code error/ERR_CONFLICT
+                :paths      matching-paths})))))
 
 (defn- move-paths-thread
   [async-task-id]
@@ -111,49 +109,47 @@
 (defn- move-paths
   "As 'user', moves objects in 'sources' into the directory in 'dest', establishing an asynchronous task and processing in another thread."
   [user sources dest]
-  (otel/with-span [s ["move-paths"]]
-    (let [all-paths  (apply merge (mapv #(hash-map (source->dest %1 dest) %1) sources))
-          dest-paths (keys all-paths)
-          sources    (mapv ft/rm-last-slash sources)
-          dest       (ft/rm-last-slash dest)]
-      (validate-unlocked sources dest-paths)
-      (irods/with-jargon-exceptions :client-user user [cm]
-        (validators/user-exists cm user)
-        (validators/all-paths-exist cm sources)
-        (validators/all-paths-exist cm [dest])
-        (validators/path-is-dir cm dest)
-        (validators/user-owns-paths cm user sources)
-        (validators/path-writeable cm user dest)
-        (validators/no-paths-exist cm dest-paths))
-      (let [async-task-id (async-tasks/run-async-thread
-                            (new-task "data-move" user {:sources sources :destination dest})
-                            move-paths-thread "data-move")]
-        {:user user :sources sources :dest dest :async-task-id async-task-id}))))
+  (let [all-paths  (apply merge (mapv #(hash-map (source->dest %1 dest) %1) sources))
+        dest-paths (keys all-paths)
+        sources    (mapv ft/rm-last-slash sources)
+        dest       (ft/rm-last-slash dest)]
+    (validate-unlocked sources dest-paths)
+    (irods/with-jargon-exceptions :client-user user [cm]
+      (validators/user-exists cm user)
+      (validators/all-paths-exist cm sources)
+      (validators/all-paths-exist cm [dest])
+      (validators/path-is-dir cm dest)
+      (validators/user-owns-paths cm user sources)
+      (validators/path-writeable cm user dest)
+      (validators/no-paths-exist cm dest-paths))
+    (let [async-task-id (async-tasks/run-async-thread
+                         (new-task "data-move" user {:sources sources :destination dest})
+                         move-paths-thread "data-move")]
+      {:user user :sources sources :dest dest :async-task-id async-task-id})))
 
 (defn- rename-path
   "As 'user', move 'source' to 'dest', establishing an asynchronous task and processing in another thread."
   [user source dest]
-  (otel/with-span [s ["rename-path"]]
-    (let [source    (ft/rm-last-slash source)
-          dest      (ft/rm-last-slash dest)
-          src-base  (ft/basename source)
-          dest-base (ft/basename dest)]
-      (if (= source dest)
-        {:source source :dest dest :user user}
-        (do
-          (validate-unlocked [source dest])
-          (irods/with-jargon-exceptions :client-user user [cm]
-            (validators/user-exists cm user)
-            (validators/all-paths-exist cm [source (ft/dirname dest)])
-            (validators/path-is-dir cm (ft/dirname dest))
-            (validators/user-owns-path cm user source)
-            (if-not (= (ft/dirname source) (ft/dirname dest))
-              (validators/path-writeable cm user (ft/dirname dest)))
-            (validators/path-not-exists cm dest))
-          (let [async-task-id (async-tasks/run-async-thread
-                                (new-task "data-rename" user {:source source :destination dest})
-                                rename-path-thread "data-rename")]
-            {:user user :source source :dest dest :async-task-id async-task-id}))))))
+  (let [source    (ft/rm-last-slash source)
+        dest      (ft/rm-last-slash dest)
+        src-base  (ft/basename source)
+        dest-base (ft/basename dest)]
+    (if (= source dest)
+      {:source source :dest dest :user user}
+      (do
+        (validate-unlocked [source dest])
+        (irods/with-jargon-exceptions :client-user user [cm]
+          (validators/user-exists cm user)
+          (validators/all-paths-exist cm [source (ft/dirname dest)])
+          (validators/path-is-dir cm (ft/dirname dest))
+          (validators/user-owns-path cm user source)
+          (if-not (= (ft/dirname source) (ft/dirname dest))
+            (validators/path-writeable cm user (ft/dirname dest)))
+          (validators/path-not-exists cm dest))
+        (let [async-task-id (async-tasks/run-async-thread
+                             (new-task "data-rename" user {:source source :destination dest})
+                             rename-path-thread "data-rename")]
+          {:user user :source source :dest dest :async-task-id async-task-id})))))
 
 (defn- rename-uuid
   "Rename by UUID: given a user, a source file UUID, and a new name, rename within the same folder."

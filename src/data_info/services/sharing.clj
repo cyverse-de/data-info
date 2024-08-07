@@ -7,7 +7,6 @@
             [clojure-commons.file-utils :as ft]
             [clj-irods.core :as rods]
             [cemerick.url :as url]
-            [otel.otel :as otel]
             [dire.core :refer [with-pre-hook! with-post-hook!]]
             [data-info.util.logging :as dul]
             [data-info.util.paths :as paths]

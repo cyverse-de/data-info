@@ -1,6 +1,5 @@
 (ns data-info.routes.permissions
   (:use [common-swagger-api.schema]
-        [otel.middleware :only [otel-middleware]]
         [data-info.routes.schemas.common]
         [data-info.routes.schemas.permissions])
   (:require [data-info.services.users :as users]
@@ -13,7 +12,6 @@
     :tags ["bulk"]
 
     (POST "/" [:as {uri :uri}]
-      :middleware [otel-middleware]
       :query [params StandardUserQueryParams]
       :body [body (describe Paths "The paths to gather permissions information on.")]
       :return PermissionsResponse
@@ -33,7 +31,6 @@
     (context "/permissions" []
 
       (GET "/" [:as {uri :uri}]
-        :middleware [otel-middleware]
         :query [params StandardUserQueryParams]
         :return DataItemPermissionsResponse
         :summary "List Data Item Permissions"
@@ -43,7 +40,6 @@
         (svc/trap uri perms/list-permissions params data-id))
 
       (PUT "/:share-with/:permission" [:as {uri :uri}]
-        :middleware [otel-middleware]
         :path-params [share-with :- (describe NonBlankString "The user to grant permissions to.")
                       permission :- (describe PermissionEnum "The permission level to grant.")]
         :query [params StandardUserQueryParams]
@@ -55,7 +51,6 @@
         (svc/trap uri perms/add-permission params data-id share-with permission))
 
       (DELETE "/:unshare-with" [:as {uri :uri}]
-        :middleware [otel-middleware]
         :path-params [unshare-with :- (describe NonBlankString "The user whose permissions will be revoked.")]
         :query [params StandardUserQueryParams]
         :return DataItemPermissionsResponse

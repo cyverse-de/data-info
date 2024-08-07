@@ -7,7 +7,6 @@
             [clj-irods.core :as rods]
             [clj-irods.validate :refer [validate]]
             [clojure-commons.error-codes :as error]
-            [otel.otel :as otel]
             [data-info.util.irods :as irods]
             [data-info.util.config :as cfg])
   (:import [java.util UUID]
@@ -24,13 +23,12 @@
    Returns:
      It returns a path."
   ([^IPersistentMap cm ^String user ^UUID uuid]
-   (otel/with-span [s ["path-for-uuid" {:attributes {"uuid" (str uuid)}}]]
-     (if-let [path (uuid/get-path cm uuid)]
-       path
-       (throw+ {:error_code error/ERR_DOES_NOT_EXIST :uuid uuid}))))
+   (if-let [path (uuid/get-path cm uuid)]
+     path
+     (throw+ {:error_code error/ERR_DOES_NOT_EXIST :uuid uuid})))
   ([^String user ^UUID uuid]
    (irods/with-jargon-exceptions [cm]
-       (path-for-uuid cm user uuid))))
+     (path-for-uuid cm user uuid))))
 
 (defn do-simple-uuid-for-path
   [{:keys [user path]}]
