@@ -22,7 +22,7 @@
                                 [com.fasterxml.jackson.core/jackson-databind]
                                 [com.fasterxml.jackson.core/jackson-core]]]
                  [com.cemerick/url "0.1.1" :exclusions [com.cemerick/clojurescript.test]]
-                 [org.cyverse/dire "0.5.5"]
+                 [org.cyverse/dire "0.5.6-SNAPSHOT"]
                  [me.raynes/fs "1.4.6"]
                  [org.apache.tika/tika-core "2.9.2" :exclusions [org.slf4j/slf4j-api]]
                  [net.sf.opencsv/opencsv "2.3"]
