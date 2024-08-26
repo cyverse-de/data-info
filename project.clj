@@ -26,8 +26,8 @@
                  [me.raynes/fs "1.4.6"]
                  [org.apache.tika/tika-core "2.9.2" :exclusions [org.slf4j/slf4j-api]]
                  [net.sf.opencsv/opencsv "2.3"]
-                 [org.cyverse/clj-irods "0.3.7"]
-                 [org.cyverse/clj-icat-direct "2.9.6"
+                 [org.cyverse/clj-irods "0.3.8"]
+                 [org.cyverse/clj-icat-direct "2.9.7"
                    :exclusions [[org.slf4j/slf4j-api]
                                 [org.slf4j/slf4j-log4j12]
                                 [log4j]]]
