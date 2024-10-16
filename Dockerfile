@@ -17,7 +17,7 @@ COPY . /usr/src/app
 RUN lein do clean, uberjar && \
     cp target/data-info-standalone.jar .
 
-ENTRYPOINT ["data-info", "-Dlogback.configurationFile=/etc/iplant/de/logging/data-info-logging.xml", "-cp", ".:data-info-standalone.jar", "data_info.core"]
+ENTRYPOINT ["data-info", "-Dlogback.configurationFile=/usr/src/app/logback.xml", "-cp", ".:data-info-standalone.jar", "data_info.core"]
 CMD ["--help"]
 
 ARG git_commit=unknown
