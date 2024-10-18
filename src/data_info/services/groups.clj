@@ -40,7 +40,7 @@
     ;; still be updated if a few don't exist in irods
     ;(validators/all-users-exist cm members)
     (let [current-members (set (users/list-group-members cm group-name))
-          desired-members (set (map di-users/ensure-qualified (filter users/user-exists? members)))
+          desired-members (set (map di-users/ensure-qualified (filter #(users/user-exists? cm %) members)))
 
           members-to-add (cset/difference desired-members current-members)
           members-to-remove (cset/difference current-members desired-members)
