@@ -1,14 +1,17 @@
-apiVersion: skaffold/v1
+apiVersion: skaffold/v3
 kind: Config
 metadata:
   name: data-info
-deploy:
-  kubectl:
-    manifests:
-    - k8s/data-info.yml
 build:
+  artifacts:
+    - image: harbor.cyverse.org/de/data-info
   tagPolicy:
     gitCommit: {}
-  artifacts:
-  - image: harbor.cyverse.org/de/data-info
   local: {}
+  platforms:
+    - "linux/amd64"
+manifests:
+  rawYaml:
+    - k8s/data-info.yml
+deploy:
+  kubectl: {}

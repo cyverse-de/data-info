@@ -41,6 +41,9 @@
   (assoc GroupErrorResponses
          :error_code DeleteErrorCodes))
 
+(s/defschema GroupDeleted
+  {:name (describe String "group name")})
+
 (defroutes groups-routes
   (context "/groups" []
     :tags ["groups"]
@@ -94,7 +97,8 @@
                                   :description data-schema/CommonErrorCodeDocs}}
                             {403 {:schema ErrorResponseForbidden
                                   :description "No access to group administration"}}
-                            {200 {:description "Successful response"}})
+                            {200 {:schema GroupDeleted
+                                  :description "Successful response"}})
         :summary     "Delete group"
         :description "Delete an IRODS group's members"
         (ok (groups/delete-group params group-name))))))
