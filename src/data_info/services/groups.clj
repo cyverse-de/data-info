@@ -59,4 +59,4 @@
     (validators/user-is-group-admin cm user)
     (when (users/group-exists? cm group-name)
       (users/delete-user-group cm group-name))
-    nil))
+    {:name group-name}))
