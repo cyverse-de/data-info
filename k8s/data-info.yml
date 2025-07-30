@@ -18,24 +18,15 @@ spec:
       affinity:
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
-          - labelSelector:
-              matchExpressions:
-              - key: de-app
-                operator: In
-                values:
-                - data-info
-            topologyKey: kubernetes.io/hostname
+            - labelSelector:
+                matchExpressions:
+                  - key: de-app
+                    operator: In
+                    values:
+                      - data-info
+              topologyKey: kubernetes.io/hostname
       restartPolicy: Always
       volumes:
-        - name: localtime
-          hostPath:
-            path: /etc/localtime
-        - name: timezone
-          configMap:
-            name: timezone
-            items:
-              - key: timezone
-                path: timezone
         - name: service-configs
           secret:
             secretName: service-configs
@@ -43,71 +34,70 @@ spec:
               - key: data-info.properties
                 path: data-info.properties
       containers:
-      - name: data-info
-        image: harbor.cyverse.org/de/data-info
-        resources:
-          requests:
-            cpu: "160m"
-            memory: "1Gi"
-            ephemeral-storage: "1Gi"
-          limits:
-            cpu: "4000m"
-            memory: "3Gi"
-            ephemeral-storage: "1Gi"
-        args:
-          - --config
-          - /etc/iplant/de/data-info.properties
-        volumeMounts:
-          - name: localtime
-            mountPath: /etc/localtime
-            readOnly: true
-          - name: timezone
-            mountPath: /etc/timezone
-            subPath: timezone
-          - name: service-configs
-            mountPath: /etc/iplant/de
-            readOnly: true
-        env:
-          - name: JAVA_TOOL_OPTIONS
-            valueFrom:
-              configMapKeyRef:
-                name: java-tool-options
-                key: high
-          - name: OTEL_TRACES_EXPORTER
-            valueFrom:
-              secretKeyRef:
-                name: configs
-                key: OTEL_TRACES_EXPORTER
-          - name: OTEL_EXPORTER_JAEGER_ENDPOINT
-            valueFrom:
-              secretKeyRef:
-                name: configs
-                key: OTEL_EXPORTER_JAEGER_ENDPOINT
-        ports:
-          - name: listen-port
-            containerPort: 60000
-        livenessProbe:
-          httpGet:
-            path: /
-            port: 60000
-          initialDelaySeconds: 60
-          periodSeconds: 20
-          timeoutSeconds: 10
-        startupProbe:
-          httpGet:
-            path: /
-            port: 60000
-          initialDelaySeconds: 60
-          periodSeconds: 20
-          timeoutSeconds: 10
-          failureThreshold: 30
-        readinessProbe:
-          httpGet:
-            path: /
-            port: 60000
-          initialDelaySeconds: 60
-          periodSeconds: 20
-          timeoutSeconds: 10
+        - name: data-info
+          image: harbor.cyverse.org/de/data-info
+          resources:
+            requests:
+              cpu: "160m"
+              memory: "1Gi"
+              ephemeral-storage: "1Gi"
+            limits:
+              cpu: "4000m"
+              memory: "3Gi"
+              ephemeral-storage: "1Gi"
+          args:
+            - --config
+            - /etc/iplant/de/data-info.properties
+          volumeMounts:
+            - name: service-configs
+              mountPath: /etc/iplant/de
+              readOnly: true
+          env:
+            - name: TZ
+              valueFrom:
+                configMapKeyRef:
+                  name: timezone
+                  key: timezone
+            - name: JAVA_TOOL_OPTIONS
+              valueFrom:
+                configMapKeyRef:
+                  name: java-tool-options
+                  key: high
+            - name: OTEL_TRACES_EXPORTER
+              valueFrom:
+                secretKeyRef:
+                  name: configs
+                  key: OTEL_TRACES_EXPORTER
+            - name: OTEL_EXPORTER_JAEGER_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: configs
+                  key: OTEL_EXPORTER_JAEGER_ENDPOINT
+          ports:
+            - name: listen-port
+              containerPort: 60000
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 60000
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 10
+          startupProbe:
+            httpGet:
+              path: /
+              port: 60000
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 10
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 60000
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 10
 ---
 apiVersion: v1
 kind: Service
