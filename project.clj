@@ -26,12 +26,12 @@
                  [me.raynes/fs "1.4.6"]
                  [org.apache.tika/tika-core "3.2.2" :exclusions [org.slf4j/slf4j-api]]
                  [net.sf.opencsv/opencsv "2.3"]
-                 [org.cyverse/clj-irods "0.3.8"]
+                 [org.cyverse/clj-irods "0.3.9-SNAPSHOT"]
                  [org.cyverse/clj-icat-direct "2.9.7"
                    :exclusions [[org.slf4j/slf4j-api]
                                 [org.slf4j/slf4j-log4j12]
                                 [log4j]]]
-                 [org.cyverse/clj-jargon "3.1.2"
+                 [org.cyverse/clj-jargon "3.1.3-SNAPSHOT"
                    :exclusions [[org.slf4j/slf4j-api]
                                 [org.slf4j/slf4j-log4j12]
                                 [log4j]]]
