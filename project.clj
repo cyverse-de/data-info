@@ -29,8 +29,8 @@
                    :exclusions [[org.slf4j/slf4j-api]
                                 [org.slf4j/slf4j-log4j12]
                                 [log4j]]]
-                 [org.cyverse/clj-irods "0.4.0-SNAPSHOT"]
-                 [org.cyverse/clj-jargon "3.1.4-SNAPSHOT"
+                 [org.cyverse/clj-irods "0.4.0"]
+                 [org.cyverse/clj-jargon "3.1.4"
                    :exclusions [[org.slf4j/slf4j-api]
                                 [org.slf4j/slf4j-log4j12]
                                 [com.fasterxml.jackson.dataformat/jackson-dataformat-cbor]
