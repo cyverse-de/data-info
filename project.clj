@@ -29,8 +29,8 @@
                    :exclusions [[org.slf4j/slf4j-api]
                                 [org.slf4j/slf4j-log4j12]
                                 [log4j]]]
-                 [org.cyverse/clj-irods "0.3.9"]
-                 [org.cyverse/clj-jargon "3.1.3"
+                 [org.cyverse/clj-irods "0.4.0"]
+                 [org.cyverse/clj-jargon "3.1.4"
                    :exclusions [[org.slf4j/slf4j-api]
                                 [org.slf4j/slf4j-log4j12]
                                 [com.fasterxml.jackson.dataformat/jackson-dataformat-cbor]
@@ -50,6 +50,7 @@
                  [org.cyverse/metadata-files "2.1.1"]
                  [org.cyverse/oai-ore "1.0.4"]
                  [org.cyverse/service-logging "2.8.4"]
+                 [org.slf4j/slf4j-api "2.0.17"]
                  [ring/ring-codec "1.3.0"]
                  [ring/ring-jetty-adapter "1.14.2" :exclusions [org.slf4j/slf4j-api]]
                  [slingshot "0.12.2"]]
