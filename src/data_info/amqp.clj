@@ -26,21 +26,25 @@
 
 (defn connect!
   "Opens a connection and channel to the AMQP broker, declares the exchange,
-  and stores both in the module-level atom.  The old connection (if any) is
-  closed on a best-effort basis.
+  and stores both in the module-level atom.  The old channel and connection
+  (if any) are closed on a best-effort basis.
 
-  Thread-safety: callers that invoke this from the reconnect path already hold
-  `publish-lock`.  The startup call is single-threaded, so no contention."
+  The state swap and old-connection teardown are performed under `publish-lock`
+  so that no publish can observe a partially-replaced state."
   []
-  (log/info "[amqp/connect!] Connecting to AMQP broker:" (config/amqp-uri))
-  (let [old  @amqp-state
-        conn (rmq/connect {:uri (config/amqp-uri)})
-        ch   (lch/open conn)]
-    (declare-exchange ch)
-    (reset! amqp-state {:conn conn :channel ch})
-    (when-let [old-conn (:conn old)]
-      (try (rmq/close old-conn) (catch Exception _ nil)))
-    (log/info "[amqp/connect!] Connected.")))
+  (let [uri  (config/amqp-uri)
+        host (get (rmq/parse-uri uri) :host "unknown")]
+    (log/info "[amqp/connect!] Connecting to AMQP broker:" host)
+    (let [conn (rmq/connect {:uri uri})
+          ch   (lch/open conn)]
+      (declare-exchange ch)
+      (locking publish-lock
+        (let [old @amqp-state]
+          (reset! amqp-state {:conn conn :channel ch})
+          (when old
+            (try (lch/close (:channel old)) (catch Exception _ nil))
+            (try (rmq/close (:conn    old)) (catch Exception _ nil)))))
+      (log/info "[amqp/connect!] Connected."))))
 
 (defn disconnect!
   "Closes the channel and connection.  Intended for clean service shutdown."
