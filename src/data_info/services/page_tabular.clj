@@ -17,7 +17,8 @@
             [data-info.util.irods :as irods]
             [data-info.util.validators :as validators])
   (:import [au.com.bytecode.opencsv CSVReader]
-           [java.io InputStream]))
+           [java.io InputStream]
+           [java.nio.charset StandardCharsets]))
 
 (def ^:private ^String line-ending "\n")
 
@@ -65,7 +66,7 @@
 (defn- read-csv
   [^String csv-str ^String separator]
   (if-not (string/blank? csv-str)
-    (let [ba  (java.io.ByteArrayInputStream. (.getBytes csv-str))
+    (let [ba  (java.io.ByteArrayInputStream. (.getBytes csv-str StandardCharsets/UTF_8))
           isr (java.io.InputStreamReader. ba "UTF-8")]
       (map fix-record (mapv #(zipmap (mapv str (range (count %1))) %1)
                             (mapv vec (read-csv-stream separator isr)))))
