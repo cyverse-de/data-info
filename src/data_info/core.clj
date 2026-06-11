@@ -59,13 +59,15 @@
 (defn lein-ring-init
   []
   (load-configuration-from-file)
-  (icat/configure-icat))
+  (icat/configure-icat)
+  (amqp/connect!))
 
 
 (defn repl-init
   []
   (load-configuration-from-file)
-  (icat/configure-icat))
+  (icat/configure-icat)
+  (amqp/connect!))
 
 
 (defn- cli-options
@@ -93,4 +95,5 @@
         (ccli/exit 1 "The config file is not readable."))
       (load-configuration-from-file (:config options))
       (icat/configure-icat)
+      (amqp/connect!)
       (run-jetty))))

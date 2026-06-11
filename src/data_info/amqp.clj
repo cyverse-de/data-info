@@ -2,51 +2,92 @@
   (:require [clojure.tools.logging :as log]
             [data-info.util.config :as config]
             [service-logging.thread-context :as tc]
-            [slingshot.slingshot :refer [try+]]
             [cheshire.core :as cheshire]
             [langohr.core :as rmq]
             [langohr.channel :as lch]
-            [langohr.queue :as lq]
-            [langohr.consumers :as lc]
             [langohr.exchange :as le]
             [langohr.basic :as lb]))
 
-(defn- declare-queue
-  [channel {exchange-name :name} queue-cfg topics]
-  (lq/declare channel (:name queue-cfg) (assoc queue-cfg :exclusive false))
-  (doseq [key topics]
-    (lq/bind channel (:name queue-cfg) exchange-name {:routing-key key})))
+;; Persistent AMQP connection state.  A single atom holds both the connection
+;; and channel so they are always replaced as an atomic pair.
+(defonce ^:private amqp-state (atom nil))
+
+;; Monitor object used to serialize all publish and reconnect operations.
+;; RabbitMQ channels are not thread-safe for concurrent use, and we must also
+;; prevent multiple threads from racing through reconnect simultaneously.
+(defonce ^:private publish-lock (Object.))
 
 (defn- declare-exchange
-  [channel {exchange-name :name :as exchange-cfg}]
-  (le/topic channel exchange-name exchange-cfg))
+  [channel]
+  (le/topic channel
+            (config/exchange-name)
+            {:durable     (config/exchange-durable?)
+             :auto-delete (config/exchange-auto-delete?)}))
 
-(defn- message-router
-  [handlers channel {:keys [delivery-tag routing-key] :as metadata} msg]
-  (let [handler (get handlers routing-key)]
-    (if-not (nil? handler)
-      (handler channel metadata msg)
-      (log/error (format "[amqp/message-router] [%s] [%s] unroutable" routing-key (String. msg))))))
+(defn connect!
+  "Opens a connection and channel to the AMQP broker, declares the exchange,
+  and stores both in the module-level atom.  The old connection (if any) is
+  closed on a best-effort basis.
+
+  Thread-safety: callers that invoke this from the reconnect path already hold
+  `publish-lock`.  The startup call is single-threaded, so no contention."
+  []
+  (log/info "[amqp/connect!] Connecting to AMQP broker:" (config/amqp-uri))
+  (let [old  @amqp-state
+        conn (rmq/connect {:uri (config/amqp-uri)})
+        ch   (lch/open conn)]
+    (declare-exchange ch)
+    (reset! amqp-state {:conn conn :channel ch})
+    (when-let [old-conn (:conn old)]
+      (try (rmq/close old-conn) (catch Exception _ nil)))
+    (log/info "[amqp/connect!] Connected.")))
+
+(defn disconnect!
+  "Closes the channel and connection.  Intended for clean service shutdown."
+  []
+  (locking publish-lock
+    (when-let [{:keys [conn channel]} @amqp-state]
+      (log/info "[amqp/disconnect!] Closing AMQP connection.")
+      (try (lch/close channel) (catch Exception _ nil))
+      (try (rmq/close conn)    (catch Exception _ nil))
+      (reset! amqp-state nil))))
+
+(defn- do-publish
+  [routing-key encoded-body time-now]
+  (let [ch (:channel @amqp-state)]
+    (when (nil? ch)
+      (throw (IllegalStateException. "AMQP channel not available. Has connect! been called?")))
+    (lb/publish ch
+                (config/exchange-name)
+                routing-key
+                encoded-body
+                {:content-type "application/json"
+                 :timestamp    time-now})))
 
 (defn publish-msg
-  [routing-key msg]
-  (try+
-    (let [timeNow (new java.util.Date)
-          connection (rmq/connect {:uri (config/amqp-uri)})
-          channel (lch/open connection)]
-      (tc/with-logging-context
-        {:amqp-routing-key routing-key
-         :amqp-message msg}
-        (log/info (format "Publishing AMQP message. routing-key=%s" routing-key)))
-      (lb/publish channel
-                  (config/exchange-name)
-                  routing-key
-                  (cheshire/encode {:message      msg
-                                    :timestamp_ms (.getTime timeNow)})
-                  {:content-type "application/json"
-                   :timestamp    timeNow})
+  "Publishes a message to the AMQP exchange.  On failure the connection is
+  re-established and the publish is retried once.  If the retry also fails
+  the error is logged and the exception is suppressed.
 
-      (lch/close channel)
-      (rmq/close connection))
-    (catch Object _
-      (log/error (:throwable &throw-context) "Failed to publish message" (cheshire/encode msg)))))
+  The entire publish-with-retry sequence is serialized via `publish-lock` to
+  ensure the underlying channel is never used concurrently and to prevent
+  multiple threads from stampeding through reconnect at the same time."
+  [routing-key msg]
+  (let [time-now     (new java.util.Date)
+        encoded-body (cheshire/encode {:message      msg
+                                       :timestamp_ms (.getTime time-now)})]
+    (tc/with-logging-context
+      {:amqp-routing-key routing-key
+       :amqp-message msg}
+      (log/info (format "Publishing AMQP message. routing-key=%s" routing-key)))
+    (locking publish-lock
+      (try
+        (do-publish routing-key encoded-body time-now)
+        (catch Exception e
+          (log/warn e "[amqp/publish-msg] Publish failed; reconnecting and retrying.")
+          (try
+            (connect!)
+            (do-publish routing-key encoded-body time-now)
+            (catch Exception re
+              (log/error re "[amqp/publish-msg] Retry failed. Message lost."
+                         (cheshire/encode msg)))))))))
