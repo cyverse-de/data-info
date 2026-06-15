@@ -33,7 +33,7 @@
   so that no publish can observe a partially-replaced state."
   []
   (let [uri  (config/amqp-uri)
-        host (get (rmq/parse-uri uri) :host "unknown")]
+        host (get (rmq/settings-from uri) :host "unknown")]
     (log/info "[amqp/connect!] Connecting to AMQP broker:" host)
     (let [conn (rmq/connect {:uri uri})
           ch   (lch/open conn)]
