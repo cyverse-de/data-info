@@ -4,6 +4,7 @@
   (:require [me.raynes.fs :as fs]
             [clj-icat-direct.icat :as icat]
             [clojure.java.io :as io]
+            [clojure.string :as string]
             [clj-jargon.init :refer [proxy-input-stream-return clean-return]]
             [clj-irods.core :as rods]
             [clj-jargon.by-uuid :as uuid]
@@ -17,7 +18,8 @@
             [data-info.util.config :as cfg]
             [data-info.util.irods :as irods]
             [data-info.util.validators :as duv]
-            [ring.util.http-response :as http-response]))
+            [ring.util.http-response :as http-response])
+  (:import [java.net URLEncoder]))
 
 
 ;; id specific
@@ -45,17 +47,33 @@
     (clean-return (:jargon irods) "")
     (proxy-input-stream-return (:jargon irods) @istream-ref)))
 
+(defn- rfc5987-encode
+  "Percent-encodes filename as UTF-8 for an RFC 5987 filename* parameter."
+  [filename]
+  (-> (URLEncoder/encode filename "UTF-8")
+      (string/replace "+" "%20")
+      (string/replace "*" "%2A")))
+
+(defn- content-disposition
+  "Builds an RFC 6266 Content-Disposition value. filename* carries the real
+   UTF-8 name and stays pure ASCII on the wire, so characters above U+00FF
+   survive the ISO-8859-1 header transport that would otherwise strip them.
+   filename= is an ASCII fallback for legacy clients."
+  [attachment filename]
+  (let [dtype    (if attachment "attachment" "inline")
+        fallback (-> filename
+                     (string/replace #"[^\x20-\x7E]" "_")
+                     (string/replace #"[\"\\]" "_"))]
+    (str dtype "; filename=\"" fallback "\"; filename*=UTF-8''" (rfc5987-encode filename))))
+
 (defn- file-entry
   [irods path {:keys [user attachment]}]
-  (let [filename    (str \" (file/basename path) \")
+  (let [filename    (file/basename path)
         istream-ref (delay (io/input-stream (ops/input-stream @(:jargon irods) path)))
-        disposition (if attachment
-                      (str "attachment; filename=" filename)
-                      (str "filename=" filename))
         media-type  (irods/detect-media-type (:jargon irods) path istream-ref)]
     (assoc (http-response/ok (get-file irods user path istream-ref))
            :headers {"Content-Type"        media-type
-                     "Content-Disposition" disposition})))
+                     "Content-Disposition" (content-disposition attachment filename)})))
 
 
 ; folder specific
