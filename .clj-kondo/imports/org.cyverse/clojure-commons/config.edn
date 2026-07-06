@@ -1,0 +1,18 @@
+{:hooks
+ {:macroexpand
+  {clojure-commons.config/defprop-str          clojure-commons.config/defprop-str
+   clojure-commons.config/defprop-optstr       clojure-commons.config/defprop-optstr
+   clojure-commons.config/defprop-vec          clojure-commons.config/defprop-str
+   clojure-commons.config/defprop-optvec       clojure-commons.config/defprop-optstr
+   clojure-commons.config/defprop-int          clojure-commons.config/defprop-str
+   clojure-commons.config/defprop-optint       clojure-commons.config/defprop-optstr
+   clojure-commons.config/defprop-long         clojure-commons.config/defprop-str
+   clojure-commons.config/defprop-optlong      clojure-commons.config/defprop-optstr
+   clojure-commons.config/defprop-boolean      clojure-commons.config/defprop-str
+   clojure-commons.config/defprop-optboolean   clojure-commons.config/defprop-optstr
+   clojure-commons.config/defprop-uuid         clojure-commons.config/defprop-str
+   clojure-commons.config/defprop-optuuid      clojure-commons.config/defprop-optstr
+   clojure-commons.error-codes/deferr          clojure-commons.error-codes/deferr
+   clojure-commons.file-utils/with-temp-dir    clojure-commons.file-utils/with-temp-dir
+   clojure-commons.file-utils/with-temp-dir-in clojure-commons.file-utils/with-temp-dir-in
+   clojure-commons.core/when-let*              clojure-commons.core/when-let*}}}
