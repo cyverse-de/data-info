@@ -66,6 +66,19 @@
   [props config-valid configs]
   "data-info.port" 60000)
 
+(cc/defprop-optint jetty-max-idle-time
+  "The default maximum idle time (in milliseconds) for a Jetty connection. Kept short; it
+   applies to every endpoint except uploads, which use jetty-upload-idle-time instead."
+  [props config-valid configs]
+  "data-info.jetty.max-idle-time" 200000)
+
+(cc/defprop-optint jetty-upload-idle-time
+  "The maximum idle time (in milliseconds) applied to upload endpoints (POST/PUT /data).
+   Raised well above the short default so slow or intermittently-stalled uploads are not cut
+   off mid-transfer."
+  [props config-valid configs]
+  "data-info.jetty.upload-idle-time" 3600000)
+
 
 (cc/defprop-optvec perms-filter
   "The list of users who should be filtered out of permissions requests, comma-separated."

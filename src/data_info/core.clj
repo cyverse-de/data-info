@@ -4,6 +4,7 @@
             [clojure.tools.logging :as log]
             [data-info.routes :as routes]
             [data-info.util.config :as config]
+            [data-info.util.jetty :as jetty]
             [data-info.amqp :as amqp]
             [me.raynes.fs :as fs]
             [common-cli.core :as ccli]
@@ -81,7 +82,13 @@
   []
   (require 'ring.adapter.jetty)
   (log/warn "Started listening on" (config/listen-port))
-  ((eval 'ring.adapter.jetty/run-jetty) routes/app {:port (config/listen-port)}))
+  ((eval 'ring.adapter.jetty/run-jetty) routes/app
+   {:port          (config/listen-port)
+    :max-idle-time (config/jetty-max-idle-time)
+    :configurator  (jetty/idle-timeout-configurator
+                    (fn [^String path] (and path (.startsWith path "/data")))
+                    (config/jetty-max-idle-time)
+                    (config/jetty-upload-idle-time))}))
 
 (defn -main
   [& args]
