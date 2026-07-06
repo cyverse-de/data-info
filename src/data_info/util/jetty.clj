@@ -8,23 +8,24 @@
   (:import [org.eclipse.jetty.server Server Connector HttpConnectionFactory HttpConfiguration$Customizer]))
 
 (defn- idle-timeout-customizer
-  "A per-request Jetty customizer. Sets the connection's idle timeout to upload-idle-ms for
-   requests whose path satisfies upload-path?, and to default-idle-ms otherwise (so the value
-   is correct even when a connection is reused across requests)."
-  [upload-path? ^long default-idle-ms ^long upload-idle-ms]
+  "A per-request Jetty customizer. Sets the connection's idle timeout to upload-idle-ms
+  for requests whose method and path satisfy requires-long-timeout?, and to default-idle-ms
+  otherwise (so the value is correct even when a connection is reused across requests)."
+  [requires-long-timeout? ^long default-idle-ms ^long upload-idle-ms]
   (reify HttpConfiguration$Customizer
     (customize [_ request _response-headers]
       (let [endpoint (.. request getConnectionMetaData getConnection getEndPoint)
+            method   (.. request getMethod)
             path     (.. request getHttpURI getPath)]
-        (.setIdleTimeout endpoint (if (upload-path? path) upload-idle-ms default-idle-ms)))
+        (.setIdleTimeout endpoint (if (requires-long-timeout? method path) upload-idle-ms default-idle-ms)))
       request)))
 
 (defn idle-timeout-configurator
   "Returns a ring-jetty :configurator fn that installs idle-timeout-customizer on every HTTP
    connection factory of the server."
-  [upload-path? default-idle-ms upload-idle-ms]
+  [requires-long-timeout? default-idle-ms upload-idle-ms]
   (fn [^Server server]
-    (let [customizer (idle-timeout-customizer upload-path? (long default-idle-ms) (long upload-idle-ms))]
+    (let [customizer (idle-timeout-customizer requires-long-timeout? (long default-idle-ms) (long upload-idle-ms))]
       (doseq [^Connector connector (.getConnectors server)
               factory              (.getConnectionFactories connector)
               :when                (instance? HttpConnectionFactory factory)]

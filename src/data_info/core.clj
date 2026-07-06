@@ -88,7 +88,9 @@
    {:port          (config/listen-port)
     :max-idle-time (config/jetty-max-idle-time)
     :configurator  (jetty/idle-timeout-configurator
-                    (fn [^String path] (and path (.startsWith path "/data")))
+                    (fn [^String method ^String path]
+                      (or (and (= method "POST") (re-matches #"/data/?" path))
+                          (and (= method "PUT") (re-matches #"/data/[^/]+/?" path))))
                     (config/jetty-max-idle-time)
                     (config/jetty-upload-idle-time))}))
 
