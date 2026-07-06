@@ -57,6 +57,7 @@
     (config/load-config-from-file path)))
 
 
+#_{:clj-kondo/ignore [:clojure-lsp/unused-public-var :unused-public-var]}
 (defn lein-ring-init
   []
   (load-configuration-from-file)
@@ -64,6 +65,7 @@
   (amqp/connect!))
 
 
+#_{:clj-kondo/ignore [:clojure-lsp/unused-public-var :unused-public-var]}
 (defn repl-init
   []
   (load-configuration-from-file)
@@ -93,11 +95,9 @@
 (defn -main
   [& args]
   (tc/with-logging-context config/svc-info
-    (let [{:keys [options arguments errors summary]} (ccli/handle-args config/svc-info
-                                                                       args
-                                                                       cli-options)]
+    (let [{:keys [options]} (ccli/handle-args config/svc-info args cli-options)]
       (when-not (fs/exists? (:config options))
-        (ccli/exit 1 (str "The config file does not exist.")))
+        (ccli/exit 1 "The config file does not exist."))
       (when-not (fs/readable? (:config options))
         (ccli/exit 1 "The config file is not readable."))
       (load-configuration-from-file (:config options))
