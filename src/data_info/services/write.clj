@@ -10,6 +10,7 @@
             [clj-irods.validate :refer [validate]]
             [heuristomancer.core :as hm]
             [ring.middleware.multipart-params :as multipart]
+            [data-info.clients.async-tasks :as async-tasks]
             [data-info.services.stat :as stat]
             [data-info.services.stat.common :refer [process-filters]]
             [data-info.util.config :as cfg]
@@ -86,27 +87,53 @@
       (throw (ex-info "temp upload object still present after delete" {:path write-path})))
     true))
 
+(defn- cleanup-temp-object
+  "Thread body for a temp-upload-cleanup async task. iRODS locks the just-aborted replica for a
+   short time, so an immediate delete fails; this retries delete-temp-object with backoff until
+   the lock clears (or attempts are exhausted), recording the outcome on the async task."
+  [async-task-id]
+  (try
+    (let [write-path (:path (:data (async-tasks/get-by-id async-task-id)))
+          detail     (str "[" (cfg/service-identifier) "] " write-path)
+          mark       (fn [add-fn status]
+                       (try
+                         (add-fn async-task-id {:status status :detail detail})
+                         (catch Throwable e
+                           (log/error e "failed to record" status "status for partial upload cleanup"))))]
+      (mark async-tasks/add-status "running")
+      (loop [attempts 6, wait-ms 3000]
+        (Thread/sleep wait-ms)
+        (let [done? (try (delete-temp-object write-path)
+                         (catch Throwable e
+                           (log/debug e "deferred cleanup pending for partial upload" write-path)
+                           false))]
+          (cond
+            done?           (do (log/info "cleaned up partial upload object" write-path)
+                                (mark async-tasks/add-completed-status "completed"))
+            (pos? attempts) (recur (dec attempts) (min 30000 (* 2 wait-ms)))
+            :else           (do (log/warn "gave up cleaning up partial upload object" write-path)
+                                (mark async-tasks/add-completed-status "failed"))))))
+    (catch Throwable e
+      (log/error e "partial upload cleanup task failed" async-task-id))))
+
 (defn- schedule-temp-cleanup
-  "Deferred, best-effort cleanup of an orphaned temp upload object. iRODS locks the
-   just-aborted replica for a short time, so a synchronous delete fails; this retries with
-   backoff on a background daemon thread until the lock clears (or attempts are exhausted)."
-  [write-path]
-  (doto (Thread.
-         ^Runnable
-         (fn []
-           (loop [attempts 6, wait-ms 3000]
-             (Thread/sleep wait-ms)
-             (let [done? (try (delete-temp-object write-path)
-                              (catch Throwable e
-                                (log/debug e "deferred cleanup pending for partial upload" write-path)
-                                false))]
-               (cond
-                 done?          (log/info "cleaned up partial upload object" write-path)
-                 (pos? attempts) (recur (dec attempts) (min 30000 (* 2 wait-ms)))
-                 :else          (log/warn "gave up cleaning up partial upload object" write-path)))))
-         "upload-temp-cleanup")
-    (.setDaemon true)
-    (.start)))
+  "Registers a tracked async task to clean up an orphaned temp upload object and processes it on
+   a background thread (see cleanup-temp-object). Best-effort: a failure to register the task is
+   logged and swallowed so it never masks the upload error that triggered the cleanup."
+  [write-path user]
+  (try
+    (async-tasks/run-async-thread
+     (async-tasks/create-task
+      {:type      "data-upload-cleanup"
+       :username  user
+       :data      {:path write-path :instance-id (cfg/service-identifier)}
+       :statuses  [{:status "registered" :detail (str "[" (cfg/service-identifier) "]")}]
+       :behaviors [{:type "statuschangetimeout"
+                    :data {:statuses [{:start_status "running" :end_status "detected-stalled" :timeout "10m"}]}}]})
+     cleanup-temp-object
+     "upload-temp-cleanup")
+    (catch Throwable e
+      (log/error e "failed to schedule cleanup of partial upload object" write-path))))
 
 (defn- write-stream
   "Streams istream to dest-path and returns the stat of dest-path.
@@ -124,7 +151,7 @@
         (ops/move cm write-path dest-path :user user)
         (info/stat cm dest-path)
         (catch Throwable t
-          (schedule-temp-cleanup write-path)
+          (schedule-temp-cleanup write-path user)
           (throw t))))))
 
 (defn- save-file-contents
