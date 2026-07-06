@@ -52,13 +52,84 @@
           (meta/add-metadata cm path (cfg/type-detect-type-attribute) info-type "ipc-data-info-detected" :known-type :file)
           info-type))))
 
+(defn- temp-partial-path
+  "Returns a hidden temp path in the same collection as dest-path. Keeping the temp object
+   in the same collection makes the final rename a catalog-only (atomic) operation and
+   avoids any cross-collection permission fix-ups (see clj-jargon move/fix-perms)."
+  [dest-path]
+  (ft/path-join (ft/dirname dest-path)
+                (str "." (ft/basename dest-path) ".partial-" (java.util.UUID/randomUUID))))
+
+(defn- delete-temp-object
+  "Best-effort delete of an orphaned temp upload object on a FRESH connection (the client
+   connection is typically broken by the same I/O failure that aborted the upload). Tries a
+   hard delete, falling back to a trash (catalog-only) delete. Returns true when the object
+   is gone. Throws if the object still exists and cannot be removed (e.g. the replica is
+   still locked)."
+  [write-path]
+  (irods/with-jargon-exceptions [cm]
+    (when (info/exists? cm write-path)
+      (try
+        (ops/delete cm write-path true)
+        (catch Throwable _
+          (ops/delete cm write-path false))))
+    (when (info/exists? cm write-path)
+      (throw (ex-info "temp upload object still present after delete" {:path write-path})))
+    true))
+
+(defn- schedule-temp-cleanup
+  "Deferred, best-effort cleanup of an orphaned temp upload object. iRODS locks the
+   just-aborted replica for a short time, so a synchronous delete fails; this retries with
+   backoff on a background daemon thread until the lock clears (or attempts are exhausted)."
+  [write-path]
+  (doto (Thread.
+         ^Runnable
+         (fn []
+           (loop [attempts 6, wait-ms 3000]
+             (Thread/sleep wait-ms)
+             (let [done? (try (delete-temp-object write-path)
+                              (catch Throwable e
+                                (log/debug e "deferred cleanup pending for partial upload" write-path)
+                                false))]
+               (cond
+                 done?          (log/info "cleaned up partial upload object" write-path)
+                 (pos? attempts) (recur (dec attempts) (min 30000 (* 2 wait-ms)))
+                 :else          (log/warn "gave up cleaning up partial upload object" write-path)))))
+         "upload-temp-cleanup")
+    (.setDaemon true)
+    (.start)))
+
+(defn- write-stream
+  "Streams istream to dest-path and returns the stat of dest-path.
+
+   When atomic? is true, the bytes are written to a temp object in the same collection and
+   renamed into place only on success. This keeps a new-file create atomic: an interrupted
+   upload never leaves a partial object at dest-path (which would otherwise cause a spurious
+   ERR_EXISTS on the next attempt). The orphaned temp object is cleaned up asynchronously."
+  [cm istream user dest-path set-owner? atomic?]
+  (if-not atomic?
+    (ops/copy-stream cm istream user dest-path :set-owner? set-owner?)
+    (let [write-path (temp-partial-path dest-path)]
+      (try
+        (ops/copy-stream cm istream user write-path :set-owner? set-owner?)
+        (ops/move cm write-path dest-path :user user)
+        (info/stat cm dest-path)
+        (catch Throwable t
+          (schedule-temp-cleanup write-path)
+          (throw t))))))
+
 (defn- save-file-contents
-  "Save an istream to a destination. Relies on upstream functions to validate."
-  [irods istream-raw user dest-path set-owner?]
-  (let [istream-ref (delay (io/input-stream istream-raw))
+  "Save an istream to a destination. Relies on upstream functions to validate.
+
+   When atomic? is true (new-file creates), the contents are streamed to a temp object and
+   renamed into place on success so an interrupted upload never orphans a partial file at
+   dest-path."
+  [irods istream-raw user dest-path set-owner? atomic?]
+  (let [cm          @(:jargon irods)
+        istream-ref (delay (io/input-stream istream-raw))
         media-type (irods/detect-media-type (:jargon irods) dest-path istream-ref)
         info-type (get-info-type istream-ref)
-        base-stat (ops/copy-stream @(:jargon irods) @istream-ref user dest-path :set-owner? set-owner?)
+        base-stat (write-stream cm @istream-ref user dest-path set-owner? atomic?)
         final-info-type (irods/with-jargon-exceptions [admin-cm] (set-info-type admin-cm dest-path @info-type))]
     (log/info "Detected info-type:" @info-type ", final type:" final-info-type)
     (rods/invalidate irods dest-path)
@@ -77,7 +148,7 @@
               [:path-not-exists dest-path user (cfg/irods-zone)]
               [:path-exists dest-dir user (cfg/irods-zone)]
               [:path-writeable dest-dir user (cfg/irods-zone)])
-    (save-file-contents irods istream user dest-path true)))
+    (save-file-contents irods istream user dest-path true true)))
 
 (defn- overwrite-path
   "Save new contents for the file at dest-path from istream.
@@ -88,7 +159,7 @@
             [:path-exists dest-path user (cfg/irods-zone)]
             [:path-is-file dest-path user (cfg/irods-zone)]
             [:path-readable dest-path user (cfg/irods-zone)])
-  (save-file-contents irods istream user dest-path false))
+  (save-file-contents irods istream user dest-path false false))
 
 (defn- multipart-create-handler
   "When partially applied, creates a storage handler for
