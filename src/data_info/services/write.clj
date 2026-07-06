@@ -1,18 +1,17 @@
 (ns data-info.services.write
   (:require [clojure-commons.file-utils :as ft]
-            [clojure-commons.error-codes :as ce]
             [clojure.tools.logging :as log]
             [clojure.java.io :as io]
             [clj-jargon.item-info :as info]
             [clj-jargon.item-ops :as ops]
             [clj-jargon.metadata :as meta]
+            [clj-jargon.validations :as cv]
             [clj-irods.core :as rods]
             [clj-irods.validate :refer [validate]]
             [heuristomancer.core :as hm]
             [ring.middleware.multipart-params :as multipart]
             [data-info.services.stat :as stat]
             [data-info.services.stat.common :refer [process-filters]]
-            [data-info.services.uuids :as uuids]
             [data-info.util.config :as cfg]
             [data-info.util.irods :as irods]
             [data-info.util.validators :as validators])
@@ -55,10 +54,20 @@
 (defn- temp-partial-path
   "Returns a hidden temp path in the same collection as dest-path. Keeping the temp object
    in the same collection makes the final rename a catalog-only (atomic) operation and
-   avoids any cross-collection permission fix-ups (see clj-jargon move/fix-perms)."
+   avoids any cross-collection permission fix-ups (see clj-jargon move/fix-perms). If either
+   the temporary file name or the file path exceeds the name or path length limit then a
+   fallback temporary file path is returned instead."
   [dest-path]
-  (ft/path-join (ft/dirname dest-path)
-                (str "." (ft/basename dest-path) ".partial-" (java.util.UUID/randomUUID))))
+  (let [dirname        (ft/dirname dest-path)
+        basename       (ft/basename dest-path)
+        suffix         (str ".partial-" (java.util.UUID/randomUUID))
+        candidate-name (str "." basename suffix)
+        candidate-path (ft/path-join dirname candidate-name)
+        fallback-path  (ft/path-join dirname suffix)]
+    (if (or (> (count candidate-name) cv/max-filename-length)
+            (> (count candidate-path) cv/max-path-length))
+      fallback-path
+      candidate-path)))
 
 (defn- delete-temp-object
   "Best-effort delete of an orphaned temp upload object on a FRESH connection (the client
