@@ -4,6 +4,7 @@
             [clojure.tools.logging :as log]
             [data-info.routes :as routes]
             [data-info.util.config :as config]
+            [data-info.util.jetty :as jetty]
             [data-info.amqp :as amqp]
             [me.raynes.fs :as fs]
             [common-cli.core :as ccli]
@@ -56,6 +57,7 @@
     (config/load-config-from-file path)))
 
 
+#_{:clj-kondo/ignore [:clojure-lsp/unused-public-var :unused-public-var]}
 (defn lein-ring-init
   []
   (load-configuration-from-file)
@@ -63,6 +65,7 @@
   (amqp/connect!))
 
 
+#_{:clj-kondo/ignore [:clojure-lsp/unused-public-var :unused-public-var]}
 (defn repl-init
   []
   (load-configuration-from-file)
@@ -81,16 +84,22 @@
   []
   (require 'ring.adapter.jetty)
   (log/warn "Started listening on" (config/listen-port))
-  ((eval 'ring.adapter.jetty/run-jetty) routes/app {:port (config/listen-port)}))
+  ((eval 'ring.adapter.jetty/run-jetty) routes/app
+   {:port          (config/listen-port)
+    :max-idle-time (config/jetty-max-idle-time)
+    :configurator  (jetty/idle-timeout-configurator
+                    (fn [^String method ^String path]
+                      (or (and (= method "POST") (re-matches #"/data/?" path))
+                          (and (= method "PUT") (re-matches #"/data/[^/]+/?" path))))
+                    (config/jetty-max-idle-time)
+                    (config/jetty-upload-idle-time))}))
 
 (defn -main
   [& args]
   (tc/with-logging-context config/svc-info
-    (let [{:keys [options arguments errors summary]} (ccli/handle-args config/svc-info
-                                                                       args
-                                                                       cli-options)]
+    (let [{:keys [options]} (ccli/handle-args config/svc-info args cli-options)]
       (when-not (fs/exists? (:config options))
-        (ccli/exit 1 (str "The config file does not exist.")))
+        (ccli/exit 1 "The config file does not exist."))
       (when-not (fs/readable? (:config options))
         (ccli/exit 1 "The config file is not readable."))
       (load-configuration-from-file (:config options))

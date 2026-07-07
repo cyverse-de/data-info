@@ -1,0 +1,1 @@
+{:linters {:redundant-ignore {:level :off}}}
