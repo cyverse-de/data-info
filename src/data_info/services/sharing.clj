@@ -201,3 +201,70 @@
     (validators/validate-num-paths (:paths body))))
 
 (with-post-hook! #'do-anon-files (dul/log-func "do-anon-files"))
+
+(defn- outcome->item
+  "Folds the result of a single share or unshare back into the request item it came from. A skip is
+   reported as a success, matching what callers have always seen, with the reason kept alongside it."
+  [item outcome]
+  (if (:skipped outcome)
+    (assoc item :success true :reason (name (:reason outcome)))
+    (assoc item :success true)))
+
+(defn- share-one
+  "Shares one path with one user. Failures are captured in the returned item rather than thrown, so
+   that a path the sharer doesn't own doesn't abort the rest of the request."
+  [cm sharer share-with {:keys [path permission] :as item}]
+  (try+
+   (validators/user-exists cm share-with)
+   (validators/path-exists cm path)
+   (validators/user-owns-path cm sharer path)
+   (outcome->item item (share-path cm sharer share-with path permission))
+   (catch map? e
+     (log/warn "failed to share" path "with" share-with "by" sharer "-" e)
+     (assoc item :success false :error e))))
+
+(defn- unshare-one
+  "Revokes one user's access to one path, capturing failures the way share-one does."
+  [cm unsharer unshare-with path]
+  (let [item {:path path}]
+    (try+
+     (validators/user-exists cm unshare-with)
+     (validators/path-exists cm path)
+     (validators/user-owns-path cm unsharer path)
+     (outcome->item item (unshare-path cm unsharer unshare-with path))
+     (catch map? e
+       (log/warn "failed to unshare" path "from" unshare-with "by" unsharer "-" e)
+       (assoc item :success false :error e)))))
+
+(defn do-share
+  [{:keys [user]} {:keys [sharing]}]
+  (irods/with-jargon-exceptions [cm]
+    (validators/user-exists cm user)
+    {:sharing (mapv (fn [{share-with :user paths :paths}]
+                      {:user    share-with
+                       :sharing (mapv #(share-one cm user share-with (update % :path ft/rm-last-slash))
+                                      paths)})
+                    sharing)}))
+
+(with-pre-hook! #'do-share
+  (fn [params body]
+    (dul/log-call "do-share" params body)
+    (validators/validate-num-paths (mapcat :paths (:sharing body)))))
+
+(with-post-hook! #'do-share (dul/log-func "do-share"))
+
+(defn do-unshare
+  [{:keys [user]} {:keys [unshare]}]
+  (irods/with-jargon-exceptions [cm]
+    (validators/user-exists cm user)
+    {:unshare (mapv (fn [{unshare-with :user paths :paths}]
+                      {:user    unshare-with
+                       :unshare (mapv #(unshare-one cm user unshare-with (ft/rm-last-slash %)) paths)})
+                    unshare)}))
+
+(with-pre-hook! #'do-unshare
+  (fn [params body]
+    (dul/log-call "do-unshare" params body)
+    (validators/validate-num-paths (mapcat :paths (:unshare body)))))
+
+(with-post-hook! #'do-unshare (dul/log-func "do-unshare"))

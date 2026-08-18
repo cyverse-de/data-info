@@ -57,6 +57,7 @@
     rename-routes/rename-routes
     avus-routes/avus-routes
     exists-routes/existence-marker
+    exists-routes/creatability-marker
     filetypes-routes/filetypes-operations
     permission-routes/permissions-routes
     navigation-routes/navigation

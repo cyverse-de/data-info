@@ -17,6 +17,7 @@
             [clojure-commons.file-utils :as file]
             [data-info.util.config :as cfg]
             [data-info.util.irods :as irods]
+            [data-info.util.listings :refer [resolve-info-types resolve-sort-dir resolve-sort-field]]
             [data-info.util.validators :as duv]
             [ring.util.http-response :as http-response])
   (:import [java.net URLEncoder]))
@@ -113,38 +114,6 @@
     :any
     entity-type-param))
 
-
-(defn- resolve-info-types
-  [info-type-params]
-  (cond
-    (nil? info-type-params)    []
-    (string? info-type-params) [info-type-params]
-    :else                      info-type-params))
-
-
-(def ^:private database-column-from-sort-field
-  {:datecreated  :create-ts
-   :datemodified :modify-ts
-   :name         :base-name
-   :path         :full-path
-   :size         :data-size})
-
-
-(defn- resolve-sort-field
-  [sort-field-param]
-  (if sort-field-param
-    (database-column-from-sort-field sort-field-param sort-field-param)
-    :base-name))
-
-
-(defn- resolve-sort-dir
-  [sort-dir-param]
-  (if-not sort-dir-param
-    :asc
-    (case sort-dir-param
-      "ASC"  :asc
-      "DESC" :desc
-      :asc)))
 
 (defn- is-bad?
   "Returns true if the map is okay to include in a directory listing."
