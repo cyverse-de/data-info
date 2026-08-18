@@ -4,6 +4,7 @@
         [slingshot.slingshot :only [try+ throw+]])
   (:require [clojure.tools.logging :as log]
             [clojure.string :as string]
+            [clojure-commons.error-codes :as error]
             [clojure-commons.file-utils :as ft]
             [clj-irods.core :as rods]
             [cemerick.url :as url]
@@ -13,7 +14,9 @@
             [data-info.util.config :as cfg]
             [data-info.util.irods :as irods]
             [data-info.util.validators :as validators])
-  (:import java.net.URLEncoder))
+  (:import [java.io IOException]
+           [java.net URLEncoder]
+           [org.irods.jargon.core.exception JargonException]))
 
 (defn- shared?
   ([cm share-with fpath]
@@ -201,3 +204,92 @@
     (validators/validate-num-paths (:paths body))))
 
 (with-post-hook! #'do-anon-files (dul/log-func "do-anon-files"))
+
+(defn- outcome->item
+  "Folds the result of a single share or unshare back into the request item it came from. A skip is
+   reported as a success, matching what callers have always seen, with the reason kept alongside it."
+  [item outcome]
+  (cond-> (assoc item :success true)
+    (:skipped outcome) (assoc :reason (name (:reason outcome)))))
+
+(defn- per-path-failure
+  "Renders a caught failure into the error details for a single path, or nil when the failure has to
+   fail the request as a whole. Validators throw maps naming the path they rejected, and Jargon
+   throws when iRODS refuses an operation - except that an IOException underneath it means iRODS
+   itself is unreachable, which is not something the next path will do any better with."
+  [e]
+  (cond
+    (map? e)
+    e
+
+    (and (instance? JargonException e) (not (instance? IOException (.getCause ^JargonException e))))
+    {:error_code error/ERR_REQUEST_FAILED :reason (.getMessage ^JargonException e)}))
+
+(defn- apply-to-path
+  "Applies one share or unshare to a single path. Per-path failures are captured in the returned item
+   rather than thrown, so that a path the requesting user doesn't own fails only its own entry."
+  [cm user other-user share-fn {:keys [path] :as item}]
+  (try+
+   (validators/path-exists cm path)
+   (validators/user-owns-path cm user path)
+   (outcome->item item (share-fn item))
+   (catch Object e
+     (if-let [details (per-path-failure e)]
+       (do (log/warn "failed to change the sharing of" path "with" other-user "by" user "-" e)
+           (assoc item :success false :error details))
+       (throw+)))))
+
+(defn- missing-user
+  "Returns the failure that fails a whole entry when the user it names doesn't exist, or nil when the
+   user is usable. Checked once per entry rather than once per path, since each check is a lookup."
+  [cm username]
+  (try+
+   (validators/user-exists cm username)
+   nil
+   (catch map? e e)))
+
+(defn- apply-to-user
+  "Applies a share or unshare to every path in one user's entry. A user who doesn't exist fails that
+   entry's paths without touching the rest of the request."
+  [cm user other-user share-fn items]
+  (if-let [e (missing-user cm other-user)]
+    (mapv #(assoc % :success false :error e) items)
+    (mapv (partial apply-to-path cm user other-user share-fn) items)))
+
+(defn do-share
+  [{:keys [user]} {:keys [sharing]}]
+  (irods/with-jargon-exceptions [cm]
+    (validators/user-exists cm user)
+    {:sharing (mapv (fn [{share-with :user paths :paths}]
+                      (let [share-fn (fn [{:keys [path permission]}]
+                                       (share-path cm user share-with path permission))]
+                        {:user    share-with
+                         :sharing (apply-to-user cm user share-with share-fn
+                                                 (mapv #(update % :path ft/rm-last-slash) paths))}))
+                    sharing)}))
+
+(with-pre-hook! #'do-share
+  (fn [params body]
+    (dul/log-call "do-share" params body)
+    (validators/validate-num-paths (mapcat :paths (:sharing body)))))
+
+(with-post-hook! #'do-share (dul/log-func "do-share"))
+
+(defn do-unshare
+  [{:keys [user]} {:keys [unshare]}]
+  (irods/with-jargon-exceptions [cm]
+    (validators/user-exists cm user)
+    {:unshare (mapv (fn [{unshare-with :user paths :paths}]
+                      (let [unshare-fn (fn [{:keys [path]}]
+                                         (unshare-path cm user unshare-with path))]
+                        {:user    unshare-with
+                         :unshare (apply-to-user cm user unshare-with unshare-fn
+                                                 (mapv #(hash-map :path (ft/rm-last-slash %)) paths))}))
+                    unshare)}))
+
+(with-pre-hook! #'do-unshare
+  (fn [params body]
+    (dul/log-call "do-unshare" params body)
+    (validators/validate-num-paths (mapcat :paths (:unshare body)))))
+
+(with-post-hook! #'do-unshare (dul/log-func "do-unshare"))

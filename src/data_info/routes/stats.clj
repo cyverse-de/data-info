@@ -39,4 +39,19 @@
                         "potentially also validating permissions on the files/folders for the user provided. "
                         "This endpoint allows specifying includes and excludes "
                         "to reduce processing needs and/or data size.")
-      (ok (stat/do-stat params body)))))
+      (ok (stat/do-stat params body))))
+
+  (context "/stat-lister" []
+    :tags ["bulk"]
+
+    (POST "/" []
+      :query [params DataIdListingParams]
+      :body [body data-schema/DataIds]
+      :return DataIdListing
+      :summary "Paged File and Folder Status Information"
+      :description (str "This endpoint returns stat information for a set of data ids, one page at a "
+                        "time. The page is selected and ordered by the catalog, so sorting and paging "
+                        "apply across the whole set rather than within a response. Entries are the "
+                        "same shape /stat-gatherer returns, split into files and folders, alongside "
+                        "the total number of matching items.")
+      (ok (stat/do-stat-listing params body)))))

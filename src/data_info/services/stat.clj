@@ -1,5 +1,6 @@
 (ns data-info.services.stat
   (:require [dire.core :refer [with-pre-hook! with-post-hook!]]
+            [clj-icat-direct.icat :as icat]
             [clj-irods.core :as rods]
             [clj-irods.validate :refer [validate]]
             [clojure-commons.file-utils :as ft]
@@ -8,6 +9,7 @@
             [data-info.util.config :as cfg]
             [data-info.util.logging :as dul]
             [data-info.util.irods :as irods]
+            [data-info.util.listings :refer [resolve-info-types resolve-sort-dir resolve-sort-field]]
             [data-info.util.validators :as validators])
   (:import [clojure.lang IPersistentMap]))
 
@@ -132,3 +134,53 @@
     (validators/validate-num-paths (:ids body))))
 
 (with-post-hook! #'do-stat (dul/log-func "do-stat"))
+
+(defn- listing-row-type
+  "Maps the entity type reported by the ICAT listing onto the type used in stat maps."
+  [row]
+  (case (:type row)
+    "collection" :dir
+    "dataobject" :file))
+
+(defn- listing-row->stat
+  "Builds the stat map for a listing row out of the columns the catalog has already returned, so that
+   a page costs one catalog query rather than a stat call per row."
+  [{:keys [create_ts data_checksum data_size full_path modify_ts] :as row}]
+  (let [entity-type (listing-row-type row)]
+    (cond-> {:date-created  (* 1000 (Long/parseLong create_ts))
+             :date-modified (* 1000 (Long/parseLong modify_ts))
+             :path          full_path
+             :type          entity-type}
+      (= entity-type :file) (assoc :file-size data_size)
+      data_checksum         (assoc :md5 data_checksum))))
+
+(defn do-stat-listing
+  "Returns a page of stat information for a set of data ids. The ICAT selects and orders the page;
+   each row is then decorated the same way /stat-gatherer decorates a path, so an entry here and an
+   entry there are the same shape."
+  [{:keys [user sort-field sort-dir limit offset info-type filter-include filter-exclude]}
+   {uuids :ids}]
+  (irods/with-irods-exceptions {} irods
+    (validate irods [:user-exists user (cfg/irods-zone)])
+    (let [zone          (cfg/irods-zone)
+          info-types    (resolve-info-types info-type)
+          included-keys (process-filters filter-include filter-exclude)
+          page          (icat/paged-uuid-listing user zone
+                                                 (resolve-sort-field sort-field)
+                                                 (resolve-sort-dir sort-dir)
+                                                 limit offset uuids info-types)
+          entries       (map (juxt listing-row-type
+                                   #(decorate-stat irods user zone (listing-row->stat %) included-keys
+                                                   :validate? false))
+                             page)
+          by-type       (group-by first entries)]
+      {:files   (mapv second (get by-type :file []))
+       :folders (mapv second (get by-type :dir []))
+       :total   (icat/number-of-uuids-in-folder user zone uuids info-types)})))
+
+(with-pre-hook! #'do-stat-listing
+  (fn [params body]
+    (dul/log-call "do-stat-listing" params body)
+    (validators/validate-num-paths (:ids body))))
+
+(with-post-hook! #'do-stat-listing (dul/log-func "do-stat-listing"))
