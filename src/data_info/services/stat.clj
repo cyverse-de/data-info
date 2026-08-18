@@ -142,27 +142,38 @@
     "collection" :dir
     "dataobject" :file))
 
+(defn- listing-row->stat
+  "Builds the stat map for a listing row out of the columns the catalog has already returned, so that
+   a page costs one catalog query rather than a stat call per row."
+  [{:keys [create_ts data_checksum data_size full_path modify_ts] :as row}]
+  (let [entity-type (listing-row-type row)]
+    (cond-> {:date-created  (* 1000 (Long/parseLong create_ts))
+             :date-modified (* 1000 (Long/parseLong modify_ts))
+             :path          full_path
+             :type          entity-type}
+      (= entity-type :file) (assoc :file-size data_size)
+      data_checksum         (assoc :md5 data_checksum))))
+
 (defn do-stat-listing
   "Returns a page of stat information for a set of data ids. The ICAT selects and orders the page;
-   each row is then stated the same way /stat-gatherer states a path, so an entry here and an entry
-   there are the same shape."
+   each row is then decorated the same way /stat-gatherer decorates a path, so an entry here and an
+   entry there are the same shape."
   [{:keys [user sort-field sort-dir limit offset info-type filter-include filter-exclude]}
    {uuids :ids}]
   (irods/with-irods-exceptions {} irods
     (validate irods [:user-exists user (cfg/irods-zone)])
-    (let [zone       (cfg/irods-zone)
-          info-types (resolve-info-types info-type)
-          page       (icat/paged-uuid-listing user zone
-                                              (resolve-sort-field sort-field)
-                                              (resolve-sort-dir sort-dir)
-                                              limit offset uuids info-types)
-          entries    (map (juxt listing-row-type
-                                #(path-stat irods user (:full_path %)
-                                            :filter-include filter-include
-                                            :filter-exclude filter-exclude
-                                            :validate? false))
-                          page)
-          by-type    (group-by first entries)]
+    (let [zone          (cfg/irods-zone)
+          info-types    (resolve-info-types info-type)
+          included-keys (process-filters filter-include filter-exclude)
+          page          (icat/paged-uuid-listing user zone
+                                                 (resolve-sort-field sort-field)
+                                                 (resolve-sort-dir sort-dir)
+                                                 limit offset uuids info-types)
+          entries       (map (juxt listing-row-type
+                                   #(decorate-stat irods user zone (listing-row->stat %) included-keys
+                                                   :validate? false))
+                             page)
+          by-type       (group-by first entries)]
       {:files   (mapv second (get by-type :file []))
        :folders (mapv second (get by-type :dir []))
        :total   (icat/number-of-uuids-in-folder user zone uuids info-types)})))

@@ -1,12 +1,8 @@
 (ns data-info.core-test
   (:use clojure.test
         data-info.core)
-  (:require [data-info.util.config :as config]))
-
-(defn with-default-properties [f]
-  (require 'data-info.util.config :reload)
-  (config/load-config-from-file "conf/test/mostly-defaults.properties")
-  (f))
+  (:require [data-info.fixtures :refer [with-default-properties]]
+            [data-info.util.config :as config]))
 
 (use-fixtures :once with-default-properties)
 
