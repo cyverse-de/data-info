@@ -61,9 +61,9 @@
                                   :test-paths]
              :linters [:wrong-arity :wrong-ns-form :wrong-pre-post :wrong-tag :misplaced-docstrings]}
   :plugins [[jonase/eastwood "1.4.3"]
-            [lein-ancient "1.0.0-RC3"]
+            [lein-ancient "1.0.0"]
             [test2junit "1.4.4"]]
-  :profiles {:dev     {:plugins        [[lein-ring "0.12.5"]]
+  :profiles {:dev     {:plugins        [[lein-ring "0.12.6"]]
                        :resource-paths ["conf/test"]}
              :repl    {:source-paths ["repl"]}
              :uberjar {:aot :all}}
