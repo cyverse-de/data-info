@@ -185,7 +185,7 @@ func TestPermissionMappingNormalisesSpellings(t *testing.T) {
 }
 
 func TestNewPoolValidation(t *testing.T) {
-	valid := Config{Host: "irods", Port: 1247, Zone: "iplant", ProxyUser: "rods"}
+	valid := Config{Host: "irods.invalid", Port: 1247, Zone: "iplant", ProxyUser: "rods"}
 
 	tests := []struct {
 		name    string
@@ -234,7 +234,7 @@ func TestNewPoolValidation(t *testing.T) {
 // blank client user would silently produce a proxy-account session, which enforces no
 // permissions -- the opposite of what a caller asking for a user's session wants.
 func TestForUserRejectsBlankUser(t *testing.T) {
-	pool, err := NewPool(Config{Host: "irods", Port: 1247, Zone: "iplant", ProxyUser: "rods"})
+	pool, err := NewPool(Config{Host: "irods.invalid", Port: 1247, Zone: "iplant", ProxyUser: "rods"})
 	if err != nil {
 		t.Fatalf("NewPool: %v", err)
 	}
@@ -249,7 +249,7 @@ func TestForUserRejectsBlankUser(t *testing.T) {
 // no context, including that the session is poisoned so a half-read connection is not
 // handed to the next caller.
 func TestSessionRespectsCancellation(t *testing.T) {
-	pool, err := NewPool(Config{Host: "irods", Port: 1247, Zone: "iplant", ProxyUser: "rods"})
+	pool, err := NewPool(Config{Host: "irods.invalid", Port: 1247, Zone: "iplant", ProxyUser: "rods"})
 	if err != nil {
 		t.Fatalf("NewPool: %v", err)
 	}

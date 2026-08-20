@@ -10,7 +10,10 @@ import (
 func testPool(t *testing.T, mutate func(*Config)) *Pool {
 	t.Helper()
 
-	cfg := Config{Host: "irods", Port: 1247, Zone: "iplant", ProxyUser: "rods"}
+	// A reserved name that cannot resolve anywhere. A bare "irods" resolves on some
+	// networks through a search domain, which quietly changes what these tests exercise
+	// -- it masked a real bug locally that CI caught.
+	cfg := Config{Host: "irods.invalid", Port: 1247, Zone: "iplant", ProxyUser: "rods"}
 	if mutate != nil {
 		mutate(&cfg)
 	}
@@ -103,7 +106,7 @@ func TestPoisonedSessionIsNotReused(t *testing.T) {
 // TestCloseIsIdempotentAndStopsTheSweeper guards against a double close panicking on the
 // sweeper channel, which a deferred Close plus an explicit one would hit.
 func TestCloseIsIdempotentAndStopsTheSweeper(t *testing.T) {
-	pool, err := NewPool(Config{Host: "irods", Port: 1247, Zone: "iplant", ProxyUser: "rods"})
+	pool, err := NewPool(Config{Host: "irods.invalid", Port: 1247, Zone: "iplant", ProxyUser: "rods"})
 	if err != nil {
 		t.Fatalf("NewPool: %v", err)
 	}
@@ -121,7 +124,7 @@ func TestCloseIsIdempotentAndStopsTheSweeper(t *testing.T) {
 // TestSessionsAfterCloseAreRefused stops work being started against a pool that is
 // shutting down.
 func TestSessionsAfterCloseAreRefused(t *testing.T) {
-	pool, err := NewPool(Config{Host: "irods", Port: 1247, Zone: "iplant", ProxyUser: "rods"})
+	pool, err := NewPool(Config{Host: "irods.invalid", Port: 1247, Zone: "iplant", ProxyUser: "rods"})
 	if err != nil {
 		t.Fatalf("NewPool: %v", err)
 	}

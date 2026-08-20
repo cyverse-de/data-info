@@ -499,13 +499,24 @@ func (p *Pool) Probe(ctx context.Context) error {
 // and this layer cannot tell the two apart. Retrying reads is worth revisiting once the
 // read paths exist and can say for themselves whether they are idempotent.
 func (p *Pool) probeWithRetries(ctx context.Context) error {
+	// Detached from the caller once, for the whole loop including its backoff. GET /
+	// gives its probe a couple of seconds, which is long enough for a healthy server and
+	// short enough that ordinary latency would look like a failure and discard a working
+	// session. Inheriting the caller's cancellation would also abort the wait between
+	// attempts and report that cancellation as the health result rather than what iRODS
+	// actually said. The cached result means this runs rarely, so a longer budget costs
+	// little.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), p.cfg.ProbeTimeout)
+	defer cancel()
+
 	var err error
 
 	for attempt := 0; attempt <= p.cfg.MaxRetries; attempt++ {
 		if attempt > 0 {
 			select {
 			case <-ctx.Done():
-				return ctx.Err()
+				// Out of budget. Report what iRODS said, not the deadline.
+				return err
 			case <-time.After(time.Duration(attempt) * p.cfg.RetrySleep):
 			}
 		}
@@ -520,13 +531,6 @@ func (p *Pool) probeWithRetries(ctx context.Context) error {
 }
 
 func (p *Pool) probe(ctx context.Context) error {
-	// Deliberately not the caller's deadline. GET / gives its probe a couple of seconds,
-	// which is long enough for a healthy server and short enough that ordinary latency
-	// would look like a failure and discard a working session. The cache means this runs
-	// rarely, so a longer budget costs little.
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), p.cfg.ProbeTimeout)
-	defer cancel()
-
 	s, err := p.session(ctx, probeKey, "")
 	if err != nil {
 		return err
