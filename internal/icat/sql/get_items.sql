@@ -7,6 +7,7 @@
 -- $1 dirnames, $2 basenames -- positionally paired, so targets reassembles the paths
 -- $3 username, $4 zone
 -- $5 group ids, or NULL to derive them from $3 and $4
+-- $6 the AVU attribute holding a data object's info type, which is configurable
 WITH targets AS (
     SELECT dirname, basename
       FROM unnest($1::text[], $2::text[]) AS t(dirname, basename)
@@ -53,7 +54,7 @@ objs AS (
 meta AS (
     SELECT o.object_id,
            max(CASE WHEN m.meta_attr_name = 'ipc_UUID'     THEN m.meta_attr_value END) AS uuid,
-           max(CASE WHEN m.meta_attr_name = 'ipc-filetype' THEN m.meta_attr_value END) AS info_type
+           max(CASE WHEN m.meta_attr_name = $6 THEN m.meta_attr_value END) AS info_type
       FROM objs o
       LEFT JOIN r_objt_metamap mm ON mm.object_id = o.object_id
       LEFT JOIN r_meta_main m ON m.meta_id = mm.meta_id

@@ -36,6 +36,24 @@ type ItemQuery struct {
 	// resolving several things for one user should fetch it once and pass it: every
 	// permission-filtered query needs it.
 	GroupIDs []int64
+
+	// InfoTypeAttribute is the AVU attribute holding a data object's info type. It is a
+	// deployment setting (data-info.type-detect.type-attribute), not a constant, so it is
+	// threaded in rather than baked into the query -- a deployment that changed it would
+	// otherwise get a null info type on every row and no indication why. Empty means the
+	// default.
+	InfoTypeAttribute string
+}
+
+// DefaultInfoTypeAttribute is the AVU attribute data-info has always used for info types.
+const DefaultInfoTypeAttribute = "ipc-filetype"
+
+// infoTypeAttribute returns the attribute to query, defaulting when unset.
+func (q ItemQuery) infoTypeAttribute() string {
+	if q.InfoTypeAttribute == "" {
+		return DefaultInfoTypeAttribute
+	}
+	return q.InfoTypeAttribute
 }
 
 // UserGroupIDs returns the group ids a user belongs to.
@@ -51,6 +69,12 @@ func (t *pgTx) UserGroupIDs(ctx context.Context, user, zone string) ([]int64, er
 func userGroupIDs(ctx context.Context, q queryer, user, zone string) ([]int64, error) {
 	if user == "" {
 		return nil, fmt.Errorf("icat: a username is required")
+	}
+	// An empty zone is not harmless: it matches no rows, so the group set comes back
+	// empty, every permission-filtered query returns nothing, and the whole service looks
+	// like it is reporting that no path exists. Failing here says what actually happened.
+	if zone == "" {
+		return nil, fmt.Errorf("icat: a zone is required to look up groups for %q", user)
 	}
 
 	var ids []int64
@@ -74,11 +98,20 @@ func getItems(ctx context.Context, qr queryer, q ItemQuery) ([]Row, error) {
 	if len(q.Paths) == 0 {
 		return nil, nil
 	}
-	if q.User == "" && len(q.GroupIDs) == 0 {
-		return nil, fmt.Errorf("icat: a user or a set of group ids is required")
+	if len(q.GroupIDs) == 0 {
+		if q.User == "" {
+			return nil, fmt.Errorf("icat: a user or a set of group ids is required")
+		}
+		// Same reasoning as userGroupIDs: an empty zone silently yields no rows.
+		if q.Zone == "" {
+			return nil, fmt.Errorf("icat: a zone is required when resolving groups for %q", q.User)
+		}
 	}
 
-	dirnames, basenames := splitPaths(q.Paths)
+	dirnames, basenames, err := splitPaths(q.Paths)
+	if err != nil {
+		return nil, err
+	}
 
 	var groupIDs any
 	if len(q.GroupIDs) > 0 {
@@ -86,8 +119,8 @@ func getItems(ctx context.Context, qr queryer, q ItemQuery) ([]Row, error) {
 	}
 
 	var rows []Row
-	err := qr.SelectContext(ctx, &rows, sqlGetItems,
-		pq.Array(dirnames), pq.Array(basenames), q.User, q.Zone, groupIDs)
+	err = qr.SelectContext(ctx, &rows, sqlGetItems,
+		pq.Array(dirnames), pq.Array(basenames), q.User, q.Zone, groupIDs, q.infoTypeAttribute())
 	if err != nil {
 		return nil, fmt.Errorf("icat: getting %d item(s): %w", len(q.Paths), err)
 	}
@@ -130,10 +163,13 @@ func permsForItems(ctx context.Context, qr queryer, paths []string) ([]Perm, err
 		return nil, nil
 	}
 
-	dirnames, basenames := splitPaths(paths)
+	dirnames, basenames, err := splitPaths(paths)
+	if err != nil {
+		return nil, err
+	}
 
 	var perms []Perm
-	err := qr.SelectContext(ctx, &perms, sqlPermsForItems, pq.Array(dirnames), pq.Array(basenames))
+	err = qr.SelectContext(ctx, &perms, sqlPermsForItems, pq.Array(dirnames), pq.Array(basenames))
 	if err != nil {
 		return nil, fmt.Errorf("icat: getting permissions for %d path(s): %w", len(paths), err)
 	}
@@ -145,15 +181,24 @@ func permsForItems(ctx context.Context, qr queryer, paths []string) ([]Perm, err
 //
 // path.Split is used rather than filepath: iRODS paths always use forward slashes, so on a
 // platform with a different separator filepath would produce the wrong answer.
-func splitPaths(paths []string) (dirnames, basenames []string) {
+//
+// Paths are validated rather than passed through. An empty string would split into an empty
+// dirname and basename, which the collection join reassembles as "/" -- so a blank entry in
+// a bulk request would quietly match the zone root rather than matching nothing, and for
+// the proxy account that row is visible.
+func splitPaths(paths []string) (dirnames, basenames []string, err error) {
 	dirnames = make([]string, 0, len(paths))
 	basenames = make([]string, 0, len(paths))
 
-	for _, p := range paths {
-		p = strings.TrimRight(p, "/")
-		dir, base := path.Split(p)
+	for i, p := range paths {
+		trimmed := strings.TrimRight(p, "/")
+		if !strings.HasPrefix(p, "/") || trimmed == "" {
+			return nil, nil, fmt.Errorf("icat: path %d (%q) is not an absolute iRODS path", i, p)
+		}
+
+		dir, base := path.Split(trimmed)
 		dirnames = append(dirnames, strings.TrimRight(dir, "/"))
 		basenames = append(basenames, base)
 	}
-	return dirnames, basenames
+	return dirnames, basenames, nil
 }

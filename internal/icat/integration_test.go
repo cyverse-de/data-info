@@ -222,7 +222,7 @@ func TestIntegrationBatchScales(t *testing.T) {
 	paths := make([]string, 0, batch)
 	paths = append(paths, "/"+zone+"/home", "/"+zone+"/home/"+user)
 	for i := len(paths); i < batch; i++ {
-		paths = append(paths, "/"+zone+"/home/"+user+"/batch-probe-"+itoa(i))
+		paths = append(paths, "/"+zone+"/home/"+user+"/batch-probe-"+strconv.Itoa(i))
 	}
 
 	start := time.Now()
@@ -253,5 +253,3 @@ func TestIntegrationBatchScales(t *testing.T) {
 		t.Errorf("PermsForItems over %d paths took %s, want under %s", batch, permsElapsed, budget)
 	}
 }
-
-func itoa(n int) string { return strconv.Itoa(n) }

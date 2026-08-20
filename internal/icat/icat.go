@@ -43,6 +43,12 @@ type Reader interface {
 	GetItems(ctx context.Context, q ItemQuery) ([]Row, error)
 
 	// PermsForItems returns the access entries on the given absolute paths, in one query.
+	//
+	// Unlike GetItems this is NOT scoped to a requesting user: it returns the complete
+	// access list of every path it is given, to whoever asks. That is what the endpoints
+	// built on it need -- they report who a path is shared with -- but it means the
+	// caller owns the authorisation check. Handlers must confirm the requesting user may
+	// see a path before handing it here, or they will disclose its ACL.
 	PermsForItems(ctx context.Context, paths []string) ([]Perm, error)
 }
 
@@ -122,6 +128,11 @@ func Open(cfg Config) (*PGStore, error) {
 	}
 
 	db.SetMaxOpenConns(cfg.MaxOpenConns)
+	// Without this the idle limit stays at Go's default of two, so a burst of bulk
+	// queries opens ten connections and immediately tears eight of them down -- including
+	// the TLS handshake when sslmode is not disable. Keeping the two limits equal means
+	// the pool actually holds what it was sized for.
+	db.SetMaxIdleConns(cfg.MaxOpenConns)
 	db.SetConnMaxIdleTime(cfg.ConnMaxIdleTime)
 
 	return &PGStore{db: sqlx.NewDb(db, "postgres")}, nil

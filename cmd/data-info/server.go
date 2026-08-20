@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/cyverse-de/data-info/internal/apierror"
@@ -69,6 +70,10 @@ func buildServer(cfg *config.Config, version string, log *logrus.Entry, deps Dep
 	return e
 }
 
+// ProbeCacheTTL is how long a backend health result is reused, matching what the iRODS
+// pool does internally.
+const ProbeCacheTTL = 5 * time.Second
+
 // ProbeTimeout bounds a backend check. GET / probes iRODS on every call, so an
 // unreachable backend has to fail fast rather than hold the request open; DNS for a
 // nonexistent host can otherwise take far longer than the dial itself.
@@ -82,16 +87,43 @@ const ProbeTimeout = 3 * time.Second
 func networkDeps(pool *irodsclient.Pool, store icat.Store) Deps {
 	return Deps{
 		IRODS: handlers.ProberFunc(func(ctx context.Context) error {
-			ctx, cancel := context.WithTimeout(ctx, ProbeTimeout)
-			defer cancel()
+			// The pool caches this internally and runs it on its own budget.
 			return pool.Probe(ctx)
 		}),
-		ICAT: handlers.ProberFunc(func(ctx context.Context) error {
+		ICAT: cachedProber(ProbeCacheTTL, func(ctx context.Context) error {
 			ctx, cancel := context.WithTimeout(ctx, ProbeTimeout)
 			defer cancel()
 			return store.Ping(ctx)
 		}),
 	}
+}
+
+// cachedProber reuses a probe result for a while.
+//
+// GET / reports backend health on every call and is hit by both k8s probes on every pod,
+// plus anything else watching the service. An uncached catalog probe would take a
+// connection from the same modest pool the bulk queries depend on, every time -- so under
+// the load where readiness matters most, the probe would queue behind real work, exceed its
+// timeout, and flap. The iRODS probe is cached for the same reason.
+func cachedProber(ttl time.Duration, probe func(context.Context) error) handlers.Prober {
+	var (
+		mu     sync.Mutex
+		last   time.Time
+		result error
+	)
+
+	return handlers.ProberFunc(func(ctx context.Context) error {
+		mu.Lock()
+		defer mu.Unlock()
+
+		if !last.IsZero() && time.Since(last) < ttl {
+			return result
+		}
+
+		result = probe(ctx)
+		last = time.Now()
+		return result
+	})
 }
 
 // icatConfig derives the catalog connection from the service configuration.

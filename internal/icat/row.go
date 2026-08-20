@@ -61,22 +61,34 @@ func (r Row) CreatedMillis() int64 { return epochMillis(r.CreateTS) }
 // ModifiedMillis is the modification time as milliseconds since the epoch.
 func (r Row) ModifiedMillis() int64 { return epochMillis(r.ModifyTS) }
 
-// epochMillis converts a catalog timestamp to milliseconds. It parses at 64 bits: the
-// values are whole seconds, and a 32-bit parse stops working in 2038.
-func epochMillis(s string) int64 {
+// ParseTimestamp converts a catalog timestamp to milliseconds since the epoch, reporting
+// whether it parsed.
+//
+// It parses at 64 bits: the values are whole seconds, and the 32-bit parse the Clojure
+// service used in two of the three places it read them stops working in 2038.
+//
+// The ok result exists so a caller can tell a corrupt column from a genuine epoch-zero
+// timestamp. Both render as 1970-01-01 otherwise, and a row that silently dates itself to
+// 1970 is the kind of thing nobody notices until someone sorts by date.
+func ParseTimestamp(s string) (millis int64, ok bool) {
 	seconds, err := strconv.ParseInt(s, 10, 64)
 	if err != nil {
-		return 0
+		return 0, false
 	}
-	return seconds * 1000
+	return seconds * 1000, true
+}
+
+func epochMillis(s string) int64 {
+	millis, _ := ParseTimestamp(s)
+	return millis
 }
 
 func epochSeconds(s string) time.Time {
-	seconds, err := strconv.ParseInt(s, 10, 64)
-	if err != nil {
+	millis, ok := ParseTimestamp(s)
+	if !ok {
 		return time.Time{}
 	}
-	return time.Unix(seconds, 0).UTC()
+	return time.UnixMilli(millis).UTC()
 }
 
 // Perm is one user's access to one path.

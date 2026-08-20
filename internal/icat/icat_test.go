@@ -14,8 +14,10 @@ func TestSplitPaths(t *testing.T) {
 	}{
 		{"ordinary path", "/iplant/home/wregglej/file.txt", "/iplant/home/wregglej", "file.txt"},
 		{"collection", "/iplant/home/wregglej", "/iplant/home", "wregglej"},
-		{"trailing slash is ignored", "/iplant/home/wregglej/", "/iplant/home", "wregglej"},
+		// The zone root is a real collection and stays queryable: it reassembles as
+		// "" + "/" + "iplant". Only a bare slash or an empty string is rejected.
 		{"zone root", "/iplant", "", "iplant"},
+		{"trailing slash is ignored", "/iplant/home/wregglej/", "/iplant/home", "wregglej"},
 		{"a name containing a space", "/iplant/home/a/b c.txt", "/iplant/home/a", "b c.txt"},
 		{"a name containing a quote", "/iplant/home/a/o'brien.txt", "/iplant/home/a", "o'brien.txt"},
 		{"a name containing a percent", "/iplant/home/a/100%.txt", "/iplant/home/a", "100%.txt"},
@@ -24,7 +26,10 @@ func TestSplitPaths(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			dirs, bases := splitPaths([]string{tt.path})
+			dirs, bases, err := splitPaths([]string{tt.path})
+			if err != nil {
+				t.Fatalf("splitPaths(%q): %v", tt.path, err)
+			}
 			if dirs[0] != tt.wantDir {
 				t.Errorf("dirname = %q, want %q", dirs[0], tt.wantDir)
 			}
@@ -38,7 +43,10 @@ func TestSplitPaths(t *testing.T) {
 // TestSplitPathsStaysPositional matters because the query pairs the two arrays by position.
 func TestSplitPathsStaysPositional(t *testing.T) {
 	paths := []string{"/z/home/a/one.txt", "/z/home/b", "/z/home/c/two.txt"}
-	dirs, bases := splitPaths(paths)
+	dirs, bases, err := splitPaths(paths)
+	if err != nil {
+		t.Fatalf("splitPaths: %v", err)
+	}
 
 	if len(dirs) != len(paths) || len(bases) != len(paths) {
 		t.Fatalf("got %d dirnames and %d basenames for %d paths", len(dirs), len(bases), len(paths))
@@ -170,5 +178,77 @@ func TestGetItemRejectsWrongPathCount(t *testing.T) {
 		if _, err := GetItem(t.Context(), nil, ItemQuery{Paths: paths, User: "u"}); err == nil {
 			t.Errorf("GetItem accepted %d paths", len(paths))
 		}
+	}
+}
+
+// TestSplitPathsRejectsNonAbsolutePaths covers the boundary check. A blank entry in a bulk
+// request would otherwise reassemble to "/" and match the zone root.
+func TestSplitPathsRejectsNonAbsolutePaths(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+	}{
+		{"empty", ""},
+		{"only a slash", "/"},
+		{"only slashes", "///"},
+		{"relative", "iplant/home/wregglej"},
+		{"relative with a dot", "./iplant"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, _, err := splitPaths([]string{tt.path}); err == nil {
+				t.Errorf("splitPaths accepted %q", tt.path)
+			}
+		})
+	}
+}
+
+// TestInfoTypeAttributeIsConfigurable guards against the attribute being baked back into
+// the query. It is a deployment setting, and hardcoding it means a deployment that changed
+// it gets a null info type on every row with no error to explain why.
+func TestInfoTypeAttributeIsConfigurable(t *testing.T) {
+	if got := (ItemQuery{}).infoTypeAttribute(); got != DefaultInfoTypeAttribute {
+		t.Errorf("default attribute = %q, want %q", got, DefaultInfoTypeAttribute)
+	}
+	if got := (ItemQuery{InfoTypeAttribute: "custom-filetype"}).infoTypeAttribute(); got != "custom-filetype" {
+		t.Errorf("configured attribute = %q, want %q", got, "custom-filetype")
+	}
+	if strings.Contains(sqlGetItems, "'"+DefaultInfoTypeAttribute+"'") {
+		t.Error("the info type attribute is hardcoded in the query; it is a deployment setting")
+	}
+}
+
+func TestQueriesRequireAZone(t *testing.T) {
+	ctx := t.Context()
+
+	if _, err := userGroupIDs(ctx, nil, "wregglej", ""); err == nil {
+		t.Error("userGroupIDs accepted an empty zone; that silently yields no groups")
+	}
+	if _, err := getItems(ctx, nil, ItemQuery{Paths: []string{"/z/home/a"}, User: "wregglej"}); err == nil {
+		t.Error("getItems accepted an empty zone")
+	}
+}
+
+func TestParseTimestampReportsFailure(t *testing.T) {
+	tests := []struct {
+		name  string
+		ts    string
+		want  int64
+		wantK bool
+	}{
+		{"a real timestamp", "01712345678", 1712345678000, true},
+		{"genuine epoch zero", "00000000000", 0, true},
+		{"corrupt", "not a number", 0, false},
+		{"empty", "", 0, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := ParseTimestamp(tt.ts)
+			if got != tt.want || ok != tt.wantK {
+				t.Errorf("ParseTimestamp(%q) = %d, %v; want %d, %v", tt.ts, got, ok, tt.want, tt.wantK)
+			}
+		})
 	}
 }
