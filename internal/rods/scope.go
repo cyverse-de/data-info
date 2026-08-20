@@ -114,6 +114,7 @@ const (
 	kindAVUs
 	kindUserExists
 	kindUserGroups
+	kindChildCounts
 )
 
 // Open returns a request-scoped view bound to ctx. It performs no I/O.
@@ -352,6 +353,21 @@ func (s *Scope) recordAbsent(requested []string, found map[string]Stat) {
 			continue
 		}
 		s.memo[key] = lazy.Failed[icat.Row](icat.ErrNoSuchItem)
+	}
+}
+
+// seedChildCounts records batched counts against their per-path keys, including zero for a
+// collection with no children, so later per-path lookups cost nothing.
+func (s *Scope) seedChildCounts(requested []string, found map[string]ChildCounts) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, p := range requested {
+		key := memoKey{kindChildCounts, p}
+		if _, ok := s.memo[key]; ok {
+			continue
+		}
+		s.memo[key] = lazy.Resolved(found[p])
 	}
 }
 
