@@ -42,6 +42,16 @@ type Reader interface {
 	// user cannot see are simply absent from the result.
 	GetItems(ctx context.Context, q ItemQuery) ([]Row, error)
 
+	// PathsForUUIDs resolves data ids to the paths carrying them.
+	//
+	// Like PermsForItems this is not scoped to a user: resolving an id is a lookup, and
+	// the caller checks what the user may do with the path afterwards.
+	PathsForUUIDs(ctx context.Context, uuids []string) ([]UUIDPath, error)
+
+	// CountChildren returns how many files and subfolders a collection holds, counting
+	// only what the requesting user can see.
+	CountChildren(ctx context.Context, q ChildCountQuery) (ChildCounts, error)
+
 	// PermsForItems returns the access entries on the given absolute paths, in one query.
 	//
 	// Unlike GetItems this is NOT scoped to a requesting user: it returns the complete

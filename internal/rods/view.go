@@ -24,6 +24,15 @@ const (
 // Permission is an access level under the DE's names.
 type Permission = icat.Permission
 
+// The access levels, re-exported so handlers need not import the catalog package to name
+// one.
+const (
+	PermissionNone  = icat.PermissionNone
+	PermissionRead  = icat.PermissionRead
+	PermissionWrite = icat.PermissionWrite
+	PermissionOwn   = icat.PermissionOwn
+)
+
 // Stat is what the service reports about one path.
 type Stat struct {
 	Path       string
@@ -69,7 +78,17 @@ type View interface {
 
 	// ACLs resolves access lists for many paths in one query, for the same reason.
 	ACLs(ctx context.Context, paths []string) *lazy.Value[map[string][]ACLEntry]
+
+	// ChildCounts reports how many files and subfolders a collection holds, counting only
+	// what the requesting user can see.
+	ChildCounts(ctx context.Context, path string) *lazy.Value[ChildCounts]
+
+	// PathsForUUIDs resolves data ids to paths, in one query.
+	PathsForUUIDs(ctx context.Context, uuids []string) *lazy.Value[map[string]string]
 }
+
+// ChildCounts is how many files and subfolders a collection holds.
+type ChildCounts = icat.ChildCounts
 
 var _ View = (*Scope)(nil)
 
@@ -327,6 +346,51 @@ func (s *Scope) UserGroups(_ context.Context, user string) *lazy.Value[[]string]
 			}
 			return irodsclient.ListUserGroups(ctx, sess, user, s.deps.Zone)
 		})
+	})
+}
+
+// ChildCounts reports how many files and subfolders a collection holds.
+func (s *Scope) ChildCounts(_ context.Context, path string) *lazy.Value[ChildCounts] {
+	path = normalizePath(path)
+
+	return memoize(s, memoKey{kindChildCounts, path}, func() *lazy.Value[ChildCounts] {
+		groups := s.groupIDsLocked(s.ctx)
+
+		return lazy.Go(s.ctx, s.catalogSem, func(ctx context.Context) (ChildCounts, error) {
+			ids, err := groups.Get(ctx)
+			if err != nil {
+				return ChildCounts{}, err
+			}
+			return s.deps.ICAT.CountChildren(ctx, icat.ChildCountQuery{
+				Path:     path,
+				User:     s.opts.User,
+				Zone:     s.deps.Zone,
+				GroupIDs: ids,
+			})
+		})
+	})
+}
+
+// PathsForUUIDs resolves data ids to paths.
+//
+// Ids that resolve to nothing are simply absent from the result; the caller decides whether
+// that is an error, since some endpoints are asked to ignore missing entries.
+func (s *Scope) PathsForUUIDs(_ context.Context, uuids []string) *lazy.Value[map[string]string] {
+	return lazy.Go(s.ctx, s.catalogSem, func(ctx context.Context) (map[string]string, error) {
+		if len(uuids) == 0 {
+			return map[string]string{}, nil
+		}
+
+		found, err := s.deps.ICAT.PathsForUUIDs(ctx, uuids)
+		if err != nil {
+			return nil, err
+		}
+
+		out := make(map[string]string, len(found))
+		for _, f := range found {
+			out[f.UUID] = f.FullPath
+		}
+		return out, nil
 	})
 }
 

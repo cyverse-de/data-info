@@ -21,7 +21,25 @@ var (
 
 	//go:embed sql/perms_for_items.sql
 	sqlPermsForItems string
+
+	//go:embed sql/count_children.sql
+	sqlCountChildren string
+
+	//go:embed sql/paths_for_uuids.sql
+	sqlPathsForUUIDs string
 )
+
+// UUIDPath pairs a data id with the path carrying it.
+type UUIDPath struct {
+	UUID     string `db:"uuid"`
+	FullPath string `db:"full_path"`
+}
+
+// ChildCounts is how many files and subfolders a collection holds.
+type ChildCounts struct {
+	Files int64 `db:"file_count"`
+	Dirs  int64 `db:"dir_count"`
+}
 
 // ItemQuery selects catalog rows for a set of paths on behalf of a user.
 type ItemQuery struct {
@@ -146,6 +164,70 @@ func GetItem(ctx context.Context, r Reader, q ItemQuery) (Row, error) {
 		return Row{}, ErrNoSuchItem
 	}
 	return rows[0], nil
+}
+
+// PathsForUUIDs resolves data ids to paths.
+func (s *PGStore) PathsForUUIDs(ctx context.Context, uuids []string) ([]UUIDPath, error) {
+	return pathsForUUIDs(ctx, s.queryer(), uuids)
+}
+
+// PathsForUUIDs resolves data ids to paths.
+func (t *pgTx) PathsForUUIDs(ctx context.Context, uuids []string) ([]UUIDPath, error) {
+	return pathsForUUIDs(ctx, t.queryer(), uuids)
+}
+
+func pathsForUUIDs(ctx context.Context, qr queryer, uuids []string) ([]UUIDPath, error) {
+	if len(uuids) == 0 {
+		return nil, nil
+	}
+
+	var out []UUIDPath
+	if err := qr.SelectContext(ctx, &out, sqlPathsForUUIDs, pq.Array(uuids)); err != nil {
+		return nil, fmt.Errorf("icat: resolving %d uuid(s): %w", len(uuids), err)
+	}
+	return out, nil
+}
+
+// CountChildren returns how many files and subfolders a collection holds.
+func (s *PGStore) CountChildren(ctx context.Context, q ChildCountQuery) (ChildCounts, error) {
+	return countChildren(ctx, s.queryer(), q)
+}
+
+// CountChildren returns how many files and subfolders a collection holds.
+func (t *pgTx) CountChildren(ctx context.Context, q ChildCountQuery) (ChildCounts, error) {
+	return countChildren(ctx, t.queryer(), q)
+}
+
+// ChildCountQuery counts a collection's children on behalf of a user.
+type ChildCountQuery struct {
+	Path     string
+	User     string
+	Zone     string
+	GroupIDs []int64
+}
+
+func countChildren(ctx context.Context, qr queryer, q ChildCountQuery) (ChildCounts, error) {
+	if q.Path == "" {
+		return ChildCounts{}, fmt.Errorf("icat: a path is required")
+	}
+	if len(q.GroupIDs) == 0 {
+		if q.User == "" || q.Zone == "" {
+			return ChildCounts{}, fmt.Errorf("icat: a user and zone are required when resolving groups")
+		}
+	}
+
+	var groupIDs any
+	if len(q.GroupIDs) > 0 {
+		groupIDs = pq.Array(q.GroupIDs)
+	}
+
+	var counts ChildCounts
+	err := qr.GetContext(ctx, &counts, sqlCountChildren,
+		strings.TrimRight(q.Path, "/"), q.User, q.Zone, groupIDs)
+	if err != nil {
+		return ChildCounts{}, fmt.Errorf("icat: counting children of %q: %w", q.Path, err)
+	}
+	return counts, nil
 }
 
 // PermsForItems returns every user's access to each of the given paths.

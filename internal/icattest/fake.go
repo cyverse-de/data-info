@@ -28,6 +28,12 @@ type Fake struct {
 	// GroupIDs are the group ids returned for any user.
 	GroupIDs []int64
 
+	// Children are the child counts returned per collection path.
+	Children map[string]icat.ChildCounts
+
+	// UUIDs maps a data id onto the path carrying it.
+	UUIDs map[string]string
+
 	// Err, when set, is returned by every query.
 	Err error
 
@@ -37,10 +43,11 @@ type Fake struct {
 
 	// Counters record how often each query ran, so a test can prove that a batched call
 	// really was one query and that memoized lookups really did not repeat.
-	GetItemsCalls     atomic.Int64
-	PermsCalls        atomic.Int64
-	UserGroupIDsCalls atomic.Int64
-	PathsPerGetItems  []int
+	GetItemsCalls      atomic.Int64
+	PermsCalls         atomic.Int64
+	UserGroupIDsCalls  atomic.Int64
+	CountChildrenCalls atomic.Int64
+	PathsPerGetItems   []int
 }
 
 var _ icat.Store = (*Fake)(nil)
@@ -50,6 +57,8 @@ func New() *Fake {
 	return &Fake{
 		Rows:     map[string]icat.Row{},
 		Perms:    map[string][]icat.Perm{},
+		Children: map[string]icat.ChildCounts{},
+		UUIDs:    map[string]string{},
 		GroupIDs: []int64{1, 2},
 	}
 }
@@ -162,6 +171,56 @@ func (f *Fake) wait(ctx context.Context) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+// SetUUID records the path carrying a data id.
+func (f *Fake) SetUUID(uuid, p string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.UUIDs[uuid] = p
+}
+
+// PathsForUUIDs implements icat.Reader.
+func (f *Fake) PathsForUUIDs(ctx context.Context, uuids []string) ([]icat.UUIDPath, error) {
+	if err := f.wait(ctx); err != nil {
+		return nil, err
+	}
+	if f.Err != nil {
+		return nil, f.Err
+	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	var out []icat.UUIDPath
+	for _, u := range uuids {
+		if p, ok := f.UUIDs[u]; ok {
+			out = append(out, icat.UUIDPath{UUID: u, FullPath: p})
+		}
+	}
+	return out, nil
+}
+
+// SetChildCounts records how many children a collection holds.
+func (f *Fake) SetChildCounts(p string, files, dirs int64) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.Children[p] = icat.ChildCounts{Files: files, Dirs: dirs}
+}
+
+// CountChildren implements icat.Reader.
+func (f *Fake) CountChildren(ctx context.Context, q icat.ChildCountQuery) (icat.ChildCounts, error) {
+	f.CountChildrenCalls.Add(1)
+	if err := f.wait(ctx); err != nil {
+		return icat.ChildCounts{}, err
+	}
+	if f.Err != nil {
+		return icat.ChildCounts{}, f.Err
+	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.Children[q.Path], nil
 }
 
 // WithTx implements icat.Store.

@@ -1,0 +1,63 @@
+group: stats
+cases:
+  - id: stat-gatherer-home
+    tier: read
+    method: POST
+    path: /stat-gatherer
+    query: {user: "{{.User}}"}
+    body: {paths: ["{{.Root}}"]}
+
+  - id: stat-gatherer-missing-path
+    tier: read
+    method: POST
+    path: /stat-gatherer
+    query: {user: "{{.User}}"}
+    body: {paths: ["{{.Root}}/definitely-not-here"]}
+
+  - id: path-info-home
+    tier: read
+    method: POST
+    path: /path-info
+    query: {user: "{{.User}}"}
+    body: {paths: ["{{.Root}}"]}
+
+  - id: path-info-ignore-missing
+    tier: read
+    method: POST
+    path: /path-info
+    query: {user: "{{.User}}", ignore-missing: "true"}
+    body: {paths: ["{{.Root}}", "{{.Root}}/definitely-not-here"]}
+
+  - id: path-info-filter-include-path
+    tier: read
+    method: POST
+    path: /path-info
+    query: {user: "{{.User}}", filter-include: "path"}
+    body: {paths: ["{{.Root}}"]}
+
+  - id: path-info-filter-include-several
+    tier: read
+    method: POST
+    path: /path-info
+    query: {user: "{{.User}}", filter-include: "id,path,type,label"}
+    body: {paths: ["{{.Root}}"]}
+
+  - id: path-info-filter-exclude-md5
+    tier: read
+    method: POST
+    path: /path-info
+    query: {user: "{{.User}}", filter-exclude: "md5,share-count"}
+    body: {paths: ["{{.Root}}"]}
+
+  - id: path-info-empty-body
+    tier: read
+    method: POST
+    path: /path-info
+    query: {user: "{{.User}}"}
+    body: {}
+
+  - id: stat-gatherer-no-user
+    tier: read
+    method: POST
+    path: /stat-gatherer
+    body: {paths: ["{{.Root}}"]}

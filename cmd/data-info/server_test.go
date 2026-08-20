@@ -62,8 +62,8 @@ func stubProber(err error) handlers.Prober {
 func testServer(t *testing.T) *echo.Echo {
 	t.Helper()
 	return testServerWithDeps(t, Deps{
-		IRODS: stubProber(errors.New("irods is unreachable")),
-		ICAT:  stubProber(errors.New("icat is unreachable")),
+		IRODSProbe: stubProber(errors.New("irods is unreachable")),
+		ICATProbe:  stubProber(errors.New("icat is unreachable")),
 	})
 }
 
@@ -262,7 +262,7 @@ func TestUploadTimeoutExceedsRequestTimeout(t *testing.T) {
 // TestReadyzSucceedsWhenBackendsAreReachable is the other half of readiness: it must
 // actually pass once the backends answer.
 func TestReadyzSucceedsWhenBackendsAreReachable(t *testing.T) {
-	e := testServerWithDeps(t, Deps{IRODS: stubProber(nil), ICAT: stubProber(nil)})
+	e := testServerWithDeps(t, Deps{IRODSProbe: stubProber(nil), ICATProbe: stubProber(nil)})
 
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/readyz", nil))
@@ -301,7 +301,7 @@ func TestStatusReportsIRODSReachability(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			e := testServerWithDeps(t, Deps{IRODS: stubProber(tt.probe), ICAT: stubProber(nil)})
+			e := testServerWithDeps(t, Deps{IRODSProbe: stubProber(tt.probe), ICATProbe: stubProber(nil)})
 
 			rec := httptest.NewRecorder()
 			e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
@@ -326,7 +326,7 @@ func TestStatusReportsIRODSReachability(t *testing.T) {
 // Clojure bodies, does not. Responses are diffed byte for byte during the port, so a
 // stray newline is a real difference.
 func TestResponsesHaveNoTrailingNewline(t *testing.T) {
-	e := testServerWithDeps(t, Deps{IRODS: stubProber(nil), ICAT: stubProber(nil)})
+	e := testServerWithDeps(t, Deps{IRODSProbe: stubProber(nil), ICATProbe: stubProber(nil)})
 
 	for _, target := range []string{"/", "/healthz", "/readyz", "/admin/config", "/no/such/thing"} {
 		t.Run(target, func(t *testing.T) {
@@ -352,7 +352,7 @@ func TestStatusBodyMatchesCapturedShape(t *testing.T) {
 		t.Fatalf("reading the captured status body: %v", err)
 	}
 
-	e := testServerWithDeps(t, Deps{IRODS: stubProber(nil), ICAT: stubProber(nil)})
+	e := testServerWithDeps(t, Deps{IRODSProbe: stubProber(nil), ICATProbe: stubProber(nil)})
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 
@@ -405,7 +405,7 @@ func keyOrder(t *testing.T, body []byte) string {
 // optional NonBlankString. Supplying the parameter with a blank value fails schema
 // coercion there rather than being treated as absent.
 func TestBlankExpectingIsRejected(t *testing.T) {
-	e := testServerWithDeps(t, Deps{IRODS: stubProber(nil), ICAT: stubProber(nil)})
+	e := testServerWithDeps(t, Deps{IRODSProbe: stubProber(nil), ICATProbe: stubProber(nil)})
 
 	tests := []struct {
 		name       string

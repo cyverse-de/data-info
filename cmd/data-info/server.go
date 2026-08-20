@@ -13,6 +13,7 @@ import (
 	"github.com/cyverse-de/data-info/internal/icat"
 	"github.com/cyverse-de/data-info/internal/irodsclient"
 	dimw "github.com/cyverse-de/data-info/internal/middleware"
+	"github.com/cyverse-de/data-info/internal/paths"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/sirupsen/logrus"
@@ -40,8 +41,13 @@ func isUploadRoute(c echo.Context) bool {
 // here so tests can exercise the real router without reaching the network, and so the
 // iRODS and ICAT clients can replace the reachability probes when they land.
 type Deps struct {
-	IRODS handlers.Prober
-	ICAT  handlers.Prober
+	IRODSProbe handlers.Prober
+	ICATProbe  handlers.Prober
+
+	// IRODS and ICAT are the clients the data endpoints read through. They are nil in
+	// tests that only exercise the status endpoints.
+	IRODS *irodsclient.Pool
+	ICAT  icat.Store
 }
 
 // buildServer assembles the HTTP server. It is separate from main so tests can exercise
@@ -60,14 +66,78 @@ func buildServer(cfg *config.Config, version string, log *logrus.Entry, deps Dep
 	e.Use(requestLogger(log))
 	e.Use(dimw.IdleTimeout(cfg.Timeouts.Request, cfg.Timeouts.Upload, isUploadRoute))
 
-	status := handlers.NewStatus(cfg, version, deps.IRODS, deps.ICAT)
+	status := handlers.NewStatus(cfg, version, deps.IRODSProbe, deps.ICATProbe)
 
 	e.GET("/", status.Info)
 	e.GET("/healthz", status.Healthz)
 	e.GET("/readyz", status.Readyz)
 	e.GET("/admin/config", status.AdminConfig)
 
+	registerDataRoutes(e, cfg, deps)
+
 	return e
+}
+
+// registerDataRoutes mounts the data endpoints.
+//
+// The error style on each route is not decoration. The Clojure service wrote its handlers
+// two ways, and they answer differently for the same error_code: a route wrapped in svc/trap
+// uses the status table, while one returning (ok ...) lets the thrown map reach the default
+// exception handler, which answers 500 whatever the code. So ERR_NOT_OWNER is 403 on
+// /permissions-gatherer and 500 on /path-info. Marking the routes wrongly would change
+// statuses that the port is meant to preserve exactly.
+func registerDataRoutes(e *echo.Echo, cfg *config.Config, deps Deps) {
+	if deps.ICAT == nil || deps.IRODS == nil {
+		// Nothing to serve them with. The status endpoints still work, which is what a
+		// readiness probe needs in order to report why.
+		return
+	}
+
+	hd := handlers.Deps{
+		ICAT:              deps.ICAT,
+		IRODS:             deps.IRODS,
+		Layout:            layoutOf(cfg),
+		InfoTypeAttribute: cfg.TypeDetect.TypeAttribute,
+		MaxPathsInRequest: cfg.MaxPathsInRequest,
+		PermsFilter:       permsFilterOf(cfg),
+	}
+
+	stats := handlers.NewStats(hd)
+	reads := handlers.NewReads(hd)
+
+	// (ok ...) routes in the Clojure service: every error_code answers 500.
+	ok := apierror.WithStyle(apierror.StyleOK)
+	e.POST("/stat-gatherer", stats.Gather, ok)
+	e.POST("/path-info", stats.Gather, ok)
+	e.POST("/existence-marker", reads.Existence, ok)
+
+	// svc/trap routes: the status table applies.
+	e.POST("/permissions-gatherer", reads.Permissions)
+	e.GET("/users/:username/groups", reads.UserGroups)
+	e.GET("/navigation/base-paths", reads.BasePaths)
+}
+
+// layoutOf describes the zone's namespace from the service configuration.
+func layoutOf(cfg *config.Config) paths.Layout {
+	return paths.Layout{
+		Zone:          cfg.IRODS.Zone,
+		Home:          cfg.IRODS.Home,
+		CommunityData: cfg.CommunityData,
+	}
+}
+
+// permsFilterOf builds the set of accounts left out of permission listings and share counts.
+//
+// The service's own proxy account is always included: it holds access on everything, so
+// reporting it would tell every user that every path is shared with an account they have
+// never heard of.
+func permsFilterOf(cfg *config.Config) map[string]bool {
+	filter := make(map[string]bool, len(cfg.PermsFilter)+1)
+	for _, name := range cfg.PermsFilter {
+		filter[name] = true
+	}
+	filter[cfg.IRODS.User] = true
+	return filter
 }
 
 // ProbeCacheTTL is how long a backend health result is reused, matching what the iRODS
@@ -86,11 +156,13 @@ const ProbeTimeout = 3 * time.Second
 // Jargon connection. ICAT is still a bare TCP dial until the catalog client lands.
 func networkDeps(pool *irodsclient.Pool, store icat.Store) Deps {
 	return Deps{
-		IRODS: handlers.ProberFunc(func(ctx context.Context) error {
+		IRODS: pool,
+		ICAT:  store,
+		IRODSProbe: handlers.ProberFunc(func(ctx context.Context) error {
 			// The pool caches this internally and runs it on its own budget.
 			return pool.Probe(ctx)
 		}),
-		ICAT: cachedProber(ProbeCacheTTL, func(ctx context.Context) error {
+		ICATProbe: cachedProber(ProbeCacheTTL, func(ctx context.Context) error {
 			ctx, cancel := context.WithTimeout(ctx, ProbeTimeout)
 			defer cancel()
 			return store.Ping(ctx)

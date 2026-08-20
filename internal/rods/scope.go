@@ -114,6 +114,7 @@ const (
 	kindAVUs
 	kindUserExists
 	kindUserGroups
+	kindChildCounts
 )
 
 // Open returns a request-scoped view bound to ctx. It performs no I/O.
