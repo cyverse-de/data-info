@@ -16,6 +16,7 @@ import (
 
 	"github.com/cyverse-de/data-info/internal/config"
 	"github.com/cyverse-de/data-info/internal/handlers"
+	dimw "github.com/cyverse-de/data-info/internal/middleware"
 	"github.com/labstack/echo/v4"
 	"github.com/sirupsen/logrus"
 )
@@ -398,4 +399,56 @@ func keyOrder(t *testing.T, body []byte) string {
 		}
 	}
 	return strings.Join(keys, ",")
+}
+
+// TestBlankExpectingIsRejected matches the Clojure route, which types expecting as an
+// optional NonBlankString. Supplying the parameter with a blank value fails schema
+// coercion there rather than being treated as absent.
+func TestBlankExpectingIsRejected(t *testing.T) {
+	e := testServerWithDeps(t, Deps{IRODS: stubProber(nil), ICAT: stubProber(nil)})
+
+	tests := []struct {
+		name       string
+		target     string
+		wantStatus int
+	}{
+		{"absent is fine", "/", http.StatusOK},
+		{"blank is rejected", "/?expecting=", http.StatusBadRequest},
+		{"whitespace is rejected", "/?expecting=%20", http.StatusBadRequest},
+		{"a real value is accepted", "/?expecting=data-info", http.StatusOK},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tt.target, nil))
+			if rec.Code != tt.wantStatus {
+				t.Errorf("status = %d, want %d (%s)", rec.Code, tt.wantStatus, rec.Body.String())
+			}
+		})
+	}
+}
+
+// TestRepeatedQueryParamsKeepTheirOrder covers the lowercasing middleware end to end.
+// Ranging over a parsed url.Values would randomise this, so a repeated parameter would
+// resolve differently from one request to the next.
+func TestRepeatedQueryParamsKeepTheirOrder(t *testing.T) {
+	e := echo.New()
+	e.Pre(dimw.LowercaseQueryParams())
+
+	var got []string
+	e.GET("/x", func(c echo.Context) error {
+		got = c.QueryParams()["info-type"]
+		return c.NoContent(http.StatusOK)
+	})
+
+	for i := 0; i < 50; i++ {
+		got = nil
+		e.ServeHTTP(httptest.NewRecorder(),
+			httptest.NewRequest(http.MethodGet, "/x?INFO-TYPE=csv&info-type=bam&Info-Type=vcf", nil))
+
+		if len(got) != 3 || got[0] != "csv" || got[1] != "bam" || got[2] != "vcf" {
+			t.Fatalf("run %d: got %v, want [csv bam vcf]", i, got)
+		}
+	}
 }

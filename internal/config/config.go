@@ -54,6 +54,7 @@ const (
 	DefaultICATPort     = 5432
 	DefaultICATUser     = "rods"
 	DefaultICATDatabase = "ICAT"
+	DefaultICATSSLMode  = "disable"
 
 	DefaultTypeAttribute = "ipc-filetype"
 
@@ -185,10 +186,22 @@ type ICAT struct {
 	User     string `koanf:"user"`
 	Password string `koanf:"password"`
 	Database string `koanf:"database"`
+
+	// SSLMode is libpq's sslmode. It defaults to disable, which is what the DE deploys
+	// today, but it is a setting rather than a constant so a deployment can require TLS
+	// to the catalog without a code change.
+	SSLMode string `koanf:"sslmode"`
 }
 
 // TypeDetect names the AVU attribute holding a data object's info type. Detection itself
 // belongs to the info-typer service; data-info only reads and writes the attribute.
+//
+// The Clojure service also had data-info.type-detect.read-amount, the number of bytes it
+// sipped from an upload to sniff the type. It is deliberately not ported: the sniffing it
+// governed moved to info-typer along with heuristomancer, so carrying the setting here
+// would be dead configuration. A deployment that tuned it should move the value to
+// info-typer.filetype-read-amount. Expect it to show up as a missing key when
+// GET /admin/config is diffed against the Clojure service.
 type TypeDetect struct {
 	TypeAttribute string `koanf:"attribute"`
 }

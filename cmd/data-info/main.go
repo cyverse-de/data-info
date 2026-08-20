@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"syscall"
 	"time"
 
@@ -24,10 +23,11 @@ import (
 // GET / and by --version.
 var version = "dev"
 
-// shutdownGrace bounds how long in-flight requests have to finish after SIGTERM. It is
-// deliberately shorter than the deployment's terminationGracePeriodSeconds so the process
-// exits on its own terms rather than being killed.
-const shutdownGrace = 30 * time.Second
+// shutdownGrace bounds how long in-flight requests have to finish after SIGTERM. It has to
+// stay under the deployment's terminationGracePeriodSeconds, which is Kubernetes' default
+// of 30s unless a manifest says otherwise, or the kubelet sends SIGKILL at the same moment
+// this deadline expires and shutdown never completes.
+const shutdownGrace = 20 * time.Second
 
 func main() {
 	if err := run(); err != nil {
@@ -67,7 +67,11 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	shutdownTracing := otelutils.TracerProviderFromEnv(ctx, handlers.ServiceName, func(e error) {
+	// Not ctx: otelutils derives the shutdown flush timeout from whatever context it is
+	// given, and ctx is already cancelled by the time the deferred shutdown runs on
+	// SIGTERM. Handing it the signal context would drop every span from the final batch
+	// window on every rollout.
+	shutdownTracing := otelutils.TracerProviderFromEnv(context.Background(), handlers.ServiceName, func(e error) {
 		log.WithError(e).Error("tracing failed; continuing without it")
 	})
 	defer shutdownTracing()
@@ -103,6 +107,3 @@ func run() error {
 	log.Info("stopped")
 	return nil
 }
-
-// itoa keeps the port formatting in one place.
-func itoa(n int) string { return strconv.Itoa(n) }

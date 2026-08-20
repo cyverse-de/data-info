@@ -7,8 +7,10 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
+	"github.com/cyverse-de/data-info/internal/apierror"
 	"github.com/cyverse-de/data-info/internal/config"
 	"github.com/labstack/echo/v4"
 )
@@ -62,6 +64,15 @@ type statusResponse struct {
 // the DE detects a misrouted request; the body is the same either way.
 func (s *Status) Info(c echo.Context) error {
 	expecting := c.QueryParam("expecting")
+
+	// The Clojure route types expecting as an optional NonBlankString, so supplying the
+	// parameter with a blank value fails schema coercion rather than being treated as
+	// absent. compojure-api reports that as ERR_ILLEGAL_ARGUMENT with a 400.
+	if _, present := c.QueryParams()["expecting"]; present && strings.TrimSpace(expecting) == "" {
+		return apierror.New(apierror.ErrIllegalArgument).
+			WithStatus(http.StatusBadRequest).
+			With("reason", "expecting must be a non-blank string")
+	}
 
 	body := statusResponse{
 		Service:     ServiceName,

@@ -5,8 +5,10 @@
 # env name is the key path uppercased with dots replaced by underscores, prefixed with
 # DISCOENV_. So irods.password is DISCOENV_IRODS_PASSWORD.
 #
-# Secrets belong in the environment or the dotenv file, not here. The three shown below
-# with placeholder values are the ones a deployment must supply.
+# Secrets belong in the environment or the dotenv file, not here. The two passwords below
+# are required: unlike the Clojure service, which defaulted both to "notprod", this service
+# refuses to start without them. anonfiles.baseurl, anonfiles.mappings and
+# kifshare.externalurl are required too, matching the Clojure service.
 
 port: 60000
 
@@ -72,6 +74,9 @@ icat:
   user: rods
   password: CHANGE_ME  # prefer DISCOENV_ICAT_PASSWORD
   database: ICAT
+  # libpq sslmode. "disable" is what the DE deploys today; raise it to require or
+  # verify-full where the catalog is reachable over an untrusted network.
+  sslmode: disable
 
 # The AVU attribute holding a data object's info type. Detection itself belongs to
 # info-typer; data-info only reads and writes the attribute.

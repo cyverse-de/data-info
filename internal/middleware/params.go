@@ -24,17 +24,40 @@ func LowercaseQueryParams() echo.MiddlewareFunc {
 				return next(c)
 			}
 
-			values, err := url.ParseQuery(raw)
-			if err != nil {
-				// Leave a malformed query alone; the handler's own binding reports it
-				// with the right error code rather than failing opaquely here.
-				return next(c)
-			}
+			// Rebuild in the order the parameters appeared. Ranging over a parsed
+			// url.Values would use Go's randomized map iteration, so ?Limit=1&limit=2
+			// would resolve to "1" or "2" at random from one request to the next, and
+			// repeated path= values on the bulk endpoints would come back shuffled.
+			lowered := make(url.Values)
+			for rest := raw; rest != ""; {
+				pair := rest
+				if i := strings.IndexAny(rest, "&;"); i >= 0 {
+					pair, rest = rest[:i], rest[i+1:]
+				} else {
+					rest = ""
+				}
+				if pair == "" {
+					continue
+				}
 
-			lowered := make(url.Values, len(values))
-			for name, vals := range values {
-				lower := strings.ToLower(name)
-				lowered[lower] = append(lowered[lower], vals...)
+				name, value := pair, ""
+				if i := strings.IndexByte(pair, '='); i >= 0 {
+					name, value = pair[:i], pair[i+1:]
+				}
+
+				decodedName, err := url.QueryUnescape(name)
+				if err != nil {
+					// Leave a malformed query alone; the handler's own binding reports
+					// it with the right error code rather than failing opaquely here.
+					return next(c)
+				}
+				decodedValue, err := url.QueryUnescape(value)
+				if err != nil {
+					return next(c)
+				}
+
+				lower := strings.ToLower(decodedName)
+				lowered[lower] = append(lowered[lower], decodedValue)
 			}
 
 			req.URL.RawQuery = lowered.Encode()

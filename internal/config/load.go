@@ -112,6 +112,7 @@ func defaults() *Config {
 	c.ICAT.Port = DefaultICATPort
 	c.ICAT.User = DefaultICATUser
 	c.ICAT.Database = DefaultICATDatabase
+	c.ICAT.SSLMode = DefaultICATSSLMode
 
 	c.TypeDetect.TypeAttribute = DefaultTypeAttribute
 
@@ -152,6 +153,12 @@ func (c *Config) Validate() error {
 	}
 	if c.Timeouts.Upload <= 0 {
 		add("timeouts.upload must be positive, got %s", c.Timeouts.Upload)
+	}
+	if c.Timeouts.Upload > 0 && c.Timeouts.Request > 0 && c.Timeouts.Upload < c.Timeouts.Request {
+		// The split exists so file transfers get the longer budget. Inverting it makes
+		// uploads stricter than ordinary requests, which is never what anyone means.
+		add("timeouts.upload (%s) must be at least timeouts.request (%s)",
+			c.Timeouts.Upload, c.Timeouts.Request)
 	}
 	if c.MaxPathsInRequest < 1 {
 		add("maxpaths must be at least 1, got %d", c.MaxPathsInRequest)
@@ -222,6 +229,11 @@ func (c *Config) Validate() error {
 	if c.ICAT.Database == "" {
 		add("icat.database must not be empty")
 	}
+	switch c.ICAT.SSLMode {
+	case "disable", "allow", "prefer", "require", "verify-ca", "verify-full":
+	default:
+		add("icat.sslmode %q is not a libpq sslmode", c.ICAT.SSLMode)
+	}
 
 	if c.TypeDetect.TypeAttribute == "" {
 		add("typedetect.attribute must not be empty")
@@ -262,8 +274,7 @@ func requireURL(add func(string, ...any), name, raw string) {
 	}
 }
 
-// ICATConnectionString renders the ICAT connection as a libpq URI. sslmode follows the DE
-// convention used by infosquito2 and resource-usage-api, which talk to the same database.
+// ICATConnectionString renders the ICAT connection as a libpq URI.
 func (c *Config) ICATConnectionString() string {
 	u := &url.URL{
 		Scheme: "postgres",
@@ -272,7 +283,7 @@ func (c *Config) ICATConnectionString() string {
 		Path:   "/" + c.ICAT.Database,
 	}
 	q := u.Query()
-	q.Set("sslmode", "disable")
+	q.Set("sslmode", c.ICAT.SSLMode)
 	u.RawQuery = q.Encode()
 	return u.String()
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/cyverse-de/data-info/internal/apierror"
@@ -53,7 +54,7 @@ func buildServer(cfg *config.Config, version string, log *logrus.Entry, deps Dep
 	e.Use(middleware.Recover())
 	e.Use(otelecho.Middleware(handlers.ServiceName))
 	e.Use(requestLogger(log))
-	e.Use(dimw.Deadlines(cfg.Timeouts.Request, cfg.Timeouts.Upload, isUploadRoute))
+	e.Use(dimw.IdleTimeout(cfg.Timeouts.Request, cfg.Timeouts.Upload, isUploadRoute))
 
 	status := handlers.NewStatus(cfg, version, deps.IRODS, deps.ICAT)
 
@@ -87,7 +88,7 @@ func networkDeps(cfg *config.Config) Deps {
 // Jetty.
 func newHTTPServer(cfg *config.Config, h http.Handler) *http.Server {
 	return &http.Server{
-		Addr:              ":" + itoa(cfg.Port),
+		Addr:              ":" + strconv.Itoa(cfg.Port),
 		Handler:           h,
 		ReadHeaderTimeout: 30 * time.Second,
 		IdleTimeout:       cfg.Timeouts.Request,
@@ -128,11 +129,20 @@ func requestLogger(log *logrus.Entry) echo.MiddlewareFunc {
 // failure that happened while answering.
 func errorLogger(log *logrus.Entry) func(echo.Context, *apierror.Error, error) {
 	return func(c echo.Context, apiErr *apierror.Error, err error) {
-		log.WithFields(logrus.Fields{
+		status := apiErr.HTTPStatus()
+		entry := log.WithFields(logrus.Fields{
 			"method":     c.Request().Method,
 			"uri":        c.Request().RequestURI,
 			"error_code": string(apiErr.Code),
-			"status":     apiErr.HTTPStatus(),
-		}).WithError(err).Error("request error")
+			"status":     status,
+		}).WithError(err)
+
+		// A 404 from a stale client or a scanner is not an operational problem. Only
+		// server-side failures are worth an ERROR line.
+		if status < http.StatusInternalServerError {
+			entry.Warn("request error")
+			return
+		}
+		entry.Error("request error")
 	}
 }

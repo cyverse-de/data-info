@@ -39,14 +39,14 @@ var maskFilters = []*regexp.Regexp{
 // sorted map.
 func (c *Config) LegacyMap() map[string]string {
 	m := map[string]string{
-		"data-info.port":                   itoa(c.Port),
+		"data-info.port":                   strconv.Itoa(c.Port),
 		"data-info.jetty.max-idle-time":    millis(c.Timeouts.Request),
 		"data-info.jetty.upload-idle-time": millis(c.Timeouts.Upload),
 
 		"data-info.perms-filter":          strings.Join(c.PermsFilter, ","),
 		"data-info.community-data":        c.CommunityData,
 		"data-info.bad-chars":             c.BadChars,
-		"data-info.max-paths-in-request":  itoa(c.MaxPathsInRequest),
+		"data-info.max-paths-in-request":  strconv.Itoa(c.MaxPathsInRequest),
 		"data-info.anon-user":             c.AnonUser,
 		"data-info.anon-files-base-url":   c.AnonFiles.BaseURL,
 		"data-info.anon-files-mappings":   marshalMappings(c.AnonFiles.Mappings),
@@ -58,19 +58,19 @@ func (c *Config) LegacyMap() map[string]string {
 		"data-info.notificationagent.base-url": c.Services.NotificationAgent,
 
 		"data-info.irods.host":        c.IRODS.Host,
-		"data-info.irods.port":        itoa(c.IRODS.Port),
+		"data-info.irods.port":        strconv.Itoa(c.IRODS.Port),
 		"data-info.irods.zone":        c.IRODS.Zone,
 		"data-info.irods.user":        c.IRODS.User,
 		"data-info.irods.password":    c.IRODS.Password,
 		"data-info.irods.home":        c.IRODS.Home,
 		"data-info.irods.resc":        c.IRODS.Resource,
-		"data-info.irods.max-retries": itoa(c.IRODS.MaxRetries),
+		"data-info.irods.max-retries": strconv.Itoa(c.IRODS.MaxRetries),
 		"data-info.irods.retry-sleep": millis(c.IRODS.RetrySleep),
 		"data-info.irods.use-trash":   strconv.FormatBool(c.IRODS.UseTrash),
 		"data-info.irods.admin-users": strings.Join(c.IRODS.AdminUsers, ","),
 
 		"data-info.icat.host":     c.ICAT.Host,
-		"data-info.icat.port":     itoa(c.ICAT.Port),
+		"data-info.icat.port":     strconv.Itoa(c.ICAT.Port),
 		"data-info.icat.user":     c.ICAT.User,
 		"data-info.icat.password": c.ICAT.Password,
 		"data-info.icat.db":       c.ICAT.Database,
@@ -111,8 +111,6 @@ func masked(key string) bool {
 	}
 	return false
 }
-
-func itoa(n int) string { return strconv.Itoa(n) }
 
 // millis renders a duration the way the Clojure Jetty settings expressed one.
 func millis(d time.Duration) string { return strconv.FormatInt(d.Milliseconds(), 10) }

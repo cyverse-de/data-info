@@ -351,3 +351,42 @@ func TestLegacyMapValuesAreStrings(t *testing.T) {
 		})
 	}
 }
+
+// TestValidateRejectsInvertedTimeouts guards the point of the upload/request split. A
+// config where upload is the shorter budget makes file transfers stricter than ordinary
+// requests, which is never intended.
+func TestValidateRejectsInvertedTimeouts(t *testing.T) {
+	_, err := loadYAML(t, withRequired(t, "timeouts:\n  request: 200s\n  upload: 10s\n"))
+	if err == nil {
+		t.Fatal("expected validation to fail")
+	}
+	if want := "timeouts.upload (10s) must be at least timeouts.request (3m20s)"; !strings.Contains(err.Error(), want) {
+		t.Errorf("error is missing %q; got:\n%s", want, err)
+	}
+}
+
+func TestICATSSLMode(t *testing.T) {
+	t.Run("defaults to disable, matching the DE deployment", func(t *testing.T) {
+		c := mustLoadYAML(t, requiredYAML)
+		if c.ICAT.SSLMode != DefaultICATSSLMode {
+			t.Errorf("sslmode = %q, want %q", c.ICAT.SSLMode, DefaultICATSSLMode)
+		}
+		if !strings.Contains(c.ICATConnectionString(), "sslmode=disable") {
+			t.Errorf("connection string = %s", c.ICATConnectionString())
+		}
+	})
+
+	t.Run("can be tightened without a code change", func(t *testing.T) {
+		c := mustLoadYAML(t, withRequired(t, "icat:\n  sslmode: verify-full\n"))
+		if !strings.Contains(c.ICATConnectionString(), "sslmode=verify-full") {
+			t.Errorf("connection string = %s", c.ICATConnectionString())
+		}
+	})
+
+	t.Run("rejects a value libpq would not accept", func(t *testing.T) {
+		_, err := loadYAML(t, withRequired(t, "icat:\n  sslmode: sortof\n"))
+		if err == nil || !strings.Contains(err.Error(), "is not a libpq sslmode") {
+			t.Errorf("expected a validation error naming the bad sslmode, got: %v", err)
+		}
+	})
+}
