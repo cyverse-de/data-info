@@ -3,6 +3,7 @@ package shadow
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -163,5 +164,26 @@ func TestCaseExpansion(t *testing.T) {
 	// The original must not be mutated; a runner reuses cases across services.
 	if c.Path != "/users/{{.User}}/groups" {
 		t.Error("Expand mutated the original case")
+	}
+}
+
+// TestSchemaReasonWithEscapedQuotes guards a harness bug. These reasons quote the value that
+// failed, so they routinely contain escaped quotes; a pattern that stopped at the first one
+// left a remainder that no longer parsed, and the case reported "not JSON" rather than
+// comparing.
+func TestSchemaReasonWithEscapedQuotes(t *testing.T) {
+	n := NewNormalizer("RUN")
+
+	body := []byte(`{"error_code":"ERR_ILLEGAL_ARGUMENT","reason":"(not (map? \"not an object\"))"}`)
+	other := []byte(`{"error_code":"ERR_ILLEGAL_ARGUMENT","reason":"something else entirely"}`)
+
+	diffs := n.Compare(Response{Status: 400, Body: body}, Response{Status: 400, Body: other})
+	for _, d := range diffs {
+		if strings.Contains(d.Detail, "not JSON") {
+			t.Fatalf("a reason containing escaped quotes broke parsing: %s", d.Detail)
+		}
+	}
+	if len(diffs) != 0 {
+		t.Errorf("the reason should be normalised away, leaving no difference: %+v", diffs)
 	}
 }

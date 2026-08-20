@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"strings"
 
 	"github.com/cyverse-de/data-info/internal/apierror"
 	"github.com/cyverse-de/data-info/internal/rods"
@@ -34,17 +35,28 @@ type Stats struct {
 // NewStats builds the status handlers.
 func NewStats(deps Deps) *Stats { return &Stats{deps: deps} }
 
-// Gather handles POST /stat-gatherer and POST /path-info.
-//
-// They are one handler because they were one handler in the Clojure service too: the
-// endpoints differ only in which query parameters their schemas accept. /path-info adds
-// field filtering and the two ignore flags; /stat-gatherer takes neither.
+// Gather handles POST /path-info, which accepts field filtering and the ignore flags.
 func (h *Stats) Gather(c echo.Context) error {
+	return h.gather(c, true)
+}
+
+// GatherPlain handles POST /stat-gatherer.
+//
+// The two endpoints share an implementation because they shared one in the Clojure service,
+// but not a parameter set: /stat-gatherer's schema declares validation-behavior and nothing
+// else, so filter-include, filter-exclude, ignore-missing and ignore-inaccessible are not
+// its to honour. Reading them on both routes would make /stat-gatherer quietly accept a
+// request the reference rejects.
+func (h *Stats) GatherPlain(c echo.Context) error {
+	return h.gather(c, false)
+}
+
+func (h *Stats) gather(c echo.Context, filtered bool) error {
 	ctx := c.Request().Context()
 
 	var body statRequest
-	if err := c.Bind(&body); err != nil {
-		return apierror.New(apierror.ErrInvalidJSON).With("reason", err.Error()).WithCause(err)
+	if err := bindBody(c, &body); err != nil {
+		return err
 	}
 
 	user, err := requireUser(c)
@@ -65,14 +77,31 @@ func (h *Stats) Gather(c echo.Context) error {
 	}
 	defer scope.Close()
 
+	// The plural key here, not the singular one: this endpoint validates through
+	// clj-irods, whose envelope carries a list.
+	if err := requireKnownUser(ctx, scope, user, true); err != nil {
+		return err
+	}
+
 	opts := service.StatOptions{
-		Fields:      service.ParseFieldSet(c.QueryParam("filter-include"), c.QueryParam("filter-exclude")),
+		Fields:      service.ParseFieldSet("", ""),
 		Layout:      h.deps.Layout,
 		PermsFilter: h.deps.PermsFilter,
 	}
 
-	ignoreMissing := boolParam(c, "ignore-missing")
-	ignoreInaccessible := boolParam(c, "ignore-inaccessible")
+	var ignoreMissing, ignoreInaccessible bool
+	if filtered {
+		opts.Fields = service.ParseFieldSet(c.QueryParam("filter-include"), c.QueryParam("filter-exclude"))
+
+		var err error
+		if ignoreMissing, err = boolParam(c, "ignore-missing"); err != nil {
+			return err
+		}
+		if ignoreInaccessible, err = boolParam(c, "ignore-inaccessible"); err != nil {
+			return err
+		}
+	}
+
 	behavior := validationBehavior(c.QueryParam("validation-behavior"))
 
 	// Ids are resolved to paths first, so that everything after this works in one
@@ -88,14 +117,22 @@ func (h *Stats) Gather(c echo.Context) error {
 		requested = append(requested, p)
 	}
 
+	// Existence is asked as the service's own account, not the caller's, because those are
+	// different questions. A path that exists but is not shared with the caller must be
+	// omitted from the response, not reported as missing -- which is the common case for
+	// a caller asking about someone else's tree.
+	if !ignoreMissing && len(body.Paths) > 0 {
+		if err := h.requirePathsExist(ctx, body.Paths); err != nil {
+			return err
+		}
+	}
+
 	stats, err := service.StatsOf(ctx, scope, user, requested, opts)
 	if err != nil {
 		return err
 	}
 
-	// A path that resolved to nothing either fails the request or is dropped, depending
-	// on what the caller asked for.
-	visible, err := h.filterVisible(ctx, scope, requested, stats, behavior, ignoreMissing, ignoreInaccessible)
+	visible, err := h.filterVisible(ctx, scope, requested, stats, behavior, ignoreInaccessible)
 	if err != nil {
 		return err
 	}
@@ -119,6 +156,11 @@ func (h *Stats) Gather(c echo.Context) error {
 }
 
 // resolveIDs maps data ids onto paths.
+//
+// An id that resolves to nothing is reported by id, never by path. Resolution is not scoped
+// to the caller -- it is a catalog lookup -- so an id belonging to someone else resolves
+// successfully; echoing its path in an error would disclose a path the caller is not allowed
+// to see. The reference reports only the id for the same reason.
 func (h *Stats) resolveIDs(ctx context.Context, scope *rods.Scope, ids []string, ignoreMissing bool) (map[string]string, error) {
 	if len(ids) == 0 {
 		return nil, nil
@@ -144,6 +186,35 @@ func (h *Stats) resolveIDs(ctx context.Context, scope *rods.Scope, ids []string,
 	return found, nil
 }
 
+// requirePathsExist rejects paths that are not in the catalog at all, asking as the
+// service's own account so that "not shared with you" is not reported as "not there".
+func (h *Stats) requirePathsExist(ctx context.Context, requested []string) error {
+	proxy, err := h.deps.OpenProxyScope(ctx)
+	if err != nil {
+		return err
+	}
+	defer proxy.Close()
+
+	if _, err := proxy.Stats(ctx, requested).Get(ctx); err != nil {
+		return err
+	}
+
+	var missing []string
+	for _, p := range requested {
+		stat, err := proxy.Stat(ctx, p).Get(ctx)
+		if err != nil {
+			return err
+		}
+		if !stat.Exists {
+			missing = append(missing, p)
+		}
+	}
+	if len(missing) > 0 {
+		return apierror.New(apierror.ErrDoesNotExist).With("paths", missing)
+	}
+	return nil
+}
+
 // filterVisible drops or rejects paths that are missing or that the user may not see at the
 // requested level.
 func (h *Stats) filterVisible(
@@ -152,9 +223,9 @@ func (h *Stats) filterVisible(
 	requested []string,
 	stats map[string]service.Stat,
 	behavior rods.Permission,
-	ignoreMissing, ignoreInaccessible bool,
+	ignoreInaccessible bool,
 ) (map[string]service.Stat, error) {
-	var missing, inaccessible []string
+	var inaccessible []string
 	out := make(map[string]service.Stat, len(stats))
 
 	for _, p := range requested {
@@ -163,8 +234,10 @@ func (h *Stats) filterVisible(
 			return nil, err
 		}
 
+		// Invisible to this caller. Existence was already established against the
+		// service's own account, so this is a permission matter and the entry is simply
+		// omitted rather than reported as missing.
 		if !base.Exists {
-			missing = append(missing, p)
 			continue
 		}
 		if !permits(base.Permission, behavior) {
@@ -176,14 +249,29 @@ func (h *Stats) filterVisible(
 		}
 	}
 
-	if len(missing) > 0 && !ignoreMissing {
-		return nil, apierror.New(apierror.ErrDoesNotExist).With("paths", missing)
-	}
 	if len(inaccessible) > 0 && !ignoreInaccessible {
-		return nil, apierror.New(apierror.ErrNotReadable).With("paths", inaccessible)
+		return nil, insufficientPermission(behavior).
+			With("paths", inaccessible).
+			With("user", scope.User())
 	}
 
 	return out, nil
+}
+
+// insufficientPermission names the failure for the permission level that was required.
+//
+// The reference picks a different validator per validation-behavior, and each throws its own
+// code, so a request asking for own on a merely-readable path reports ERR_NOT_OWNER rather
+// than ERR_NOT_READABLE.
+func insufficientPermission(required rods.Permission) *apierror.Error {
+	switch required {
+	case rods.PermissionOwn:
+		return apierror.New(apierror.ErrNotOwner)
+	case rods.PermissionWrite:
+		return apierror.New(apierror.ErrNotWriteable)
+	default:
+		return apierror.New(apierror.ErrNotReadable)
+	}
 }
 
 // validationBehavior resolves the requested permission level, defaulting to read.
@@ -209,13 +297,23 @@ func permits(held, required rods.Permission) bool {
 	return rank[held] >= rank[required] && held != rods.PermissionNone
 }
 
-// boolParam reads a boolean query parameter, treating anything unparseable as false, which
-// is what the Clojure schema coercion did for these two flags.
-func boolParam(c echo.Context, name string) bool {
-	switch c.QueryParam(name) {
-	case "true", "TRUE", "True", "1":
-		return true
+// boolParam reads a boolean query parameter.
+//
+// Only true and false are accepted, case-insensitively. ring-swagger's coercion accepts
+// exactly those, and anything else stays a string and fails the Boolean schema, so a request
+// carrying yes or 1 is rejected rather than quietly read as one value or the other.
+func boolParam(c echo.Context, name string) (bool, error) {
+	raw := c.QueryParam(name)
+	if raw == "" {
+		return false, nil
+	}
+
+	switch strings.ToLower(raw) {
+	case "true":
+		return true, nil
+	case "false":
+		return false, nil
 	default:
-		return false
+		return false, schemaError(name + " must be true or false")
 	}
 }

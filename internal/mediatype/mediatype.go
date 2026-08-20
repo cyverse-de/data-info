@@ -8,10 +8,14 @@
 // Divergences from Tika are expected and are tracked as a known difference rather than
 // discovered in the field; content sniffing is the part most likely to disagree, so it is
 // not attempted at all rather than attempted differently.
+//
+// The table is the whole answer. Go's mime package seeds itself from the host's
+// /etc/mime.types at init, so consulting it would make the same file report one type on a
+// workstation and another in a distroless image that ships no such file -- a
+// deployment-dependent answer for a value callers compare.
 package mediatype
 
 import (
-	"mime"
 	"path"
 	"strings"
 )
@@ -59,15 +63,6 @@ func OfName(p string) string {
 
 	if known, ok := extensions[ext]; ok {
 		return known
-	}
-
-	if t := mime.TypeByExtension(ext); t != "" {
-		// The standard library appends a charset for text types; Tika reports the bare
-		// type, and that string is what callers compare.
-		if i := strings.IndexByte(t, ';'); i >= 0 {
-			t = strings.TrimSpace(t[:i])
-		}
-		return t
 	}
 
 	return Default

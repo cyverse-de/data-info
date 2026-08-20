@@ -34,6 +34,9 @@ type Fake struct {
 	// UUIDs maps a data id onto the path carrying it.
 	UUIDs map[string]string
 
+	// Users maps an account name onto its kind.
+	Users map[string]icat.UserKind
+
 	// Err, when set, is returned by every query.
 	Err error
 
@@ -59,6 +62,7 @@ func New() *Fake {
 		Perms:    map[string][]icat.Perm{},
 		Children: map[string]icat.ChildCounts{},
 		UUIDs:    map[string]string{},
+		Users:    map[string]icat.UserKind{},
 		GroupIDs: []int64{1, 2},
 	}
 }
@@ -173,6 +177,27 @@ func (f *Fake) wait(ctx context.Context) error {
 	}
 }
 
+// AddUser records an account.
+func (f *Fake) AddUser(name string, kind icat.UserKind) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.Users[name] = kind
+}
+
+// LookupUser implements icat.Reader.
+func (f *Fake) LookupUser(ctx context.Context, user, _ string) (icat.UserKind, error) {
+	if err := f.wait(ctx); err != nil {
+		return icat.UserKindNone, err
+	}
+	if f.Err != nil {
+		return icat.UserKindNone, f.Err
+	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.Users[user], nil
+}
+
 // SetUUID records the path carrying a data id.
 func (f *Fake) SetUUID(uuid, p string) {
 	f.mu.Lock()
@@ -221,6 +246,27 @@ func (f *Fake) CountChildren(ctx context.Context, q icat.ChildCountQuery) (icat.
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.Children[q.Path], nil
+}
+
+// CountChildrenBatch implements icat.Reader.
+func (f *Fake) CountChildrenBatch(ctx context.Context, q icat.BatchChildCountQuery) ([]icat.PathChildCounts, error) {
+	f.CountChildrenCalls.Add(1)
+	if err := f.wait(ctx); err != nil {
+		return nil, err
+	}
+	if f.Err != nil {
+		return nil, f.Err
+	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	out := make([]icat.PathChildCounts, 0, len(q.Paths))
+	for _, p := range q.Paths {
+		counts := f.Children[p]
+		out = append(out, icat.PathChildCounts{FullPath: p, Files: counts.Files, Dirs: counts.Dirs})
+	}
+	return out, nil
 }
 
 // WithTx implements icat.Store.

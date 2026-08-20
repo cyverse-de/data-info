@@ -90,33 +90,18 @@ func splitFields(list string) []StatField {
 // Has reports whether a field should be emitted.
 func (fs FieldSet) Has(f StatField) bool { return fs[f] }
 
-// Needs reports whether a field has to be computed, which is not the same as whether it is
-// emitted.
+// HasAny reports whether any of the fields is emitted.
 //
-// Two fields are needed to compute others even when the caller did not ask for them:
-// permission decides whether a share count is reported at all, and type decides whether the
-// file-only or folder-only fields apply. Both are dropped again before the response is
-// written. Getting this wrong either loses a field the caller asked for or makes a cheap
-// stat expensive.
-func (fs FieldSet) Needs(f StatField) bool {
-	if fs[f] {
-		return true
-	}
-
-	switch f {
-	case FieldPermission:
-		return fs[FieldShareCount]
-	case FieldType:
-		return fs[FieldInfoType] || fs[FieldContentType] || fs[FieldFileCount] || fs[FieldDirCount]
-	default:
-		return false
-	}
-}
-
-// NeedsAny reports whether any of the fields has to be computed.
-func (fs FieldSet) NeedsAny(fields ...StatField) bool {
+// It exists for the fields whose computation costs a query: a directory's child counts are
+// only worth fetching if at least one of them is being reported.
+//
+// There is no separate notion of a field being computed but not emitted. The reference
+// implementation has one, because it decides what to gather before it gathers it; here a
+// catalog row already carries the type and the permission, so those are always available and
+// the only question is whether they are written out.
+func (fs FieldSet) HasAny(fields ...StatField) bool {
 	for _, f := range fields {
-		if fs.Needs(f) {
+		if fs[f] {
 			return true
 		}
 	}

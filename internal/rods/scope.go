@@ -356,6 +356,21 @@ func (s *Scope) recordAbsent(requested []string, found map[string]Stat) {
 	}
 }
 
+// seedChildCounts records batched counts against their per-path keys, including zero for a
+// collection with no children, so later per-path lookups cost nothing.
+func (s *Scope) seedChildCounts(requested []string, found map[string]ChildCounts) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, p := range requested {
+		key := memoKey{kindChildCounts, p}
+		if _, ok := s.memo[key]; ok {
+			continue
+		}
+		s.memo[key] = lazy.Resolved(found[p])
+	}
+}
+
 // seedACLs records batched access lists against their per-path keys, empty results
 // included, so a handler that batches and then reports each path pays nothing extra.
 func (s *Scope) seedACLs(requested []string, found map[string][]ACLEntry) {

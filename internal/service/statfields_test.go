@@ -68,67 +68,57 @@ func TestParseFieldSet(t *testing.T) {
 	}
 }
 
-// TestFieldDependencies covers the two fields that must be computed even when the caller
-// did not ask for them. Getting this wrong either drops a field that was requested or makes
-// a cheap stat do expensive work.
-func TestFieldDependencies(t *testing.T) {
+// TestFieldsAreEmittedOnlyWhenRequested covers the filtering. A catalog row already carries
+// the type and the permission, so unlike the reference implementation nothing here has to be
+// computed and then dropped -- the only question is whether a field is written out.
+func TestFieldsAreEmittedOnlyWhenRequested(t *testing.T) {
 	tests := []struct {
-		name     string
-		include  string
-		needs    StatField
-		wantNeed bool
-		wantHas  bool
+		name    string
+		include string
+		needs   StatField
+		wantHas bool
 	}{
 		{
-			name:     "share-count needs permission",
-			include:  "share-count",
-			needs:    FieldPermission,
-			wantNeed: true,
-			wantHas:  false, // needed to compute, but not emitted
+			name:    "share-count needs permission",
+			include: "share-count",
+			needs:   FieldPermission,
+			wantHas: false, // needed to compute, but not emitted
 		},
 		{
-			name:     "infoType needs type",
-			include:  "infoType",
-			needs:    FieldType,
-			wantNeed: true,
-			wantHas:  false,
+			name:    "infoType needs type",
+			include: "infoType",
+			needs:   FieldType,
+			wantHas: false,
 		},
 		{
-			name:     "file-count needs type",
-			include:  "file-count",
-			needs:    FieldType,
-			wantNeed: true,
-			wantHas:  false,
+			name:    "file-count needs type",
+			include: "file-count",
+			needs:   FieldType,
+			wantHas: false,
 		},
 		{
-			name:     "content-type needs type",
-			include:  "content-type",
-			needs:    FieldType,
-			wantNeed: true,
-			wantHas:  false,
+			name:    "content-type needs type",
+			include: "content-type",
+			needs:   FieldType,
+			wantHas: false,
 		},
 		{
-			name:     "path alone needs neither",
-			include:  "path",
-			needs:    FieldType,
-			wantNeed: false,
-			wantHas:  false,
+			name:    "path alone needs neither",
+			include: "path",
+			needs:   FieldType,
+			wantHas: false,
 		},
 		{
-			name:     "an explicitly requested field is both needed and emitted",
-			include:  "type",
-			needs:    FieldType,
-			wantNeed: true,
-			wantHas:  true,
+			name:    "an explicitly requested field is both needed and emitted",
+			include: "type",
+			needs:   FieldType,
+			wantHas: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fs := ParseFieldSet(tt.include, "")
-			if got := fs.Needs(tt.needs); got != tt.wantNeed {
-				t.Errorf("Needs(%q) = %v, want %v", tt.needs, got, tt.wantNeed)
-			}
 			if got := fs.Has(tt.needs); got != tt.wantHas {
 				t.Errorf("Has(%q) = %v, want %v", tt.needs, got, tt.wantHas)
 			}

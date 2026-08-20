@@ -100,6 +100,7 @@ func registerDataRoutes(e *echo.Echo, cfg *config.Config, deps Deps) {
 		InfoTypeAttribute: cfg.TypeDetect.TypeAttribute,
 		MaxPathsInRequest: cfg.MaxPathsInRequest,
 		PermsFilter:       permsFilterOf(cfg),
+		ProxyUser:         cfg.IRODS.User,
 	}
 
 	stats := handlers.NewStats(hd)
@@ -107,7 +108,7 @@ func registerDataRoutes(e *echo.Echo, cfg *config.Config, deps Deps) {
 
 	// (ok ...) routes in the Clojure service: every error_code answers 500.
 	ok := apierror.WithStyle(apierror.StyleOK)
-	e.POST("/stat-gatherer", stats.Gather, ok)
+	e.POST("/stat-gatherer", stats.GatherPlain, ok)
 	e.POST("/path-info", stats.Gather, ok)
 	e.POST("/existence-marker", reads.Existence, ok)
 

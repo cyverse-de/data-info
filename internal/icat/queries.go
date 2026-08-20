@@ -27,7 +27,31 @@ var (
 
 	//go:embed sql/paths_for_uuids.sql
 	sqlPathsForUUIDs string
+
+	//go:embed sql/count_children_batch.sql
+	sqlCountChildrenBatch string
+
+	//go:embed sql/user_exists.sql
+	sqlUserExists string
 )
+
+// UserKind distinguishes an account from a group.
+type UserKind string
+
+// The account kinds the catalog records.
+const (
+	UserKindNone  UserKind = ""
+	UserKindUser  UserKind = "rodsuser"
+	UserKindAdmin UserKind = "rodsadmin"
+	UserKindGroup UserKind = "rodsgroup"
+)
+
+// PathChildCounts is one collection's child counts.
+type PathChildCounts struct {
+	FullPath string `db:"full_path"`
+	Files    int64  `db:"file_count"`
+	Dirs     int64  `db:"dir_count"`
+}
 
 // UUIDPath pairs a data id with the path carrying it.
 type UUIDPath struct {
@@ -166,6 +190,32 @@ func GetItem(ctx context.Context, r Reader, q ItemQuery) (Row, error) {
 	return rows[0], nil
 }
 
+// LookupUser reports what kind of account a name refers to, or UserKindNone if there is
+// none.
+func (s *PGStore) LookupUser(ctx context.Context, user, zone string) (UserKind, error) {
+	return lookupUser(ctx, s.queryer(), user, zone)
+}
+
+// LookupUser reports what kind of account a name refers to.
+func (t *pgTx) LookupUser(ctx context.Context, user, zone string) (UserKind, error) {
+	return lookupUser(ctx, t.queryer(), user, zone)
+}
+
+func lookupUser(ctx context.Context, qr queryer, user, zone string) (UserKind, error) {
+	if user == "" || zone == "" {
+		return UserKindNone, fmt.Errorf("icat: a username and zone are required")
+	}
+
+	var kinds []UserKind
+	if err := qr.SelectContext(ctx, &kinds, sqlUserExists, user, zone); err != nil {
+		return UserKindNone, fmt.Errorf("icat: looking up %q: %w", user, err)
+	}
+	if len(kinds) == 0 {
+		return UserKindNone, nil
+	}
+	return kinds[0], nil
+}
+
 // PathsForUUIDs resolves data ids to paths.
 func (s *PGStore) PathsForUUIDs(ctx context.Context, uuids []string) ([]UUIDPath, error) {
 	return pathsForUUIDs(ctx, s.queryer(), uuids)
@@ -228,6 +278,51 @@ func countChildren(ctx context.Context, qr queryer, q ChildCountQuery) (ChildCou
 		return ChildCounts{}, fmt.Errorf("icat: counting children of %q: %w", q.Path, err)
 	}
 	return counts, nil
+}
+
+// CountChildrenBatch returns child counts for many collections in one query.
+func (s *PGStore) CountChildrenBatch(ctx context.Context, q BatchChildCountQuery) ([]PathChildCounts, error) {
+	return countChildrenBatch(ctx, s.queryer(), q)
+}
+
+// CountChildrenBatch returns child counts for many collections in one query.
+func (t *pgTx) CountChildrenBatch(ctx context.Context, q BatchChildCountQuery) ([]PathChildCounts, error) {
+	return countChildrenBatch(ctx, t.queryer(), q)
+}
+
+// BatchChildCountQuery counts several collections' children on behalf of a user.
+type BatchChildCountQuery struct {
+	Paths    []string
+	User     string
+	Zone     string
+	GroupIDs []int64
+}
+
+func countChildrenBatch(ctx context.Context, qr queryer, q BatchChildCountQuery) ([]PathChildCounts, error) {
+	if len(q.Paths) == 0 {
+		return nil, nil
+	}
+	if len(q.GroupIDs) == 0 && (q.User == "" || q.Zone == "") {
+		return nil, fmt.Errorf("icat: a user and zone are required when resolving groups")
+	}
+
+	trimmed := make([]string, 0, len(q.Paths))
+	for _, p := range q.Paths {
+		trimmed = append(trimmed, strings.TrimRight(p, "/"))
+	}
+
+	var groupIDs any
+	if len(q.GroupIDs) > 0 {
+		groupIDs = pq.Array(q.GroupIDs)
+	}
+
+	var out []PathChildCounts
+	err := qr.SelectContext(ctx, &out, sqlCountChildrenBatch,
+		pq.Array(trimmed), q.User, q.Zone, groupIDs)
+	if err != nil {
+		return nil, fmt.Errorf("icat: counting children of %d collection(s): %w", len(q.Paths), err)
+	}
+	return out, nil
 }
 
 // PermsForItems returns every user's access to each of the given paths.

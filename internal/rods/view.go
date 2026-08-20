@@ -85,6 +85,9 @@ type View interface {
 
 	// PathsForUUIDs resolves data ids to paths, in one query.
 	PathsForUUIDs(ctx context.Context, uuids []string) *lazy.Value[map[string]string]
+
+	// ChildCountsFor resolves child counts for many collections in one query.
+	ChildCountsFor(ctx context.Context, paths []string) *lazy.Value[map[string]ChildCounts]
 }
 
 // ChildCounts is how many files and subfolders a collection holds.
@@ -314,17 +317,20 @@ func (s *Scope) AVUs(_ context.Context, path string) *lazy.Value[[]AVU] {
 }
 
 // UserExists reports whether an iRODS account exists. Groups do not count.
+//
+// This asks the catalog rather than the protocol. Every request validates its caller, so
+// asking over the protocol would cost a connection per request on a zone that grants this
+// service very few -- and the catalog is where iRODS keeps the answer anyway.
 func (s *Scope) UserExists(_ context.Context, user string) *lazy.Value[bool] {
 	return memoize(s, memoKey{kindUserExists, user}, func() *lazy.Value[bool] {
-		s.protocol.Add(1)
-		return lazy.Go(s.ctx, s.protocolSem, func(ctx context.Context) (bool, error) {
-			defer s.protocol.Done()
-
-			sess, err := s.session(ctx)
+		return lazy.Go(s.ctx, s.catalogSem, func(ctx context.Context) (bool, error) {
+			kind, err := s.deps.ICAT.LookupUser(ctx, user, s.deps.Zone)
 			if err != nil {
 				return false, err
 			}
-			return irodsclient.UserExists(ctx, sess, user, s.deps.Zone)
+			// A group is not a user. Sharing with a group is a different operation, and
+			// treating one as the other would let a group name satisfy a user check.
+			return kind != icat.UserKindNone && kind != icat.UserKindGroup, nil
 		})
 	})
 }
@@ -390,6 +396,42 @@ func (s *Scope) PathsForUUIDs(_ context.Context, uuids []string) *lazy.Value[map
 		for _, f := range found {
 			out[f.UUID] = f.FullPath
 		}
+		return out, nil
+	})
+}
+
+// ChildCountsFor resolves child counts for many collections in one query, seeding the
+// per-path memo so the accessors a handler runs afterwards cost nothing.
+func (s *Scope) ChildCountsFor(_ context.Context, paths []string) *lazy.Value[map[string]ChildCounts] {
+	paths = normalizePaths(paths)
+	groups := s.groupIDs(s.ctx)
+
+	return lazy.Go(s.ctx, s.catalogSem, func(ctx context.Context) (map[string]ChildCounts, error) {
+		if len(paths) == 0 {
+			return map[string]ChildCounts{}, nil
+		}
+
+		ids, err := groups.Get(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		rows, err := s.deps.ICAT.CountChildrenBatch(ctx, icat.BatchChildCountQuery{
+			Paths:    paths,
+			User:     s.opts.User,
+			Zone:     s.deps.Zone,
+			GroupIDs: ids,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		out := make(map[string]ChildCounts, len(rows))
+		for _, row := range rows {
+			out[row.FullPath] = ChildCounts{Files: row.Files, Dirs: row.Dirs}
+		}
+
+		s.seedChildCounts(paths, out)
 		return out, nil
 	})
 }

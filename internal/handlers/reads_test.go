@@ -25,6 +25,7 @@ func testDeps(t *testing.T) (Deps, *icattest.Fake) {
 	t.Helper()
 
 	fake := icattest.New()
+	fake.AddUser(testUser, icat.UserKindUser)
 	fake.AddCollection(testHome, icat.AccessOwn)
 	fake.AddDataObject(testHome+"/a.txt", 100, icat.AccessRead)
 
@@ -40,6 +41,7 @@ func testDeps(t *testing.T) (Deps, *icattest.Fake) {
 		ICAT:              fake,
 		IRODS:             pool,
 		Layout:            paths.Layout{Zone: testZone, Home: "/iplant/home", CommunityData: "/iplant/home/shared"},
+		ProxyUser:         "rods",
 		MaxPathsInRequest: 3,
 		PermsFilter:       map[string]bool{"rods": true},
 	}, fake
@@ -259,5 +261,123 @@ func TestBasePaths(t *testing.T) {
 		if resp[key] != expected {
 			t.Errorf("%s = %q, want %q", key, resp[key], expected)
 		}
+	}
+}
+
+// TestUnknownCallerIsRejected covers the validation every endpoint does first. Without it an
+// unknown user resolves to no groups, every catalog row is filtered out, and the service
+// answers as though nothing exists rather than saying who the caller is.
+func TestUnknownCallerIsRejected(t *testing.T) {
+	deps, _ := testDeps(t)
+	reads := NewReads(deps)
+
+	rec := serve(t, apierror.StyleOK, http.MethodPost, "/existence-marker?user=nosuchuser",
+		`{"paths":["`+testHome+`"]}`, reads.Existence)
+
+	var envelope map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decoding: %v", err)
+	}
+	if envelope["error_code"] != string(apierror.ErrNotAUser) {
+		t.Errorf("error_code = %v, want %s", envelope["error_code"], apierror.ErrNotAUser)
+	}
+	// Singular here: this endpoint validates through the jargon validators, whose envelope
+	// names one user. The stat endpoints validate through clj-irods and report a list.
+	if envelope["user"] != "nosuchuser" {
+		t.Errorf("user = %v, want nosuchuser", envelope["user"])
+	}
+}
+
+// TestGroupIsNotAUser guards a distinction the catalog makes and a naive existence check
+// would not: sharing with a group is a different operation.
+func TestGroupIsNotAUser(t *testing.T) {
+	deps, fake := testDeps(t)
+	fake.AddUser("some-group", icat.UserKindGroup)
+	reads := NewReads(deps)
+
+	rec := serve(t, apierror.StyleOK, http.MethodPost, "/existence-marker?user=some-group",
+		`{"paths":["`+testHome+`"]}`, reads.Existence)
+
+	var envelope map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decoding: %v", err)
+	}
+	if envelope["error_code"] != string(apierror.ErrNotAUser) {
+		t.Errorf("a group satisfied a user check: %v", envelope)
+	}
+}
+
+// TestExistenceRequiresReadable covers the difference between an object being in the catalog
+// and the caller being able to read it. iRODS has access levels between none and read.
+func TestExistenceRequiresReadable(t *testing.T) {
+	deps, fake := testDeps(t)
+	// delete_object sits above write in iRODS' numbering but is not one of the three
+	// levels the DE recognises, so it reports as no permission.
+	fake.AddDataObject(testHome+"/odd.txt", 1, 1130)
+	reads := NewReads(deps)
+
+	rec := serve(t, apierror.StyleOK, http.MethodPost, "/existence-marker?user="+testUser,
+		`{"paths":["`+testHome+`/odd.txt"]}`, reads.Existence)
+
+	var resp struct {
+		Paths map[string]bool `json:"paths"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decoding: %v", err)
+	}
+	if resp.Paths[testHome+"/odd.txt"] {
+		t.Error("a path the caller cannot read reported as existing")
+	}
+}
+
+// TestPermissionsReportsEveryMissingPath covers both halves of the validator ordering: all
+// missing paths are reported, and existence is checked across the whole list before
+// ownership.
+func TestPermissionsReportsEveryMissingPath(t *testing.T) {
+	deps, _ := testDeps(t)
+	reads := NewReads(deps)
+
+	// The first path is readable but not owned, the rest are missing. The reference runs
+	// the existence check over the whole list first, so the missing ones win.
+	body := `{"paths":["` + testHome + `/a.txt","` + testHome + `/gone1","` + testHome + `/gone2"]}`
+	rec := serve(t, apierror.StyleTrap, http.MethodPost, "/permissions-gatherer?user="+testUser, body, reads.Permissions)
+
+	var envelope map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decoding: %v", err)
+	}
+	if envelope["error_code"] != string(apierror.ErrDoesNotExist) {
+		t.Fatalf("error_code = %v, want %s", envelope["error_code"], apierror.ErrDoesNotExist)
+	}
+
+	missing, ok := envelope["paths"].([]any)
+	if !ok || len(missing) != 2 {
+		t.Errorf("paths = %v, want both missing paths", envelope["paths"])
+	}
+}
+
+// TestPermissionsToleratesATrailingSlash covers a silent wrong answer: the scope keys its
+// results by the catalog's canonical path, so looking an access list up by the caller's
+// spelling returned an empty list for a path that was in fact shared.
+func TestPermissionsToleratesATrailingSlash(t *testing.T) {
+	deps, fake := testDeps(t)
+	fake.AddPerm(testHome, "someone", testZone, icat.AccessRead)
+	reads := NewReads(deps)
+
+	rec := serve(t, apierror.StyleTrap, http.MethodPost, "/permissions-gatherer?user="+testUser,
+		`{"paths":["`+testHome+`/"]}`, reads.Permissions)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (%s)", rec.Code, rec.Body.String())
+	}
+
+	var resp struct {
+		Paths []pathPermissions `json:"paths"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decoding: %v", err)
+	}
+	if len(resp.Paths) != 1 || len(resp.Paths[0].UserPermissions) != 1 {
+		t.Errorf("a trailing slash lost the access list: %+v", resp.Paths)
 	}
 }

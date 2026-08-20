@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 
 	"github.com/cyverse-de/data-info/internal/lazy"
 	"github.com/cyverse-de/data-info/internal/mediatype"
@@ -116,7 +115,7 @@ func StatOf(ctx context.Context, view rods.View, user, path string, opts StatOpt
 		out.ShareCount = &count
 	}
 
-	if isDir && fields.NeedsAny(FieldFileCount, FieldDirCount) {
+	if isDir && fields.HasAny(FieldFileCount, FieldDirCount) {
 		counts, err := view.ChildCounts(ctx, base.Path).Get(ctx)
 		if err != nil {
 			return Stat{}, err
@@ -164,9 +163,17 @@ func StatsOf(ctx context.Context, view rods.View, user string, paths []string, o
 	}
 
 	// Access lists and child counts are only fetched when something asks for them, and
-	// then in one query rather than per path.
+	// then in one query rather than per path. Without the batch here each collection's
+	// counts would cost a query of their own, which for an unfiltered request over a
+	// thousand paths is exactly the round-trip-per-path cost the rest of the layer exists
+	// to avoid.
 	if opts.Fields.Has(FieldShareCount) {
 		if _, err := view.ACLs(ctx, paths).Get(ctx); err != nil {
+			return nil, err
+		}
+	}
+	if opts.Fields.HasAny(FieldFileCount, FieldDirCount) {
+		if _, err := view.ChildCountsFor(ctx, paths).Get(ctx); err != nil {
 			return nil, err
 		}
 	}
@@ -189,11 +196,4 @@ func StatsOf(ctx context.Context, view rods.View, user string, paths []string, o
 		out[p] = stat
 	}
 	return out, nil
-}
-
-// MarshalJSON is defined so that a stat with no fields serialises as an empty object rather
-// than as null, which is what a caller excluding everything should see.
-func (s Stat) MarshalJSON() ([]byte, error) {
-	type plain Stat
-	return json.Marshal(plain(s))
 }

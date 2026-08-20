@@ -38,6 +38,10 @@ func (h *Reads) Existence(c echo.Context) error {
 	}
 	defer scope.Close()
 
+	if err := requireKnownUser(ctx, scope, user, false); err != nil {
+		return err
+	}
+
 	// One query for all of them, then read the results back per path.
 	if _, err := scope.Stats(ctx, body.Paths).Get(ctx); err != nil {
 		return err
@@ -49,7 +53,10 @@ func (h *Reads) Existence(c echo.Context) error {
 		if err != nil {
 			return err
 		}
-		out[p] = stat.Exists
+		// Present *and* readable. The reference asks both questions, and they can differ:
+		// iRODS has access levels between none and read, and a user holding one of those
+		// can see the object in the catalog without being able to read it.
+		out[p] = stat.Exists && permits(stat.Permission, rods.PermissionRead)
 	}
 
 	return writeJSONOK(c, map[string]any{"paths": out})
@@ -86,24 +93,34 @@ func (h *Reads) Permissions(c echo.Context) error {
 	}
 	defer scope.Close()
 
+	if err := requireKnownUser(ctx, scope, user, false); err != nil {
+		return err
+	}
+
 	if _, err := scope.Stats(ctx, body.Paths).Get(ctx); err != nil {
 		return err
 	}
 
-	var notOwned []string
+	// Existence is checked across every path before ownership is considered, and each
+	// check reports all of its failures rather than the first. The reference runs the two
+	// validators in that order over the whole list, so a request whose first path is not
+	// owned and whose second is missing reports the missing one.
+	var missing, notOwned []string
 	for _, p := range body.Paths {
 		stat, err := scope.Stat(ctx, p).Get(ctx)
 		if err != nil {
 			return err
 		}
 		if !stat.Exists {
-			// A list, not a single path: the Clojure validator reports every missing
-			// path it was given, and callers read the plural key.
-			return apierror.New(apierror.ErrDoesNotExist).With("paths", []string{p})
+			missing = append(missing, p)
+			continue
 		}
 		if stat.Permission != rods.PermissionOwn {
 			notOwned = append(notOwned, p)
 		}
+	}
+	if len(missing) > 0 {
+		return apierror.New(apierror.ErrDoesNotExist).With("paths", missing)
 	}
 	if len(notOwned) > 0 {
 		return apierror.New(apierror.ErrNotOwner).With("user", user).With("paths", notOwned)
@@ -116,9 +133,16 @@ func (h *Reads) Permissions(c echo.Context) error {
 
 	out := make([]pathPermissions, 0, len(body.Paths))
 	for _, p := range body.Paths {
+		// The scope keys its results by the catalog's canonical path, so a caller's
+		// trailing slash has to be resolved before the lookup. Missing this returned an
+		// empty permission list for a path that was in fact shared, with no error.
+		stat, err := scope.Stat(ctx, p).Get(ctx)
+		if err != nil {
+			return err
+		}
 		out = append(out, pathPermissions{
 			Path:            p,
-			UserPermissions: h.visiblePermissions(acls[p], user),
+			UserPermissions: h.visiblePermissions(acls[stat.Path], user),
 		})
 	}
 
@@ -203,6 +227,18 @@ func (h *Reads) BasePaths(c echo.Context) error {
 		return err
 	}
 
+	scope, err := h.deps.OpenScope(c.Request().Context(), user)
+	if err != nil {
+		return err
+	}
+	defer scope.Close()
+
+	// The plural envelope here: this route validates through clj-irods, unlike the bulk
+	// path endpoints above, which use the jargon validators and report a single user.
+	if err := requireKnownUser(c.Request().Context(), scope, user, true); err != nil {
+		return err
+	}
+
 	return writeJSONOK(c, map[string]string{
 		"user_home_path":  h.deps.Layout.UserHome(user),
 		"user_trash_path": h.deps.Layout.UserTrash(user),
@@ -213,8 +249,8 @@ func (h *Reads) BasePaths(c echo.Context) error {
 // bindPaths reads the user parameter and a paths body, applying the bulk request limit.
 func (h *Reads) bindPaths(c echo.Context) (string, pathsRequest, error) {
 	var body pathsRequest
-	if err := c.Bind(&body); err != nil {
-		return "", body, apierror.New(apierror.ErrInvalidJSON).With("reason", err.Error()).WithCause(err)
+	if err := bindBody(c, &body); err != nil {
+		return "", body, err
 	}
 
 	user, err := requireUser(c)

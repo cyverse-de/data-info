@@ -42,6 +42,10 @@ type Reader interface {
 	// user cannot see are simply absent from the result.
 	GetItems(ctx context.Context, q ItemQuery) ([]Row, error)
 
+	// LookupUser reports what kind of account a name refers to, or UserKindNone if the
+	// zone has no such account.
+	LookupUser(ctx context.Context, user, zone string) (UserKind, error)
+
 	// PathsForUUIDs resolves data ids to the paths carrying them.
 	//
 	// Like PermsForItems this is not scoped to a user: resolving an id is a lookup, and
@@ -51,6 +55,9 @@ type Reader interface {
 	// CountChildren returns how many files and subfolders a collection holds, counting
 	// only what the requesting user can see.
 	CountChildren(ctx context.Context, q ChildCountQuery) (ChildCounts, error)
+
+	// CountChildrenBatch returns child counts for many collections in one query.
+	CountChildrenBatch(ctx context.Context, q BatchChildCountQuery) ([]PathChildCounts, error)
 
 	// PermsForItems returns the access entries on the given absolute paths, in one query.
 	//

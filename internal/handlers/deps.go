@@ -30,6 +30,21 @@ type Deps struct {
 
 	// PermsFilter names accounts left out of permission listings and share counts.
 	PermsFilter map[string]bool
+
+	// ProxyUser is the account the service authenticates as. It is not the caller: it is
+	// used where the reference implementation asks whether something exists at all,
+	// independently of whether the caller can see it.
+	ProxyUser string
+}
+
+// OpenProxyScope returns a view acting as the service's own account.
+//
+// Existence and visibility are separate questions, and the reference implementation asks
+// them separately: it checks that a path exists using its own account, then quietly drops
+// the ones the caller cannot see. Asking both as the caller would turn "this is not shared
+// with you" into "this does not exist", which fails the request instead of omitting a row.
+func (d Deps) OpenProxyScope(ctx context.Context) (*rods.Scope, error) {
+	return d.OpenScope(ctx, d.ProxyUser)
 }
 
 // OpenScope returns a request-scoped view acting as user.
@@ -74,6 +89,27 @@ func requireUser(c echo.Context) (string, error) {
 	return user, nil
 }
 
+// requireKnownUser rejects a caller iRODS has never heard of.
+//
+// Every endpoint validates this before doing anything else, and the envelope differs by
+// endpoint: the handlers written against clj-irods report a plural users list, and those
+// written against the jargon validators report a singular user. Both are reproduced because
+// callers read the key.
+func requireKnownUser(ctx context.Context, scope *rods.Scope, user string, plural bool) error {
+	known, err := scope.UserExists(ctx, user).Get(ctx)
+	if err != nil {
+		return err
+	}
+	if known {
+		return nil
+	}
+
+	if plural {
+		return apierror.New(apierror.ErrNotAUser).With("users", []string{user})
+	}
+	return apierror.New(apierror.ErrNotAUser).With("user", user)
+}
+
 // schemaError reports a request that fails the shape its endpoint declares.
 //
 // The Clojure stack answers these from compojure-api's request-validation handler, which
@@ -84,4 +120,17 @@ func schemaError(reason string) error {
 	return apierror.New(apierror.ErrIllegalArgument).
 		WithStatus(http.StatusBadRequest).
 		With("reason", reason)
+}
+
+// bindBody decodes a request body, reporting a malformed one the way the reference stack
+// does.
+//
+// A body that will not parse is a schema failure, so it answers ERR_ILLEGAL_ARGUMENT with a
+// 400 on every route whatever its error style. Reporting a code of our own would answer 500
+// on the routes marked StyleOK, which is most of the bulk endpoints.
+func bindBody(c echo.Context, into any) error {
+	if err := c.Bind(into); err != nil {
+		return schemaError("the request body could not be parsed")
+	}
+	return nil
 }

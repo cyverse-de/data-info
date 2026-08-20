@@ -61,3 +61,37 @@ cases:
     tier: read
     method: GET
     path: /no/such/endpoint
+
+  - id: existence-marker-unknown-user
+    tier: read
+    method: POST
+    path: /existence-marker
+    query: {user: nosuchuser}
+    body: {paths: ["{{.Root}}"]}
+
+  - id: permissions-gatherer-unknown-user
+    tier: read
+    method: POST
+    path: /permissions-gatherer
+    query: {user: nosuchuser}
+    body: {paths: ["{{.Root}}"]}
+
+  - id: permissions-gatherer-several-missing
+    tier: read
+    method: POST
+    path: /permissions-gatherer
+    query: {user: "{{.User}}"}
+    body: {paths: ["{{.Root}}/gone-one", "{{.Root}}/gone-two"]}
+
+  - id: navigation-base-paths-unknown-user
+    tier: read
+    method: GET
+    path: /navigation/base-paths
+    query: {user: nosuchuser}
+
+  - id: existence-marker-trailing-slash
+    tier: read
+    method: POST
+    path: /existence-marker
+    query: {user: "{{.User}}"}
+    body: {paths: ["{{.Root}}/"]}

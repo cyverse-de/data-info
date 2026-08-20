@@ -50,7 +50,12 @@ var (
 
 	// schemaReasonPattern matches the reason attached to a schema-validation failure,
 	// whether it is rendered as a string or as a nested object.
-	schemaReasonPattern = regexp.MustCompile(`"reason":\s*(\{[^}]*\}|"[^"]*")`)
+	//
+	// The string branch has to allow escaped quotes. These reasons quote the offending
+	// value, so they routinely contain them, and a pattern that stopped at the first
+	// escaped quote would leave a mangled remainder that no longer parses -- reporting
+	// "not JSON" instead of a real comparison.
+	schemaReasonPattern = regexp.MustCompile(`"reason":\s*(\{[^}]*\}|"(?:[^"\\]|\\.)*")`)
 )
 
 // canonicalMillis is what a timestamp is rewritten to.
@@ -65,24 +70,32 @@ const canonicalMillis = "1000000000000"
 // runID and the paired-fixture side are canonicalised so that two subtrees built for the
 // same case compare equal.
 func NewNormalizer(runID string) *Normalizer {
+	replacements := []Replacement{}
+
+	// An empty run id would compile to a pattern matching at every position, so every
+	// body would come back interleaved with the placeholder and fail to parse -- turning
+	// every case into "not JSON" rather than a real comparison.
+	if runID != "" {
+		replacements = append(replacements, Replacement{regexp.MustCompile(regexp.QuoteMeta(runID)), "{RUN}"})
+	}
+
 	return &Normalizer{
-		Replacements: []Replacement{
-			{regexp.MustCompile(regexp.QuoteMeta(runID)), "{RUN}"},
-			{regexp.MustCompile(`/(A|B)/`), "/{SIDE}/"},
-			{uuidPattern, "{UUID}"},
-			{millisPattern, canonicalMillis},
+		Replacements: append(replacements,
+			Replacement{regexp.MustCompile(`/(A|B)/`), "/{SIDE}/"},
+			Replacement{uuidPattern, "{UUID}"},
+			Replacement{millisPattern, canonicalMillis},
 
 			// The two services necessarily answer on different ports, and the status
 			// endpoint reports its own address. Comparing that would only ever measure
 			// how the harness was wired.
-			{hostPortPattern, "http://{HOST}"},
+			Replacement{hostPortPattern, "http://{HOST}"},
 
 			// A schema-validation failure renders prismatic/schema's internal
 			// explanation on the reference side, which has no Go equivalent and is
 			// diagnostic text rather than contract. The error_code and the status are
 			// still compared exactly, and those are what callers branch on.
-			{schemaReasonPattern, `"reason":"{SCHEMA}"`},
-		},
+			Replacement{schemaReasonPattern, `"reason":"{SCHEMA}"`},
+		),
 		PreserveOrder: map[string]bool{"files": true, "folders": true, "paths": true},
 	}
 }
