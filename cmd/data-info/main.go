@@ -14,6 +14,7 @@ import (
 
 	"github.com/cyverse-de/data-info/internal/config"
 	"github.com/cyverse-de/data-info/internal/handlers"
+	"github.com/cyverse-de/data-info/internal/irodsclient"
 	"github.com/cyverse-de/go-mod/logging"
 	"github.com/cyverse-de/go-mod/otelutils"
 	"github.com/sirupsen/logrus"
@@ -76,7 +77,13 @@ func run() error {
 	})
 	defer shutdownTracing()
 
-	srv := newHTTPServer(cfg, buildServer(cfg, version, log, networkDeps(cfg)))
+	pool, err := irodsclient.NewPool(irodsPoolConfig(cfg))
+	if err != nil {
+		return fmt.Errorf("building the iRODS client: %w", err)
+	}
+	defer pool.Close()
+
+	srv := newHTTPServer(cfg, buildServer(cfg, version, log, networkDeps(cfg, pool)))
 
 	errs := make(chan error, 1)
 	go func() {
