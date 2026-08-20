@@ -42,13 +42,18 @@ const (
 	DefaultMetadataBaseURL          = "http://metadata:60000"
 	DefaultNotificationAgentBaseURL = "http://notification-agent:60000"
 
-	DefaultIRODSHost       = "irods"
-	DefaultIRODSPort       = 1247
-	DefaultIRODSZone       = "iplant"
-	DefaultIRODSUser       = "rods"
-	DefaultIRODSHome       = "/iplant/home"
-	DefaultIRODSMaxRetries = 10
-	DefaultIRODSRetrySleep = 1000 * time.Millisecond
+	DefaultIRODSHost                 = "irods"
+	DefaultIRODSPort                 = 1247
+	DefaultIRODSZone                 = "iplant"
+	DefaultIRODSUser                 = "rods"
+	DefaultIRODSHome                 = "/iplant/home"
+	DefaultIRODSMaxSessions          = 32
+	DefaultIRODSMaxConnections       = 4
+	DefaultIRODSSessionIdleTimeout   = 5 * time.Minute
+	DefaultIRODSOperationTimeout     = 1 * time.Minute
+	DefaultIRODSLongOperationTimeout = 5 * time.Minute
+	DefaultIRODSMaxRetries           = 10
+	DefaultIRODSRetrySleep           = 1000 * time.Millisecond
 
 	DefaultICATHost     = "irods"
 	DefaultICATPort     = 5432
@@ -177,6 +182,22 @@ type IRODS struct {
 
 	// AdminUsers are exempt from inherit-bit removal during unsharing.
 	AdminUsers []string `koanf:"adminusers"`
+
+	// MaxSessions bounds how many distinct users' connections are held open, and
+	// MaxConnections how many each of those may open. Their product is the ceiling on
+	// iRODS agents this replica can occupy, which is the number to tune against the
+	// server's limit.
+	MaxSessions    int `koanf:"maxsessions"`
+	MaxConnections int `koanf:"maxconnections"`
+
+	// SessionIdleTimeout evicts a user's connections after a period of disuse.
+	SessionIdleTimeout time.Duration `koanf:"sessionidletimeout"`
+
+	// OperationTimeout and LongOperationTimeout become socket deadlines. They bound how
+	// long an abandoned call can hold a connection after its caller has given up, so
+	// neither should be generous; listing and bulk calls run under the long one.
+	OperationTimeout     time.Duration `koanf:"operationtimeout"`
+	LongOperationTimeout time.Duration `koanf:"longoperationtimeout"`
 }
 
 // ICAT configures the direct PostgreSQL connection to the iRODS catalog.

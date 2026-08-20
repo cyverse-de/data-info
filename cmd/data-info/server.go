@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"time"
@@ -8,6 +9,7 @@ import (
 	"github.com/cyverse-de/data-info/internal/apierror"
 	"github.com/cyverse-de/data-info/internal/config"
 	"github.com/cyverse-de/data-info/internal/handlers"
+	"github.com/cyverse-de/data-info/internal/irodsclient"
 	dimw "github.com/cyverse-de/data-info/internal/middleware"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -72,10 +74,39 @@ func buildServer(cfg *config.Config, version string, log *logrus.Entry, deps Dep
 const ProbeTimeout = 3 * time.Second
 
 // networkDeps builds the probes used in a running service.
-func networkDeps(cfg *config.Config) Deps {
+//
+// iRODS is probed through the client, which exercises authentication as well as
+// reachability -- the same ground the Clojure irods-running? check covered by opening a
+// Jargon connection. ICAT is still a bare TCP dial until the catalog client lands.
+func networkDeps(cfg *config.Config, pool *irodsclient.Pool) Deps {
 	return Deps{
-		IRODS: handlers.TCPProber(cfg.IRODS.Host, cfg.IRODS.Port, ProbeTimeout),
-		ICAT:  handlers.TCPProber(cfg.ICAT.Host, cfg.ICAT.Port, ProbeTimeout),
+		IRODS: handlers.ProberFunc(func(ctx context.Context) error {
+			ctx, cancel := context.WithTimeout(ctx, ProbeTimeout)
+			defer cancel()
+			return pool.Probe(ctx)
+		}),
+		ICAT: handlers.TCPProber(cfg.ICAT.Host, cfg.ICAT.Port, ProbeTimeout),
+	}
+}
+
+// irodsPoolConfig derives the pool's settings from the service configuration.
+func irodsPoolConfig(cfg *config.Config) irodsclient.Config {
+	return irodsclient.Config{
+		Host:          cfg.IRODS.Host,
+		Port:          cfg.IRODS.Port,
+		Zone:          cfg.IRODS.Zone,
+		ProxyUser:     cfg.IRODS.User,
+		ProxyPassword: cfg.IRODS.Password,
+		Resource:      cfg.IRODS.Resource,
+		AppName:       handlers.ServiceName,
+
+		MaxSessions:          cfg.IRODS.MaxSessions,
+		MaxConnections:       cfg.IRODS.MaxConnections,
+		IdleTimeout:          cfg.IRODS.SessionIdleTimeout,
+		OperationTimeout:     cfg.IRODS.OperationTimeout,
+		LongOperationTimeout: cfg.IRODS.LongOperationTimeout,
+		MaxRetries:           cfg.IRODS.MaxRetries,
+		RetrySleep:           cfg.IRODS.RetrySleep,
 	}
 }
 
