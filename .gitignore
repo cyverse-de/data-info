@@ -31,3 +31,8 @@ data-info.properties
 .eastwood
 .clj-kondo/.cache
 .lsp
+
+# Go
+/data-info
+*.test
+/coverage.out
