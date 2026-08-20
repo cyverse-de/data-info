@@ -67,6 +67,15 @@ irods:
   adminusers:
     - rods
     - rodsadmin
+  # maxsessions x maxconnections is the ceiling on iRODS agents one replica can occupy.
+  # Tune it against the server's agent limit before raising either.
+  maxsessions: 32
+  maxconnections: 4
+  sessionidletimeout: 5m
+  # Socket deadlines. They bound how long an abandoned call holds a connection, so keep
+  # them tight; listing and bulk calls run under the long one.
+  operationtimeout: 1m
+  longoperationtimeout: 5m
 
 icat:
   host: irods

@@ -178,9 +178,14 @@ func MakeDir(ctx context.Context, s *Session, path string, recurse bool) error {
 	return err
 }
 
-// UserExists reports whether an account exists in the zone.
+// UserExists reports whether a user account -- not a group -- exists in the zone.
+//
+// The type check is done here rather than passed to the client: FileSystem.GetUser accepts
+// a user type argument but ignores it, looking the name up by name and zone alone. Without
+// this a group name would satisfy a user-existence check, so sharing with a group would be
+// validated as sharing with a user.
 func UserExists(ctx context.Context, s *Session, user, zone string) (bool, error) {
-	_, err := Do(ctx, s, func(fsys *irodsfs.FileSystem) (*types.IRODSUser, error) {
+	found, err := Do(ctx, s, func(fsys *irodsfs.FileSystem) (*types.IRODSUser, error) {
 		return fsys.GetUser(user, zone, types.IRODSUserRodsUser)
 	})
 	if err != nil {
@@ -189,7 +194,21 @@ func UserExists(ctx context.Context, s *Session, user, zone string) (bool, error
 		}
 		return false, err
 	}
-	return true, nil
+	return found != nil && found.Type != types.IRODSUserRodsGroup, nil
+}
+
+// GroupExists reports whether a group of that name exists in the zone.
+func GroupExists(ctx context.Context, s *Session, group, zone string) (bool, error) {
+	found, err := Do(ctx, s, func(fsys *irodsfs.FileSystem) (*types.IRODSUser, error) {
+		return fsys.GetUser(group, zone, types.IRODSUserRodsGroup)
+	})
+	if err != nil {
+		if IsNotAUser(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return found != nil && found.Type == types.IRODSUserRodsGroup, nil
 }
 
 // ListUserGroups returns the names of the groups a user belongs to.

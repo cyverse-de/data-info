@@ -44,6 +44,34 @@ go-irodsclient keeps the reads where it is genuinely competitive: single-path op
 the request path, metadata writes, ACL changes, user and group lookups, and everything on
 the write path.
 
+## Concurrent connections are scarcer than the config suggests
+
+Discovered while making the integration tests stable, and it constrains the pool directly.
+
+QA **refuses a second concurrent connection for the service account**. Reproducibly: every
+operation on one session succeeds, and a health check that opened a session of its own was
+rejected with `connection rejected: EOF` on every attempt, including after retries. The
+local single-node DE deployment uses the same `de-irods` proxy account against the same
+zone, so its connections are part of the same budget.
+
+Two consequences:
+
+- **`maxsessions` x `maxconnections` is a ceiling, not a target.** The defaults (32 x 4)
+  describe what the pool will do if the server allows it, and this server plainly will not.
+  Whatever those are set to in a deployment has to be checked against what the server will
+  actually grant, not chosen on the client's own reasoning.
+- **A health check must not open a session of its own.** An earlier version gave the probe a
+  dedicated session so that a short probe deadline could not poison the session admin work
+  shares. That reasoning was sound and the fix was still wrong here, because the extra
+  connection is exactly the resource that is unavailable. The probe now shares the admin
+  session, runs on its own generous budget rather than the caller's, and caches its result.
+
+Retrying does not paper over this. A refused connection surfaces inside the first operation
+rather than at construction, because sessions connect lazily -- so there is nothing to retry
+at the point the session is created, and retrying an arbitrary operation is unsafe when a
+failure that looks like a refused connection may be a connection dropped part way through a
+write.
+
 ## Still worth revisiting
 
 The server is **4.3.1**, which is new enough for GenQuery2. GenQuery2 supports joins,

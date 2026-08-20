@@ -107,6 +107,11 @@ func defaults() *Config {
 	c.IRODS.RetrySleep = DefaultIRODSRetrySleep
 	c.IRODS.UseTrash = true
 	c.IRODS.AdminUsers = DefaultIRODSAdminUsers()
+	c.IRODS.MaxSessions = DefaultIRODSMaxSessions
+	c.IRODS.MaxConnections = DefaultIRODSMaxConnections
+	c.IRODS.SessionIdleTimeout = DefaultIRODSSessionIdleTimeout
+	c.IRODS.OperationTimeout = DefaultIRODSOperationTimeout
+	c.IRODS.LongOperationTimeout = DefaultIRODSLongOperationTimeout
 
 	c.ICAT.Host = DefaultICATHost
 	c.ICAT.Port = DefaultICATPort
@@ -212,6 +217,22 @@ func (c *Config) Validate() error {
 	}
 	if c.IRODS.RetrySleep < 0 {
 		add("irods.retrysleep must not be negative, got %s", c.IRODS.RetrySleep)
+	}
+	if c.IRODS.MaxSessions < 1 {
+		add("irods.maxsessions must be at least 1, got %d", c.IRODS.MaxSessions)
+	}
+	if c.IRODS.MaxConnections < 1 {
+		add("irods.maxconnections must be at least 1, got %d", c.IRODS.MaxConnections)
+	}
+	if c.IRODS.SessionIdleTimeout <= 0 {
+		add("irods.sessionidletimeout must be positive, got %s", c.IRODS.SessionIdleTimeout)
+	}
+	if c.IRODS.OperationTimeout <= 0 {
+		add("irods.operationtimeout must be positive, got %s", c.IRODS.OperationTimeout)
+	}
+	if c.IRODS.LongOperationTimeout < c.IRODS.OperationTimeout {
+		add("irods.longoperationtimeout (%s) must be at least irods.operationtimeout (%s)",
+			c.IRODS.LongOperationTimeout, c.IRODS.OperationTimeout)
 	}
 
 	if c.ICAT.Host == "" {

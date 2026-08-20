@@ -99,6 +99,14 @@ func irodsPoolConfig(cfg *config.Config) irodsclient.Config {
 		ProxyPassword: cfg.IRODS.Password,
 		Resource:      cfg.IRODS.Resource,
 		AppName:       handlers.ServiceName,
+
+		MaxSessions:          cfg.IRODS.MaxSessions,
+		MaxConnections:       cfg.IRODS.MaxConnections,
+		IdleTimeout:          cfg.IRODS.SessionIdleTimeout,
+		OperationTimeout:     cfg.IRODS.OperationTimeout,
+		LongOperationTimeout: cfg.IRODS.LongOperationTimeout,
+		MaxRetries:           cfg.IRODS.MaxRetries,
+		RetrySleep:           cfg.IRODS.RetrySleep,
 	}
 }
 

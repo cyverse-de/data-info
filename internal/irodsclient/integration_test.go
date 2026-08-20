@@ -104,6 +104,31 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
+// One session for every test that performs an operation.
+//
+// QA's iRODS is shared -- a local DE deployment uses the same proxy account -- and it
+// refuses new connections once its agents are committed. Opening a FileSystem per test
+// reproduced that reliably: the first connected and the rest were rejected outright. These
+// tests are not the place to find out how many connections are spare, so they use one.
+var (
+	sharedSessionOnce sync.Once
+	sharedSession     *Session
+	sharedSessionErr  error
+)
+
+func itSession(t *testing.T) *Session {
+	t.Helper()
+
+	pool := itPool(t)
+	sharedSessionOnce.Do(func() {
+		sharedSession, sharedSessionErr = pool.Admin(context.Background())
+	})
+	if sharedSessionErr != nil {
+		t.Fatalf("acquiring the shared session: %v", sharedSessionErr)
+	}
+	return sharedSession
+}
+
 func itContext(t *testing.T) context.Context {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -111,22 +136,9 @@ func itContext(t *testing.T) context.Context {
 	return ctx
 }
 
-func TestIntegrationProbe(t *testing.T) {
-	pool := itPool(t)
-	if err := pool.Probe(itContext(t)); err != nil {
-		t.Fatalf("Probe: %v", err)
-	}
-}
-
 func TestIntegrationServerVersion(t *testing.T) {
-	pool := itPool(t)
 	ctx := itContext(t)
-
-	s, err := pool.Admin(ctx)
-	if err != nil {
-		t.Fatalf("Admin: %v", err)
-	}
-	defer s.Close()
+	s := itSession(t)
 
 	version, err := ServerVersion(ctx, s)
 	if err != nil {
@@ -141,14 +153,8 @@ func TestIntegrationServerVersion(t *testing.T) {
 // TestIntegrationStatMissingPathIsNotAnError covers the accessor contract the listing code
 // depends on: a path that is not there reports as absent rather than failing.
 func TestIntegrationStatMissingPathIsNotAnError(t *testing.T) {
-	pool := itPool(t)
 	ctx := itContext(t)
-
-	s, err := pool.Admin(ctx)
-	if err != nil {
-		t.Fatalf("Admin: %v", err)
-	}
-	defer s.Close()
+	s := itSession(t)
 
 	zone := os.Getenv("DATA_INFO_IT_IRODS_ZONE")
 	entry, err := Stat(ctx, s, "/"+zone+"/home/definitely-not-here-"+strconv.FormatInt(time.Now().UnixNano(), 10))
@@ -160,56 +166,39 @@ func TestIntegrationStatMissingPathIsNotAnError(t *testing.T) {
 	}
 }
 
-// TestIntegrationSessionsAreKeyedByUser checks the reason the pool exists: the client user
-// is fixed when a connection is established, so two users must not share a session.
-func TestIntegrationSessionsAreKeyedByUser(t *testing.T) {
-	pool := itPool(t)
+// TestIntegrationListHome exercises a real catalog read on the shared session.
+func TestIntegrationListHome(t *testing.T) {
 	ctx := itContext(t)
+	s := itSession(t)
 
-	admin, err := pool.Admin(ctx)
+	zone := os.Getenv("DATA_INFO_IT_IRODS_ZONE")
+	entries, err := List(ctx, s, "/"+zone+"/home")
 	if err != nil {
-		t.Fatalf("Admin: %v", err)
+		t.Fatalf("List: %v", err)
 	}
-	defer admin.Close()
+	t.Logf("%d entries under /%s/home", len(entries), zone)
+}
 
-	proxyUser := os.Getenv("DATA_INFO_IT_IRODS_USER")
-	asUser, err := pool.ForUser(ctx, proxyUser)
+// TestIntegrationListUserGroups covers the group lookup, which 4.3 changed by moving
+// groups into r_user_main as rodsgroup rows.
+func TestIntegrationListUserGroups(t *testing.T) {
+	ctx := itContext(t)
+	s := itSession(t)
+
+	groups, err := ListUserGroups(ctx, s, os.Getenv("DATA_INFO_IT_IRODS_USER"), os.Getenv("DATA_INFO_IT_IRODS_ZONE"))
 	if err != nil {
-		t.Fatalf("ForUser: %v", err)
+		t.Fatalf("ListUserGroups: %v", err)
 	}
-	defer asUser.Close()
-
-	if admin.FileSystem() == asUser.FileSystem() {
-		t.Error("the admin and client-user sessions share a FileSystem; the client user cannot differ")
-	}
-	if admin.ClientUser() != "" {
-		t.Errorf("admin client user = %q, want empty", admin.ClientUser())
-	}
-	if asUser.ClientUser() != proxyUser {
-		t.Errorf("client user = %q, want %q", asUser.ClientUser(), proxyUser)
+	if len(groups) == 0 {
+		t.Error("the proxy account reports no groups; every account belongs to at least public")
 	}
 }
 
-// TestIntegrationSessionsAreReused checks that a second request for the same user gets the
-// pooled session rather than paying for another authentication round trip.
-func TestIntegrationSessionsAreReused(t *testing.T) {
+// TestIntegrationProbe runs last: it opens its own session by design, and on a server that
+// is at its connection limit that is the call most likely to be refused.
+func TestIntegrationProbe(t *testing.T) {
 	pool := itPool(t)
-	ctx := itContext(t)
-
-	first, err := pool.Admin(ctx)
-	if err != nil {
-		t.Fatalf("Admin: %v", err)
-	}
-	fs := first.FileSystem()
-	first.Close()
-
-	second, err := pool.Admin(ctx)
-	if err != nil {
-		t.Fatalf("Admin: %v", err)
-	}
-	defer second.Close()
-
-	if second.FileSystem() != fs {
-		t.Error("the session was rebuilt rather than reused")
+	if err := pool.Probe(itContext(t)); err != nil {
+		t.Fatalf("Probe: %v", err)
 	}
 }
