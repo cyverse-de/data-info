@@ -9,6 +9,7 @@ import (
 	"github.com/cyverse-de/data-info/internal/apierror"
 	"github.com/cyverse-de/data-info/internal/config"
 	"github.com/cyverse-de/data-info/internal/handlers"
+	"github.com/cyverse-de/data-info/internal/icat"
 	"github.com/cyverse-de/data-info/internal/irodsclient"
 	dimw "github.com/cyverse-de/data-info/internal/middleware"
 	"github.com/labstack/echo/v4"
@@ -78,15 +79,24 @@ const ProbeTimeout = 3 * time.Second
 // iRODS is probed through the client, which exercises authentication as well as
 // reachability -- the same ground the Clojure irods-running? check covered by opening a
 // Jargon connection. ICAT is still a bare TCP dial until the catalog client lands.
-func networkDeps(cfg *config.Config, pool *irodsclient.Pool) Deps {
+func networkDeps(pool *irodsclient.Pool, store icat.Store) Deps {
 	return Deps{
 		IRODS: handlers.ProberFunc(func(ctx context.Context) error {
 			ctx, cancel := context.WithTimeout(ctx, ProbeTimeout)
 			defer cancel()
 			return pool.Probe(ctx)
 		}),
-		ICAT: handlers.TCPProber(cfg.ICAT.Host, cfg.ICAT.Port, ProbeTimeout),
+		ICAT: handlers.ProberFunc(func(ctx context.Context) error {
+			ctx, cancel := context.WithTimeout(ctx, ProbeTimeout)
+			defer cancel()
+			return store.Ping(ctx)
+		}),
 	}
+}
+
+// icatConfig derives the catalog connection from the service configuration.
+func icatConfig(cfg *config.Config) icat.Config {
+	return icat.Config{URI: cfg.ICATConnectionString()}
 }
 
 // irodsPoolConfig derives the pool's settings from the service configuration.

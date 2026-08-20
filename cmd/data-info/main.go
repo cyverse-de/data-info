@@ -14,6 +14,7 @@ import (
 
 	"github.com/cyverse-de/data-info/internal/config"
 	"github.com/cyverse-de/data-info/internal/handlers"
+	"github.com/cyverse-de/data-info/internal/icat"
 	"github.com/cyverse-de/data-info/internal/irodsclient"
 	"github.com/cyverse-de/go-mod/logging"
 	"github.com/cyverse-de/go-mod/otelutils"
@@ -83,7 +84,17 @@ func run() error {
 	}
 	defer pool.Close()
 
-	srv := newHTTPServer(cfg, buildServer(cfg, version, log, networkDeps(cfg, pool)))
+	store, err := icat.Open(icatConfig(cfg))
+	if err != nil {
+		return fmt.Errorf("connecting to the iRODS catalog: %w", err)
+	}
+	defer func() {
+		if err := store.Close(); err != nil {
+			log.WithError(err).Error("closing the catalog connection")
+		}
+	}()
+
+	srv := newHTTPServer(cfg, buildServer(cfg, version, log, networkDeps(pool, store)))
 
 	errs := make(chan error, 1)
 	go func() {
