@@ -8,6 +8,7 @@ require (
 	github.com/cyverse-de/go-mod/logging v0.0.4
 	github.com/cyverse-de/go-mod/otelutils v0.0.6
 	github.com/cyverse/go-irodsclient v0.20.1
+	github.com/google/uuid v1.6.0
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/knadh/koanf v1.5.0
 	github.com/labstack/echo/v4 v4.15.4
@@ -33,7 +34,6 @@ require (
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.28.0 // indirect
 	github.com/hashicorp/go-rootcerts v1.0.2 // indirect
 	github.com/joho/godotenv v1.5.1 // indirect

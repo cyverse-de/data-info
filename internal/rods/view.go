@@ -88,7 +88,16 @@ type View interface {
 
 	// ChildCountsFor resolves child counts for many collections in one query.
 	ChildCountsFor(ctx context.Context, paths []string) *lazy.Value[map[string]ChildCounts]
+
+	// Listing returns a sorted page of a collection's immediate children.
+	Listing(ctx context.Context, q ListingQuery) *lazy.Value[[]icat.ListingRow]
+
+	// Subfolders returns every subfolder of a collection, unpaged.
+	Subfolders(ctx context.Context, path string) *lazy.Value[[]icat.ListingRow]
 }
+
+// ListingQuery selects a page of a collection's children.
+type ListingQuery = icat.ListingQuery
 
 // ChildCounts is how many files and subfolders a collection holds.
 type ChildCounts = icat.ChildCounts
@@ -337,25 +346,20 @@ func (s *Scope) UserExists(_ context.Context, user string) *lazy.Value[bool] {
 
 // UserGroups reports the groups a user belongs to, as bare names.
 //
-// They are not zone-qualified. The endpoint that reports them appends the zone itself,
-// which is a distinction worth stating: a caller that assumed otherwise would compare
-// qualified names against bare ones and silently never match.
+// They are not zone-qualified; the endpoint that reports them appends the zone itself. A
+// caller that assumed otherwise would compare qualified names against bare ones and
+// silently never match.
+//
+// This asks the catalog rather than the protocol, for the same reason as UserExists: it
+// removes the last protocol round trip from the read path, and a read that needed a
+// connection would fail whenever request traffic already held the few a zone grants.
 func (s *Scope) UserGroups(_ context.Context, user string) *lazy.Value[[]string] {
 	return memoize(s, memoKey{kindUserGroups, user}, func() *lazy.Value[[]string] {
-		s.protocol.Add(1)
-		return lazy.Go(s.ctx, s.protocolSem, func(ctx context.Context) ([]string, error) {
-			defer s.protocol.Done()
-
-			sess, err := s.session(ctx)
-			if err != nil {
-				return nil, err
-			}
-			return irodsclient.ListUserGroups(ctx, sess, user, s.deps.Zone)
+		return lazy.Go(s.ctx, s.catalogSem, func(ctx context.Context) ([]string, error) {
+			return s.deps.ICAT.UserGroupNames(ctx, user, s.deps.Zone)
 		})
 	})
 }
-
-// ChildCounts reports how many files and subfolders a collection holds.
 func (s *Scope) ChildCounts(_ context.Context, path string) *lazy.Value[ChildCounts] {
 	path = normalizePath(path)
 
@@ -433,6 +437,67 @@ func (s *Scope) ChildCountsFor(_ context.Context, paths []string) *lazy.Value[ma
 
 		s.seedChildCounts(paths, out)
 		return out, nil
+	})
+}
+
+// Listing returns a sorted page of a collection's children.
+//
+// The rows are published into the scope, so a handler that lists a folder and then asks
+// about individual entries answers from the listing rather than querying again -- which is
+// what makes formatting a page cost one query rather than one per entry.
+func (s *Scope) Listing(_ context.Context, q ListingQuery) *lazy.Value[[]icat.ListingRow] {
+	q.Path = normalizePath(q.Path)
+	q.User = s.opts.User
+	q.Zone = s.deps.Zone
+	if q.InfoTypeAttribute == "" {
+		q.InfoTypeAttribute = s.deps.InfoTypeAttribute
+	}
+
+	groups := s.groupIDs(s.ctx)
+
+	return lazy.Go(s.ctx, s.catalogSem, func(ctx context.Context) ([]icat.ListingRow, error) {
+		ids, err := groups.Get(ctx)
+		if err != nil {
+			return nil, err
+		}
+		q.GroupIDs = ids
+
+		rows, err := s.deps.ICAT.PagedFolder(ctx, q)
+		if err != nil {
+			return nil, err
+		}
+
+		s.publishRows(rows)
+		return rows, nil
+	})
+}
+
+// Subfolders returns every subfolder of a collection.
+//
+// This is a separate query rather than a filtered listing. The paged listing builds its
+// intermediate results over every data object in the collection before deciding what to
+// keep, so using it for a tree view would make a hot endpoint far more expensive on a folder
+// holding many files. It is also unpaged, as the reference is, so a folder with many
+// subfolders is not silently truncated.
+func (s *Scope) Subfolders(_ context.Context, path string) *lazy.Value[[]icat.ListingRow] {
+	path = normalizePath(path)
+	groups := s.groupIDs(s.ctx)
+
+	return lazy.Go(s.ctx, s.catalogSem, func(ctx context.Context) ([]icat.ListingRow, error) {
+		ids, err := groups.Get(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		rows, err := s.deps.ICAT.FoldersInFolder(ctx, icat.ListingQuery{
+			Path: path, User: s.opts.User, Zone: s.deps.Zone, GroupIDs: ids,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		s.publishRows(rows)
+		return rows, nil
 	})
 }
 

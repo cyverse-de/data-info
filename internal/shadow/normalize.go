@@ -96,6 +96,9 @@ func NewNormalizer(runID string) *Normalizer {
 			// still compared exactly, and those are what callers branch on.
 			Replacement{schemaReasonPattern, `"reason":"{SCHEMA}"`},
 		),
+		// Arrays whose order is the answer rather than incidental. A listing's order is
+		// exactly what a sort-field request asks for, so sorting it here would hide the
+		// bug the case exists to catch.
 		PreserveOrder: map[string]bool{"files": true, "folders": true, "paths": true},
 	}
 }

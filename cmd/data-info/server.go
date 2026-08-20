@@ -101,10 +101,12 @@ func registerDataRoutes(e *echo.Echo, cfg *config.Config, deps Deps) {
 		MaxPathsInRequest: cfg.MaxPathsInRequest,
 		PermsFilter:       permsFilterOf(cfg),
 		ProxyUser:         cfg.IRODS.User,
+		BadChars:          cfg.BadChars,
 	}
 
 	stats := handlers.NewStats(hd)
 	reads := handlers.NewReads(hd)
+	listings := handlers.NewListings(hd)
 
 	// (ok ...) routes in the Clojure service: every error_code answers 500.
 	ok := apierror.WithStyle(apierror.StyleOK)
@@ -116,6 +118,18 @@ func registerDataRoutes(e *echo.Echo, cfg *config.Config, deps Deps) {
 	e.POST("/permissions-gatherer", reads.Permissions)
 	e.GET("/users/:username/groups", reads.UserGroups)
 	e.GET("/navigation/base-paths", reads.BasePaths)
+	e.GET("/data/uuid", listings.UUIDForPath)
+	e.HEAD("/data/:data-id", listings.Head)
+
+	// The wildcard routes carry an iRODS path, which may contain characters echo would
+	// otherwise treat as structure.
+	e.GET("/navigation/path/:zone/*", listings.Navigation, ok)
+
+	// Trap-style, unlike its neighbour above: the data routes are wrapped in svc/trap in
+	// the reference, so their codes map through the status table rather than all
+	// answering 500. Verified against the running service, which answers a missing limit
+	// with a 400.
+	e.GET("/data/path/:zone/*", listings.FolderListing)
 }
 
 // layoutOf describes the zone's namespace from the service configuration.
