@@ -1,0 +1,115 @@
+group: listing
+cases:
+  - id: folder-listing-home
+    tier: read
+    method: GET
+    path: /data/path{{.Root}}
+    query: {user: "{{.User}}", limit: "50"}
+
+  - id: folder-listing-sorted-by-name-desc
+    tier: read
+    method: GET
+    path: /data/path{{.Root}}
+    query: {user: "{{.User}}", limit: "50", sort-field: name, sort-dir: DESC}
+
+  - id: folder-listing-sorted-by-size
+    tier: read
+    method: GET
+    path: /data/path{{.Root}}
+    query: {user: "{{.User}}", limit: "50", sort-field: size, sort-dir: ASC}
+
+  - id: folder-listing-sorted-by-datemodified
+    tier: read
+    method: GET
+    path: /data/path{{.Root}}
+    query: {user: "{{.User}}", limit: "50", sort-field: datemodified, sort-dir: DESC}
+
+  - id: folder-listing-paged
+    tier: read
+    method: GET
+    path: /data/path{{.Root}}
+    query: {user: "{{.User}}", limit: "2", offset: "1"}
+
+  - id: folder-listing-limit-one
+    tier: read
+    method: GET
+    path: /data/path{{.Root}}
+    query: {user: "{{.User}}", limit: "1"}
+
+  - id: folder-listing-offset-beyond-end
+    tier: read
+    method: GET
+    path: /data/path{{.Root}}
+    query: {user: "{{.User}}", limit: "50", offset: "100000"}
+
+  - id: folder-listing-missing-folder
+    tier: read
+    method: GET
+    path: /data/path{{.Root}}/definitely-not-here
+    query: {user: "{{.User}}", limit: "50"}
+
+  - id: folder-listing-unknown-user
+    tier: read
+    method: GET
+    path: /data/path{{.Root}}
+    query: {user: nosuchuser, limit: "50"}
+
+  - id: folder-listing-bad-chars
+    tier: read
+    method: GET
+    path: /data/path{{.Root}}
+    query: {user: "{{.User}}", limit: "50", bad-chars: "abc"}
+
+  - id: navigation-path-home
+    tier: read
+    method: GET
+    path: /navigation/path{{.Root}}
+    query: {user: "{{.User}}"}
+
+  - id: navigation-path-missing-folder
+    tier: read
+    method: GET
+    path: /navigation/path{{.Root}}/definitely-not-here
+    query: {user: "{{.User}}"}
+
+  - id: navigation-path-unknown-user
+    tier: read
+    method: GET
+    path: /navigation/path{{.Root}}
+    query: {user: nosuchuser}
+
+  - id: data-uuid-for-home
+    tier: read
+    method: GET
+    path: /data/uuid
+    query: {user: "{{.User}}", path: "{{.Root}}"}
+
+  - id: data-uuid-missing-path
+    tier: read
+    method: GET
+    path: /data/uuid
+    query: {user: "{{.User}}", path: "{{.Root}}/definitely-not-here"}
+
+  - id: data-uuid-no-path
+    tier: read
+    method: GET
+    path: /data/uuid
+    query: {user: "{{.User}}"}
+
+  - id: head-unknown-id
+    tier: read
+    method: HEAD
+    path: /data/00000000-0000-0000-0000-000000000000
+    query: {user: "{{.User}}"}
+
+  - id: head-not-a-uuid
+    tier: read
+    method: HEAD
+    path: /data/not-a-uuid
+    query: {user: "{{.User}}"}
+
+  - id: head-unknown-user
+    tier: read
+    method: HEAD
+    path: /data/00000000-0000-0000-0000-000000000000
+    query: {user: nosuchuser}

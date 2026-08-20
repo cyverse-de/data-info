@@ -88,7 +88,13 @@ type View interface {
 
 	// ChildCountsFor resolves child counts for many collections in one query.
 	ChildCountsFor(ctx context.Context, paths []string) *lazy.Value[map[string]ChildCounts]
+
+	// Listing returns a sorted page of a collection's immediate children.
+	Listing(ctx context.Context, q ListingQuery) *lazy.Value[[]icat.ListingRow]
 }
+
+// ListingQuery selects a page of a collection's children.
+type ListingQuery = icat.ListingQuery
 
 // ChildCounts is how many files and subfolders a collection holds.
 type ChildCounts = icat.ChildCounts
@@ -433,6 +439,38 @@ func (s *Scope) ChildCountsFor(_ context.Context, paths []string) *lazy.Value[ma
 
 		s.seedChildCounts(paths, out)
 		return out, nil
+	})
+}
+
+// Listing returns a sorted page of a collection's children.
+//
+// The rows are published into the scope, so a handler that lists a folder and then asks
+// about individual entries answers from the listing rather than querying again -- which is
+// what makes formatting a page cost one query rather than one per entry.
+func (s *Scope) Listing(_ context.Context, q ListingQuery) *lazy.Value[[]icat.ListingRow] {
+	q.Path = normalizePath(q.Path)
+	q.User = s.opts.User
+	q.Zone = s.deps.Zone
+	if q.InfoTypeAttribute == "" {
+		q.InfoTypeAttribute = s.deps.InfoTypeAttribute
+	}
+
+	groups := s.groupIDs(s.ctx)
+
+	return lazy.Go(s.ctx, s.catalogSem, func(ctx context.Context) ([]icat.ListingRow, error) {
+		ids, err := groups.Get(ctx)
+		if err != nil {
+			return nil, err
+		}
+		q.GroupIDs = ids
+
+		rows, err := s.deps.ICAT.PagedFolder(ctx, q)
+		if err != nil {
+			return nil, err
+		}
+
+		s.publishRows(rows)
+		return rows, nil
 	})
 }
 

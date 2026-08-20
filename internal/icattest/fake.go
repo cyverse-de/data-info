@@ -6,7 +6,9 @@ package icattest
 
 import (
 	"context"
+	"database/sql"
 	"path"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -50,6 +52,7 @@ type Fake struct {
 	PermsCalls         atomic.Int64
 	UserGroupIDsCalls  atomic.Int64
 	CountChildrenCalls atomic.Int64
+	PagedFolderCalls   atomic.Int64
 	PathsPerGetItems   []int
 }
 
@@ -267,6 +270,72 @@ func (f *Fake) CountChildrenBatch(ctx context.Context, q icat.BatchChildCountQue
 		out = append(out, icat.PathChildCounts{FullPath: p, Files: counts.Files, Dirs: counts.Dirs})
 	}
 	return out, nil
+}
+
+// PagedFolder implements icat.Reader.
+//
+// It sorts and pages in memory the way the real query does, so a test can check that an
+// endpoint asked for the right page and passed the order through, rather than only that it
+// returned something.
+func (f *Fake) PagedFolder(ctx context.Context, q icat.ListingQuery) ([]icat.ListingRow, error) {
+	f.PagedFolderCalls.Add(1)
+	if err := f.wait(ctx); err != nil {
+		return nil, err
+	}
+	if f.Err != nil {
+		return nil, f.Err
+	}
+
+	f.mu.Lock()
+	children := make([]icat.Row, 0)
+	prefix := strings.TrimRight(q.Path, "/") + "/"
+	for p, row := range f.Rows {
+		if strings.HasPrefix(p, prefix) && !strings.Contains(strings.TrimPrefix(p, prefix), "/") {
+			children = append(children, row)
+		}
+	}
+	f.mu.Unlock()
+
+	// Folders first, then the requested column, matching the query's ORDER BY.
+	sort.SliceStable(children, func(i, j int) bool {
+		if children[i].Type != children[j].Type {
+			return children[i].Type == icat.ObjectTypeCollection
+		}
+		less := compareRows(children[i], children[j], q.SortColumn)
+		if q.SortDirection == icat.SortDescending {
+			return !less
+		}
+		return less
+	})
+
+	total := int64(len(children))
+	if q.Offset >= len(children) {
+		return nil, nil
+	}
+	end := min(q.Offset+q.Limit, len(children))
+
+	page := make([]icat.ListingRow, 0, end-q.Offset)
+	for _, row := range children[q.Offset:end] {
+		row.TotalCount = sql.NullInt64{Int64: total, Valid: true}
+		page = append(page, row)
+	}
+	return page, nil
+}
+
+// compareRows orders two rows by the requested column.
+func compareRows(a, b icat.Row, column icat.SortColumn) bool {
+	switch column {
+	case "data_size":
+		return a.DataSize < b.DataSize
+	case "create_ts":
+		return a.CreateTS < b.CreateTS
+	case "modify_ts":
+		return a.ModifyTS < b.ModifyTS
+	case "full_path":
+		return a.FullPath < b.FullPath
+	default:
+		return a.BaseName < b.BaseName
+	}
 }
 
 // WithTx implements icat.Store.

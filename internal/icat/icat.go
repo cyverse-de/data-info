@@ -42,6 +42,9 @@ type Reader interface {
 	// user cannot see are simply absent from the result.
 	GetItems(ctx context.Context, q ItemQuery) ([]Row, error)
 
+	// PagedFolder returns a sorted page of a collection's immediate children.
+	PagedFolder(ctx context.Context, q ListingQuery) ([]ListingRow, error)
+
 	// LookupUser reports what kind of account a name refers to, or UserKindNone if the
 	// zone has no such account.
 	LookupUser(ctx context.Context, user, zone string) (UserKind, error)
