@@ -3,12 +3,15 @@ module github.com/cyverse-de/data-info
 go 1.26.0
 
 require (
+	github.com/cyverse-de/dbutil v1.0.1
 	github.com/cyverse-de/go-mod/cfg v0.0.3
 	github.com/cyverse-de/go-mod/logging v0.0.4
 	github.com/cyverse-de/go-mod/otelutils v0.0.6
 	github.com/cyverse/go-irodsclient v0.20.1
+	github.com/jmoiron/sqlx v1.4.0
 	github.com/knadh/koanf v1.5.0
 	github.com/labstack/echo/v4 v4.15.4
+	github.com/lib/pq v1.12.3
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/sirupsen/logrus v1.10.1
 	go.opentelemetry.io/contrib/instrumentation/github.com/labstack/echo/otelecho v0.70.0
@@ -46,6 +49,7 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	github.com/rs/xid v1.3.0 // indirect
+	github.com/uptrace/opentelemetry-go-extra/otelsql v0.3.2 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasttemplate v1.2.2 // indirect
 	github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb // indirect

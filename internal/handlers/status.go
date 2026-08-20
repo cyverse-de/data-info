@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/cyverse-de/data-info/internal/apierror"
 	"github.com/cyverse-de/data-info/internal/config"
@@ -146,24 +145,4 @@ func (s *Status) Readyz(c echo.Context) error {
 // port; see docs/deferred-fixes.md.
 func (s *Status) AdminConfig(c echo.Context) error {
 	return writeJSONOK(c, s.cfg.LegacyMap())
-}
-
-// TCPProber reports whether a host:port accepts connections. It is a reachability check,
-// not a protocol check: it cannot tell a healthy iRODS from one that would reject our
-// credentials. The iRODS client replaces it with a real session probe.
-func TCPProber(host string, port int, timeout time.Duration) Prober {
-	addr := net.JoinHostPort(host, strconv.Itoa(port))
-	return ProberFunc(func(ctx context.Context) error {
-		// Bound the whole attempt, not just the dial: name resolution for an unreachable
-		// host can outlast the dialer's own timeout.
-		ctx, cancel := context.WithTimeout(ctx, timeout)
-		defer cancel()
-
-		d := net.Dialer{Timeout: timeout}
-		conn, err := d.DialContext(ctx, "tcp", addr)
-		if err != nil {
-			return err
-		}
-		return conn.Close()
-	})
 }

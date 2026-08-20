@@ -44,6 +44,19 @@ go-irodsclient keeps the reads where it is genuinely competitive: single-path op
 the request path, metadata writes, ACL changes, user and group lookups, and everything on
 the write path.
 
+## What the catalog does with the same work
+
+Measured against QA's catalog once the batched queries existed, with a request-sized batch:
+
+| Query | 1000 paths |
+|---|---|
+| `GetItems` (stat, uuid, info type and access, batched) | **57 ms** |
+| `PermsForItems` (every user's access, batched) | **13 ms** |
+
+Against roughly 10 s and 20 s for the same sets over the protocol: about 180x and 1500x.
+The gap is not a tuning difference, it is the difference between one query and a thousand
+round trips, so no amount of connection tuning on the protocol side closes it.
+
 ## Concurrent connections are scarcer than the config suggests
 
 Discovered while making the integration tests stable, and it constrains the pool directly.
