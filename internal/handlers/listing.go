@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/cyverse-de/data-info/internal/apierror"
 	"github.com/cyverse-de/data-info/internal/icat"
+	"github.com/cyverse-de/data-info/internal/lazy"
 	"github.com/cyverse-de/data-info/internal/paths"
 	"github.com/cyverse-de/data-info/internal/rods"
 	"github.com/cyverse-de/data-info/internal/service"
@@ -53,32 +55,38 @@ func (h *Listings) Navigation(c echo.Context) error {
 		return err
 	}
 
+	// Existence is asked as the service's own account so that a folder the caller cannot
+	// read is reported as unreadable rather than as absent. The reference checks the two
+	// separately and the codes differ; asking both as the caller collapses them.
+	if err := h.requireExists(ctx, path); err != nil {
+		return err
+	}
+
 	stat, err := scope.Stat(ctx, path).Get(ctx)
 	if err != nil {
 		return err
 	}
-	if !stat.Exists {
-		return apierror.New(apierror.ErrDoesNotExist).With("paths", []string{path})
+	if !stat.Exists || !permits(stat.Permission, rods.PermissionRead) {
+		return apierror.New(apierror.ErrNotReadable).With("paths", []string{path}).With("user", user)
 	}
 	if stat.Type != rods.ObjectTypeDir {
 		return apierror.New(apierror.ErrNotAFolder).With("paths", []string{path})
 	}
 
-	rows, err := scope.Listing(ctx, rods.ListingQuery{
-		Path:          path,
-		SortColumn:    icat.DefaultSortColumn,
-		SortDirection: icat.SortAscending,
-		Limit:         DefaultListingLimit,
-	}).Get(ctx)
+	// The folders-only query rather than the paged listing filtered down. It is unpaged,
+	// so a folder with more subfolders than a page is not silently truncated, and it
+	// touches only the collection table -- the paged query would build intermediate
+	// results over every data object in the folder before discarding them, which on a home
+	// directory holding tens of thousands of files makes a tree view far more expensive
+	// than it needs to be.
+	rows, err := scope.Subfolders(ctx, path).Get(ctx)
 	if err != nil {
 		return err
 	}
 
 	folders := make([]service.FolderEntry, 0, len(rows))
 	for _, row := range rows {
-		if row.IsCollection() {
-			folders = append(folders, service.FolderEntryOf(row, user, h.deps.Layout))
-		}
+		folders = append(folders, service.FolderEntryOf(row, user, h.deps.Layout))
 	}
 
 	// The folder's own status carries only the fields this endpoint reports.
@@ -115,13 +123,24 @@ func pathFromRoute(c echo.Context) (string, error) {
 
 	escaped := c.Request().URL.EscapedPath()
 
-	// Everything after the zone element is the path within the zone.
-	marker := "/" + zone + "/"
-	index := strings.Index(escaped, marker)
-	if index < 0 {
-		return "", schemaError("the request path does not name a zone")
+	// The wildcard begins after the route's static prefix. Searching the whole path for
+	// the zone name would find the prefix instead when a zone happens to share a name
+	// with a route element -- a zone called "data" would make /data/path/data/home/x
+	// resolve against the wrong occurrence -- and would fail outright when the zone
+	// element arrives percent-encoded, since the route parameter is decoded and this is
+	// not.
+	prefix := routePrefix(c.Path())
+	if !strings.HasPrefix(escaped, prefix) {
+		return "", schemaError("the request path does not match its route")
 	}
-	remainder := escaped[index+len(marker):]
+
+	remainder := strings.TrimPrefix(escaped[len(prefix):], "/")
+	// The first element of what remains is the zone.
+	if slash := strings.IndexByte(remainder, '/'); slash >= 0 {
+		remainder = remainder[slash+1:]
+	} else {
+		remainder = ""
+	}
 
 	decoded, err := decodePathSegments(remainder)
 	if err != nil {
@@ -133,6 +152,15 @@ func pathFromRoute(c echo.Context) (string, error) {
 
 // urlPathUnescape decodes one path segment.
 func urlPathUnescape(segment string) (string, error) { return url.PathUnescape(segment) }
+
+// routePrefix is the static part of a wildcard route, up to but not including the zone
+// parameter.
+func routePrefix(pattern string) string {
+	if index := strings.Index(pattern, "/:zone"); index >= 0 {
+		return pattern[:index]
+	}
+	return ""
+}
 
 // decodePathSegments unescapes each element of a path separately, so that an encoded slash
 // inside a name stays part of that name rather than becoming a separator.
@@ -150,11 +178,17 @@ func decodePathSegments(raw string) (string, error) {
 	return strings.Join(out, "/"), nil
 }
 
-// listingLimit reads the limit parameter.
+// listingLimit reads the limit parameter, which a folder listing requires.
+//
+// Defaulting it would be worse than it looks: a caller that forgot it would silently receive
+// the first page of an arbitrarily large folder and have no way to know more existed. The
+// reference raises ERR_MISSING_QUERY_PARAMETER for the same reason.
 func listingLimit(c echo.Context) (int, error) {
 	raw := c.QueryParam("limit")
 	if raw == "" {
-		return DefaultListingLimit, nil
+		// The key is "parameters", not "param": that is what the reference's
+		// missing-arg validator attaches, and callers read it.
+		return 0, apierror.New(apierror.ErrMissingQueryParam).With("parameters", "limit")
 	}
 
 	limit, err := strconv.Atoi(raw)
@@ -234,10 +268,16 @@ func (h *Listings) FolderListing(c echo.Context) error {
 		return schemaError(err.Error())
 	}
 
+	entityType, err := icat.ResolveEntityType(c.QueryParam("entity-type"))
+	if err != nil {
+		return schemaError(err.Error())
+	}
+
 	infoTypes, includeUnknown := infoTypeFilter(c)
 
 	rows, err := scope.Listing(ctx, rods.ListingQuery{
 		Path:                   path,
+		EntityType:             entityType,
 		SortColumn:             column,
 		SortDirection:          icat.ResolveSortDirection(c.QueryParam("sort-dir")),
 		Limit:                  limit,
@@ -249,7 +289,7 @@ func (h *Listings) FolderListing(c echo.Context) error {
 		return err
 	}
 
-	rule := badNameRule(c, h.deps.BadChars)
+	rule := badNameRule(c)
 
 	// The folder describes itself with the same fields as one of its entries.
 	self := service.ListingEntry{
@@ -262,7 +302,17 @@ func (h *Listings) FolderListing(c echo.Context) error {
 		Permission:   string(stat.Permission),
 	}
 
-	return writeJSONOK(c, service.ListingOf(self, rows, rule))
+	listing := service.ListingOf(self, rows, rule)
+
+	readme, err := h.findReadme(ctx, scope, path, rule)
+	if err != nil {
+		return err
+	}
+	if readme != nil {
+		listing.Readme = readme
+	}
+
+	return writeJSONOK(c, listing)
 }
 
 // pathBase is the last element of an iRODS path.
@@ -289,8 +339,13 @@ func infoTypeFilter(c echo.Context) (types []string, includeUnknown bool) {
 }
 
 // badNameRule reads the parameters a client uses to have entries flagged as unrenderable.
-func badNameRule(c echo.Context, defaultChars string) service.BadNameRule {
-	chars := defaultChars
+//
+// The characters come from the request and nowhere else. The service's own bad-chars
+// setting governs what may be used in a *new* name; applying it here would flag existing
+// files that are perfectly displayable, so a name containing an apostrophe would come back
+// marked bad for a caller that never asked.
+func badNameRule(c echo.Context) service.BadNameRule {
+	var chars string
 	if supplied, ok := c.QueryParams()["bad-chars"]; ok && len(supplied) > 0 {
 		chars = supplied[0]
 	}
@@ -336,7 +391,8 @@ func (h *Listings) UUIDForPath(c echo.Context) error {
 	}
 	defer scope.Close()
 
-	if err := requireKnownUser(ctx, scope, user, false); err != nil {
+	// This route validates through clj-irods, whose envelopes are plural throughout.
+	if err := requireKnownUser(ctx, scope, user, true); err != nil {
 		return err
 	}
 
@@ -348,7 +404,7 @@ func (h *Listings) UUIDForPath(c echo.Context) error {
 		return apierror.New(apierror.ErrDoesNotExist).With("paths", []string{path})
 	}
 	if !permits(stat.Permission, rods.PermissionRead) {
-		return apierror.New(apierror.ErrNotReadable).With("path", path).With("user", user)
+		return apierror.New(apierror.ErrNotReadable).With("paths", []string{path}).With("user", user)
 	}
 
 	return writeJSONOK(c, map[string]string{"id": stat.UUID})
@@ -370,10 +426,12 @@ func (h *Listings) Head(c echo.Context) error {
 		return schemaError("data-id must be a UUID")
 	}
 
-	user := c.QueryParam("user")
-	if strings.TrimSpace(user) == "" {
-		return apierror.New(apierror.ErrIllegalArgument).
-			WithStatus(http.StatusUnprocessableEntity).With("param", "user")
+	// A missing user is a schema failure, like everywhere else: the route declares it as
+	// a required non-blank parameter. The 422 below is for a user that parses but does
+	// not exist, which is a different answer.
+	user, err := requireUser(c)
+	if err != nil {
+		return err
 	}
 
 	scope, err := h.deps.OpenScope(ctx, user)
@@ -409,4 +467,70 @@ func (h *Listings) Head(c echo.Context) error {
 	}
 
 	return c.NoContent(http.StatusOK)
+}
+
+// findReadme looks for a README directly under a folder, returning nil when there is none.
+//
+// The names are tried in a fixed order and the first that exists wins, matching the
+// reference. A folder that has one reports the whole entry rather than a flag, because the
+// UI renders it.
+//
+// The lookups are dispatched together and then awaited, so six probes cost one round of
+// concurrent work rather than six sequential ones.
+func (h *Listings) findReadme(ctx context.Context, scope *rods.Scope, folder string, rule service.BadNameRule) (any, error) {
+	stats := make([]*lazy.Value[rods.Stat], 0, len(service.ReadmeNames))
+	for _, name := range service.ReadmeNames {
+		stats = append(stats, scope.Stat(ctx, folder+"/"+name))
+	}
+
+	for i, value := range stats {
+		stat, err := value.Get(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if !stat.Exists || stat.Type != rods.ObjectTypeFile {
+			continue
+		}
+
+		return service.ListingEntry{
+			ID:           stat.UUID,
+			DateCreated:  stat.CreatedMS,
+			DateModified: stat.ModifiedMS,
+			BadName:      rule.Matches(stat.Path, service.ReadmeNames[i]),
+			InfoType:     infoTypeOrNil(stat.InfoType),
+			Name:         service.ReadmeNames[i],
+			Path:         stat.Path,
+			Permission:   string(stat.Permission),
+			Size:         stat.Size,
+		}, nil
+	}
+
+	return nil, nil
+}
+
+// infoTypeOrNil reports null rather than an empty string when a file has no info type.
+func infoTypeOrNil(infoType string) any {
+	if infoType == "" {
+		return nil
+	}
+	return infoType
+}
+
+// requireExists reports a path that is not in the catalog at all, asking as the service's
+// own account so that a path the caller merely cannot see is not reported as missing.
+func (h *Listings) requireExists(ctx context.Context, path string) error {
+	proxy, err := h.deps.OpenProxyScope(ctx)
+	if err != nil {
+		return err
+	}
+	defer proxy.Close()
+
+	stat, err := proxy.Stat(ctx, path).Get(ctx)
+	if err != nil {
+		return err
+	}
+	if !stat.Exists {
+		return apierror.New(apierror.ErrDoesNotExist).With("paths", []string{path})
+	}
+	return nil
 }

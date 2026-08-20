@@ -32,6 +32,30 @@ var sortColumns = map[string]SortColumn{
 	"data_size":    "data_size",
 }
 
+// EntityType selects what a listing contains.
+type EntityType string
+
+// The entity types. EntityAny is the default.
+const (
+	EntityAny    EntityType = "any"
+	EntityFile   EntityType = "file"
+	EntityFolder EntityType = "folder"
+)
+
+// ResolveEntityType maps an entity-type parameter onto a type, defaulting to any.
+func ResolveEntityType(value string) (EntityType, error) {
+	switch EntityType(strings.ToLower(strings.TrimSpace(value))) {
+	case "", EntityAny:
+		return EntityAny, nil
+	case EntityFile:
+		return EntityFile, nil
+	case EntityFolder:
+		return EntityFolder, nil
+	default:
+		return "", fmt.Errorf("icat: %q is not an entity type", value)
+	}
+}
+
 // DefaultSortColumn is what an unspecified sort-field means.
 const DefaultSortColumn SortColumn = "base_name"
 
@@ -81,9 +105,14 @@ type ListingQuery struct {
 	// InfoTypes filters data objects by info type. Empty means no filtering.
 	InfoTypes []string
 
-	// IncludeUnknownInfoType keeps objects with no info type when InfoTypes is set. The
-	// reference spells this by including "unknown" in the info-type list.
+	// IncludeUnknownInfoType keeps objects that have no info type. It is independent of
+	// InfoTypes: asking for only untyped objects is a real request, spelled in the
+	// reference by naming "unknown" and nothing else, and it must not be read as no
+	// filtering at all.
 	IncludeUnknownInfoType bool
+
+	// EntityType selects what the listing contains.
+	EntityType EntityType
 
 	InfoTypeAttribute string
 
@@ -155,12 +184,17 @@ func pagedFolder(ctx context.Context, qr queryer, q ListingQuery) ([]ListingRow,
 		attribute = DefaultInfoTypeAttribute
 	}
 
+	entityType := q.EntityType
+	if entityType == "" {
+		entityType = EntityAny
+	}
+
 	statement := fmt.Sprintf(sqlPagedFolder, column, direction)
 
 	var rows []ListingRow
 	err := qr.SelectContext(ctx, &rows, statement,
 		strings.TrimRight(q.Path, "/"), q.User, q.Zone, groupIDs,
-		infoTypes, q.IncludeUnknownInfoType, q.Limit, q.Offset, attribute)
+		infoTypes, q.IncludeUnknownInfoType, q.Limit, q.Offset, attribute, string(entityType))
 	if err != nil {
 		return nil, fmt.Errorf("icat: listing %q: %w", q.Path, err)
 	}
@@ -175,4 +209,39 @@ func isKnownSortColumn(column SortColumn) bool {
 		}
 	}
 	return false
+}
+
+//go:embed sql/folders_in_folder.sql
+var sqlFoldersInFolder string
+
+// FoldersInFolder returns every subfolder of a collection, unpaged.
+func (s *PGStore) FoldersInFolder(ctx context.Context, q ListingQuery) ([]ListingRow, error) {
+	return foldersInFolder(ctx, s.queryer(), q)
+}
+
+// FoldersInFolder returns every subfolder of a collection, unpaged.
+func (t *pgTx) FoldersInFolder(ctx context.Context, q ListingQuery) ([]ListingRow, error) {
+	return foldersInFolder(ctx, t.queryer(), q)
+}
+
+func foldersInFolder(ctx context.Context, qr queryer, q ListingQuery) ([]ListingRow, error) {
+	if q.Path == "" {
+		return nil, fmt.Errorf("icat: a path is required")
+	}
+	if len(q.GroupIDs) == 0 && (q.User == "" || q.Zone == "") {
+		return nil, fmt.Errorf("icat: a user and zone are required when resolving groups")
+	}
+
+	var groupIDs any
+	if len(q.GroupIDs) > 0 {
+		groupIDs = pq.Array(q.GroupIDs)
+	}
+
+	var rows []ListingRow
+	err := qr.SelectContext(ctx, &rows, sqlFoldersInFolder,
+		strings.TrimRight(q.Path, "/"), q.User, q.Zone, groupIDs)
+	if err != nil {
+		return nil, fmt.Errorf("icat: listing subfolders of %q: %w", q.Path, err)
+	}
+	return rows, nil
 }

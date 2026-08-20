@@ -113,3 +113,52 @@ cases:
     method: HEAD
     path: /data/00000000-0000-0000-0000-000000000000
     query: {user: nosuchuser}
+
+  # Cases a review found missing. Written now so the harness, not a reviewer, catches the
+  # next regression in them.
+  - id: folder-listing-entity-type-folder
+    tier: read
+    method: GET
+    path: /data/path{{.Root}}
+    query: {user: "{{.User}}", limit: "50", entity-type: folder}
+
+  - id: folder-listing-entity-type-file
+    tier: read
+    method: GET
+    path: /data/path{{.Root}}
+    query: {user: "{{.User}}", limit: "50", entity-type: file}
+
+  - id: folder-listing-info-type-unknown-only
+    tier: read
+    method: GET
+    path: /data/path{{.Root}}
+    query: {user: "{{.User}}", limit: "50", info-type: unknown}
+
+  - id: folder-listing-info-type-named
+    tier: read
+    method: GET
+    path: /data/path{{.Root}}
+    query: {user: "{{.User}}", limit: "50", info-type: csv}
+
+  - id: folder-listing-no-limit
+    tier: read
+    method: GET
+    path: /data/path{{.Root}}
+    query: {user: "{{.User}}"}
+
+  - id: folder-listing-no-bad-chars
+    tier: read
+    method: GET
+    path: /data/path{{.Root}}
+    query: {user: "{{.User}}", limit: "50"}
+
+  - id: data-uuid-unknown-user
+    tier: read
+    method: GET
+    path: /data/uuid
+    query: {user: nosuchuser, path: "{{.Root}}"}
+
+  - id: head-no-user
+    tier: read
+    method: HEAD
+    path: /data/00000000-0000-0000-0000-000000000000

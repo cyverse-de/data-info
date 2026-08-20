@@ -39,6 +39,9 @@ type Fake struct {
 	// Users maps an account name onto its kind.
 	Users map[string]icat.UserKind
 
+	// Groups maps an account name onto the groups it belongs to.
+	Groups map[string][]string
+
 	// Err, when set, is returned by every query.
 	Err error
 
@@ -48,12 +51,13 @@ type Fake struct {
 
 	// Counters record how often each query ran, so a test can prove that a batched call
 	// really was one query and that memoized lookups really did not repeat.
-	GetItemsCalls      atomic.Int64
-	PermsCalls         atomic.Int64
-	UserGroupIDsCalls  atomic.Int64
-	CountChildrenCalls atomic.Int64
-	PagedFolderCalls   atomic.Int64
-	PathsPerGetItems   []int
+	GetItemsCalls        atomic.Int64
+	PermsCalls           atomic.Int64
+	UserGroupIDsCalls    atomic.Int64
+	CountChildrenCalls   atomic.Int64
+	PagedFolderCalls     atomic.Int64
+	FoldersInFolderCalls atomic.Int64
+	PathsPerGetItems     []int
 }
 
 var _ icat.Store = (*Fake)(nil)
@@ -66,6 +70,7 @@ func New() *Fake {
 		Children: map[string]icat.ChildCounts{},
 		UUIDs:    map[string]string{},
 		Users:    map[string]icat.UserKind{},
+		Groups:   map[string][]string{},
 		GroupIDs: []int64{1, 2},
 	}
 }
@@ -187,6 +192,27 @@ func (f *Fake) AddUser(name string, kind icat.UserKind) {
 	f.Users[name] = kind
 }
 
+// SetGroups records the groups an account belongs to.
+func (f *Fake) SetGroups(user string, groups ...string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.Groups[user] = groups
+}
+
+// UserGroupNames implements icat.Reader.
+func (f *Fake) UserGroupNames(ctx context.Context, user, _ string) ([]string, error) {
+	if err := f.wait(ctx); err != nil {
+		return nil, err
+	}
+	if f.Err != nil {
+		return nil, f.Err
+	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.Groups[user], nil
+}
+
 // LookupUser implements icat.Reader.
 func (f *Fake) LookupUser(ctx context.Context, user, _ string) (icat.UserKind, error) {
 	if err := f.wait(ctx); err != nil {
@@ -290,9 +316,20 @@ func (f *Fake) PagedFolder(ctx context.Context, q icat.ListingQuery) ([]icat.Lis
 	children := make([]icat.Row, 0)
 	prefix := strings.TrimRight(q.Path, "/") + "/"
 	for p, row := range f.Rows {
-		if strings.HasPrefix(p, prefix) && !strings.Contains(strings.TrimPrefix(p, prefix), "/") {
-			children = append(children, row)
+		if !strings.HasPrefix(p, prefix) || strings.Contains(strings.TrimPrefix(p, prefix), "/") {
+			continue
 		}
+		switch q.EntityType {
+		case icat.EntityFile:
+			if row.IsCollection() {
+				continue
+			}
+		case icat.EntityFolder:
+			if !row.IsCollection() {
+				continue
+			}
+		}
+		children = append(children, row)
 	}
 	f.mu.Unlock()
 
@@ -301,11 +338,13 @@ func (f *Fake) PagedFolder(ctx context.Context, q icat.ListingQuery) ([]icat.Lis
 		if children[i].Type != children[j].Type {
 			return children[i].Type == icat.ObjectTypeCollection
 		}
-		less := compareRows(children[i], children[j], q.SortColumn)
+		// Invert by swapping the operands rather than negating the result: negation
+		// reports true in both directions for equal keys, which is not a strict weak
+		// ordering and makes a stable sort reverse equal runs.
 		if q.SortDirection == icat.SortDescending {
-			return !less
+			return compareRows(children[j], children[i], q.SortColumn)
 		}
-		return less
+		return compareRows(children[i], children[j], q.SortColumn)
 	})
 
 	total := int64(len(children))
@@ -336,6 +375,28 @@ func compareRows(a, b icat.Row, column icat.SortColumn) bool {
 	default:
 		return a.BaseName < b.BaseName
 	}
+}
+
+// FoldersInFolder implements icat.Reader.
+func (f *Fake) FoldersInFolder(ctx context.Context, q icat.ListingQuery) ([]icat.ListingRow, error) {
+	f.FoldersInFolderCalls.Add(1)
+
+	folders := q
+	folders.EntityType = icat.EntityFolder
+	folders.SortColumn = "base_name"
+	folders.SortDirection = icat.SortAscending
+	folders.Limit = 1 << 30
+	folders.Offset = 0
+
+	rows, err := f.PagedFolder(ctx, folders)
+	if err != nil {
+		return nil, err
+	}
+	// Unpaged, so it carries no total.
+	for i := range rows {
+		rows[i].TotalCount = sql.NullInt64{}
+	}
+	return rows, nil
 }
 
 // WithTx implements icat.Store.

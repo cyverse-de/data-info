@@ -17,6 +17,7 @@
 -- $5 info types to keep, or NULL for all
 -- $6 whether an object with no info type is kept when $5 is set
 -- $7 limit, $8 offset
+-- $10 entity type: any, file or folder
 -- The sort column and direction are interpolated by the caller from a fixed table; they are
 -- identifiers and cannot be parameters.
 WITH groups AS (
@@ -61,7 +62,8 @@ folders AS (
       FROM r_coll_main c
       JOIN avus ca ON ca.object_id = c.coll_id
       JOIN r_objt_access a ON c.coll_id = a.object_id
-     WHERE c.parent_coll_name = $1
+     WHERE $10 IN ('any', 'folder')
+       AND c.parent_coll_name = $1
        -- Soft links are catalogued as collections but are not folders the DE shows.
        AND c.coll_type != 'linkPoint'
        AND ca.meta_attr_name = 'ipc_UUID'
@@ -84,10 +86,15 @@ files AS (
       JOIN avus m ON d.data_id = m.object_id
       JOIN r_objt_access a ON d.data_id = a.object_id
       LEFT JOIN (SELECT * FROM avus WHERE meta_attr_name = $9) f ON d.data_id = f.object_id
-     WHERE a.user_id IN (SELECT group_user_id FROM groups)
+     WHERE $10 IN ('any', 'file')
+       AND a.user_id IN (SELECT group_user_id FROM groups)
        AND m.meta_attr_name = 'ipc_UUID'
-       AND ($5::text[] IS NULL
-            OR lower(COALESCE(f.meta_attr_value, '')) = ANY($5::text[])
+       -- $6 says whether objects with no info type are kept. It is set independently of
+       -- $5, because asking for only untyped objects is a real request: the reference
+       -- spells it by naming "unknown" in the info-type list, and it must not be read as
+       -- "no filter at all".
+       AND (($5::text[] IS NULL AND NOT $6::boolean)
+            OR ($5::text[] IS NOT NULL AND lower(COALESCE(f.meta_attr_value, '')) = ANY($5::text[]))
             OR ($6::boolean AND COALESCE(f.meta_attr_value, '') = ''))
      GROUP BY type, uuid, full_path, base_name, info_type, data_size,
               d.create_ts, d.modify_ts, data_checksum

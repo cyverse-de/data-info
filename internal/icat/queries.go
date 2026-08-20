@@ -33,6 +33,9 @@ var (
 
 	//go:embed sql/user_exists.sql
 	sqlUserExists string
+
+	//go:embed sql/user_groups.sql
+	sqlUserGroups string
 )
 
 // UserKind distinguishes an account from a group.
@@ -214,6 +217,28 @@ func lookupUser(ctx context.Context, qr queryer, user, zone string) (UserKind, e
 		return UserKindNone, nil
 	}
 	return kinds[0], nil
+}
+
+// UserGroupNames returns the names of the groups a user belongs to.
+func (s *PGStore) UserGroupNames(ctx context.Context, user, zone string) ([]string, error) {
+	return userGroupNames(ctx, s.queryer(), user, zone)
+}
+
+// UserGroupNames returns the names of the groups a user belongs to.
+func (t *pgTx) UserGroupNames(ctx context.Context, user, zone string) ([]string, error) {
+	return userGroupNames(ctx, t.queryer(), user, zone)
+}
+
+func userGroupNames(ctx context.Context, qr queryer, user, zone string) ([]string, error) {
+	if user == "" || zone == "" {
+		return nil, fmt.Errorf("icat: a username and zone are required")
+	}
+
+	var names []string
+	if err := qr.SelectContext(ctx, &names, sqlUserGroups, user, zone); err != nil {
+		return nil, fmt.Errorf("icat: listing groups for %q: %w", user, err)
+	}
+	return names, nil
 }
 
 // PathsForUUIDs resolves data ids to paths.

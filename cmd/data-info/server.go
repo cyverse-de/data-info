@@ -124,7 +124,12 @@ func registerDataRoutes(e *echo.Echo, cfg *config.Config, deps Deps) {
 	// The wildcard routes carry an iRODS path, which may contain characters echo would
 	// otherwise treat as structure.
 	e.GET("/navigation/path/:zone/*", listings.Navigation, ok)
-	e.GET("/data/path/:zone/*", listings.FolderListing, ok)
+
+	// Trap-style, unlike its neighbour above: the data routes are wrapped in svc/trap in
+	// the reference, so their codes map through the status table rather than all
+	// answering 500. Verified against the running service, which answers a missing limit
+	// with a 400.
+	e.GET("/data/path/:zone/*", listings.FolderListing)
 }
 
 // layoutOf describes the zone's namespace from the service configuration.

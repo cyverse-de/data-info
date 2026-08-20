@@ -38,8 +38,8 @@ func TestFolderListing(t *testing.T) {
 	fake.AddCollection(testHome+"/sub", icat.AccessOwn)
 
 	listings := NewListings(deps)
-	rec := serveRoute(t, apierror.StyleOK, http.MethodGet, "/data/path/:zone/*",
-		"/data/path/iplant/home/wregglej?user="+testUser, listings.FolderListing)
+	rec := serveRoute(t, apierror.StyleTrap, http.MethodGet, "/data/path/:zone/*",
+		"/data/path/iplant/home/wregglej?user="+testUser+"&limit=50", listings.FolderListing)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (%s)", rec.Code, rec.Body.String())
@@ -90,8 +90,8 @@ func TestListingSortOrderIsPassedThrough(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rec := serveRoute(t, apierror.StyleOK, http.MethodGet, "/data/path/:zone/*",
-				"/data/path/iplant/home/wregglej?user="+testUser+"&"+tt.query, listings.FolderListing)
+			rec := serveRoute(t, apierror.StyleTrap, http.MethodGet, "/data/path/:zone/*",
+				"/data/path/iplant/home/wregglej?user="+testUser+"&limit=50&"+tt.query, listings.FolderListing)
 
 			var listing service.Listing
 			if err := json.Unmarshal(rec.Body.Bytes(), &listing); err != nil {
@@ -120,8 +120,8 @@ func TestListingRejectsUnsortableField(t *testing.T) {
 	deps, _ := testDeps(t)
 	listings := NewListings(deps)
 
-	rec := serveRoute(t, apierror.StyleOK, http.MethodGet, "/data/path/:zone/*",
-		"/data/path/iplant/home/wregglej?user="+testUser+"&sort-field=nonsense", listings.FolderListing)
+	rec := serveRoute(t, apierror.StyleTrap, http.MethodGet, "/data/path/:zone/*",
+		"/data/path/iplant/home/wregglej?user="+testUser+"&limit=50&sort-field=nonsense", listings.FolderListing)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400 (%s)", rec.Code, rec.Body.String())
@@ -149,8 +149,8 @@ func TestPathsWithAwkwardCharacters(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			fake.AddCollection(tt.wantPath, icat.AccessOwn)
 
-			rec := serveRoute(t, apierror.StyleOK, http.MethodGet, "/data/path/:zone/*",
-				tt.target+"?user="+testUser, listings.FolderListing)
+			rec := serveRoute(t, apierror.StyleTrap, http.MethodGet, "/data/path/:zone/*",
+				tt.target+"?user="+testUser+"&limit=50", listings.FolderListing)
 
 			if rec.Code != http.StatusOK {
 				t.Errorf("status = %d, want 200 (%s); the path was mangled", rec.Code, rec.Body.String())
@@ -206,7 +206,9 @@ func TestHeadStatuses(t *testing.T) {
 		// fails schema coercion before the handler runs. Verified against the reference.
 		{"not a uuid", "/data/not-a-uuid?user=" + testUser, http.StatusBadRequest},
 		{"unknown user", "/data/11111111-2222-3333-4444-555555555555?user=nobody", http.StatusUnprocessableEntity},
-		{"no user", "/data/11111111-2222-3333-4444-555555555555", http.StatusUnprocessableEntity},
+		// A missing user is a schema failure, so a 400. The 422 above is for a user that
+		// parses but does not exist, which is a different answer.
+		{"no user", "/data/11111111-2222-3333-4444-555555555555", http.StatusBadRequest},
 	}
 
 	for _, tt := range tests {
@@ -231,5 +233,159 @@ func TestUUIDForPath(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (%s)", rec.Code, rec.Body.String())
+	}
+}
+
+// TestListingRequiresLimit covers a parameter the reference makes mandatory. Defaulting it
+// would silently hand a caller the first page of an arbitrarily large folder with no way to
+// know more existed.
+func TestListingRequiresLimit(t *testing.T) {
+	deps, _ := testDeps(t)
+	listings := NewListings(deps)
+
+	// Trap-style, as the data routes are in the reference, so the status table applies.
+	rec := serveRoute(t, apierror.StyleTrap, http.MethodGet, "/data/path/:zone/*",
+		"/data/path/iplant/home/wregglej?user="+testUser, listings.FolderListing)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", rec.Code)
+	}
+
+	var envelope map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decoding: %v", err)
+	}
+	if envelope["error_code"] != string(apierror.ErrMissingQueryParam) {
+		t.Errorf("error_code = %v, want %s", envelope["error_code"], apierror.ErrMissingQueryParam)
+	}
+	if envelope["parameters"] != "limit" {
+		t.Errorf("parameters = %v, want limit", envelope["parameters"])
+	}
+}
+
+// TestEntityTypeSelectsWhatIsListed covers a parameter that was being dropped, which made a
+// folders-only listing return files as well and report a total counting both.
+func TestEntityTypeSelectsWhatIsListed(t *testing.T) {
+	deps, fake := testDeps(t)
+	fake.AddCollection(testHome+"/sub", icat.AccessOwn)
+	listings := NewListings(deps)
+
+	tests := []struct {
+		entityType  string
+		wantFiles   int
+		wantFolders int
+	}{
+		{"", 1, 1},
+		{"any", 1, 1},
+		{"file", 1, 0},
+		{"folder", 0, 1},
+	}
+
+	for _, tt := range tests {
+		t.Run("entity-type="+tt.entityType, func(t *testing.T) {
+			rec := serveRoute(t, apierror.StyleTrap, http.MethodGet, "/data/path/:zone/*",
+				"/data/path/iplant/home/wregglej?user="+testUser+"&limit=50&entity-type="+tt.entityType,
+				listings.FolderListing)
+
+			var listing service.Listing
+			if err := json.Unmarshal(rec.Body.Bytes(), &listing); err != nil {
+				t.Fatalf("decoding: %v (%s)", err, rec.Body.String())
+			}
+			if len(listing.Files) != tt.wantFiles {
+				t.Errorf("files = %d, want %d", len(listing.Files), tt.wantFiles)
+			}
+			if len(listing.Folders) != tt.wantFolders {
+				t.Errorf("folders = %d, want %d", len(listing.Folders), tt.wantFolders)
+			}
+		})
+	}
+}
+
+// TestBadNameFlaggingComesFromTheRequest guards against the service's own bad-chars setting
+// leaking into listings. That setting governs what may be used in a new name; applying it
+// here would flag existing files that display perfectly well.
+func TestBadNameFlaggingComesFromTheRequest(t *testing.T) {
+	deps, fake := testDeps(t)
+	deps.BadChars = "'"
+	fake.AddDataObject(testHome+"/it's.txt", 1, icat.AccessRead)
+	listings := NewListings(deps)
+
+	rec := serveRoute(t, apierror.StyleTrap, http.MethodGet, "/data/path/:zone/*",
+		"/data/path/iplant/home/wregglej?user="+testUser+"&limit=50", listings.FolderListing)
+
+	var listing service.Listing
+	if err := json.Unmarshal(rec.Body.Bytes(), &listing); err != nil {
+		t.Fatalf("decoding: %v (%s)", err, rec.Body.String())
+	}
+	for _, f := range listing.Files {
+		if f.Name == "it's.txt" && f.BadName {
+			t.Error("a name was flagged from the service default rather than the request")
+		}
+	}
+
+	// Asked for explicitly, it is flagged.
+	rec = serveRoute(t, apierror.StyleTrap, http.MethodGet, "/data/path/:zone/*",
+		"/data/path/iplant/home/wregglej?user="+testUser+"&limit=50&bad-chars=%27", listings.FolderListing)
+	if err := json.Unmarshal(rec.Body.Bytes(), &listing); err != nil {
+		t.Fatalf("decoding: %v", err)
+	}
+	var flagged bool
+	for _, f := range listing.Files {
+		if f.Name == "it's.txt" {
+			flagged = f.BadName
+		}
+	}
+	if !flagged {
+		t.Error("a name the caller asked about was not flagged")
+	}
+}
+
+// TestReadmeIsReported covers a field that was hard-coded false, which would have been a
+// silent regression for the UI that renders it.
+func TestReadmeIsReported(t *testing.T) {
+	deps, fake := testDeps(t)
+	listings := NewListings(deps)
+
+	rec := serveRoute(t, apierror.StyleTrap, http.MethodGet, "/data/path/:zone/*",
+		"/data/path/iplant/home/wregglej?user="+testUser+"&limit=50", listings.FolderListing)
+	var listing service.Listing
+	if err := json.Unmarshal(rec.Body.Bytes(), &listing); err != nil {
+		t.Fatalf("decoding: %v", err)
+	}
+	if listing.Readme != false {
+		t.Errorf("readme = %v, want false when there is none", listing.Readme)
+	}
+
+	fake.AddDataObject(testHome+"/README.md", 12, icat.AccessRead)
+
+	rec = serveRoute(t, apierror.StyleTrap, http.MethodGet, "/data/path/:zone/*",
+		"/data/path/iplant/home/wregglej?user="+testUser+"&limit=50", listings.FolderListing)
+	if err := json.Unmarshal(rec.Body.Bytes(), &listing); err != nil {
+		t.Fatalf("decoding: %v", err)
+	}
+
+	entry, ok := listing.Readme.(map[string]any)
+	if !ok {
+		t.Fatalf("readme = %v, want the entry", listing.Readme)
+	}
+	if entry["name"] != "README.md" {
+		t.Errorf("readme name = %v, want README.md", entry["name"])
+	}
+}
+
+// TestZoneSharingARouteName covers a path-parsing bug: searching the whole URL for the zone
+// name finds the route prefix instead when the two coincide.
+func TestZoneSharingARouteName(t *testing.T) {
+	deps, fake := testDeps(t)
+	deps.Layout.Zone = "data"
+	fake.AddCollection("/data/home/wregglej", icat.AccessOwn)
+	listings := NewListings(deps)
+
+	rec := serveRoute(t, apierror.StyleTrap, http.MethodGet, "/data/path/:zone/*",
+		"/data/path/data/home/wregglej?user="+testUser+"&limit=50", listings.FolderListing)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200 (%s); the zone was resolved against the route prefix",
+			rec.Code, rec.Body.String())
 	}
 }
