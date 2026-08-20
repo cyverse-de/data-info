@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/cyverse-de/data-info/internal/icat"
 )
@@ -29,6 +30,10 @@ type Fake struct {
 
 	// Err, when set, is returned by every query.
 	Err error
+
+	// Delay, when set, is how long every query takes. A fake that answers instantly
+	// cannot saturate a semaphore, so it cannot surface a starvation deadlock.
+	Delay time.Duration
 
 	// Counters record how often each query ran, so a test can prove that a batched call
 	// really was one query and that memoized lookups really did not repeat.
@@ -88,8 +93,11 @@ func (f *Fake) AddPerm(p, user, zone string, accessTypeID int64) {
 }
 
 // UserGroupIDs implements icat.Reader.
-func (f *Fake) UserGroupIDs(context.Context, string, string) ([]int64, error) {
+func (f *Fake) UserGroupIDs(ctx context.Context, _, _ string) ([]int64, error) {
 	f.UserGroupIDsCalls.Add(1)
+	if err := f.wait(ctx); err != nil {
+		return nil, err
+	}
 	if f.Err != nil {
 		return nil, f.Err
 	}
@@ -97,8 +105,11 @@ func (f *Fake) UserGroupIDs(context.Context, string, string) ([]int64, error) {
 }
 
 // GetItems implements icat.Reader.
-func (f *Fake) GetItems(_ context.Context, q icat.ItemQuery) ([]icat.Row, error) {
+func (f *Fake) GetItems(ctx context.Context, q icat.ItemQuery) ([]icat.Row, error) {
 	f.GetItemsCalls.Add(1)
+	if err := f.wait(ctx); err != nil {
+		return nil, err
+	}
 
 	f.mu.Lock()
 	f.PathsPerGetItems = append(f.PathsPerGetItems, len(q.Paths))
@@ -121,8 +132,11 @@ func (f *Fake) GetItems(_ context.Context, q icat.ItemQuery) ([]icat.Row, error)
 }
 
 // PermsForItems implements icat.Reader.
-func (f *Fake) PermsForItems(_ context.Context, paths []string) ([]icat.Perm, error) {
+func (f *Fake) PermsForItems(ctx context.Context, paths []string) ([]icat.Perm, error) {
 	f.PermsCalls.Add(1)
+	if err := f.wait(ctx); err != nil {
+		return nil, err
+	}
 	if f.Err != nil {
 		return nil, f.Err
 	}
@@ -135,6 +149,19 @@ func (f *Fake) PermsForItems(_ context.Context, paths []string) ([]icat.Perm, er
 		out = append(out, f.Perms[p]...)
 	}
 	return out, nil
+}
+
+// wait simulates query latency, so tests can saturate the caller's concurrency limits.
+func (f *Fake) wait(ctx context.Context) error {
+	if f.Delay <= 0 {
+		return nil
+	}
+	select {
+	case <-time.After(f.Delay):
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // WithTx implements icat.Store.

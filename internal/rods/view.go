@@ -76,7 +76,9 @@ var _ View = (*Scope)(nil)
 // item resolves one path's catalog row, answering from a published row when one is already
 // there. Every scalar accessor funnels through this, so asking for six facts about a path
 // costs one query.
-func (s *Scope) item(ctx context.Context, path string) *lazy.Value[icat.Row] {
+func (s *Scope) item(_ context.Context, path string) *lazy.Value[icat.Row] {
+	path = normalizePath(path)
+
 	return memoize(s, memoKey{kindItem, path}, func() *lazy.Value[icat.Row] {
 		// A batched load may already have answered this. Checking without waiting is the
 		// whole point: a listing that is still running must not stall a stat. The locked
@@ -85,9 +87,9 @@ func (s *Scope) item(ctx context.Context, path string) *lazy.Value[icat.Row] {
 			return lazy.Resolved(row)
 		}
 
-		groups := s.groupIDsLocked(ctx)
+		groups := s.groupIDsLocked(s.ctx)
 
-		return lazy.Go(ctx, s.catalogSem, func(ctx context.Context) (icat.Row, error) {
+		return lazy.Go(s.ctx, s.catalogSem, func(ctx context.Context) (icat.Row, error) {
 			if row, ok := s.peekRow(path); ok {
 				return row, nil
 			}
@@ -118,9 +120,10 @@ func (s *Scope) item(ctx context.Context, path string) *lazy.Value[icat.Row] {
 // resolves to a Stat with Exists false rather than an error: callers routinely ask about
 // paths that may not be there, and the Clojure accessors behaved the same way.
 func (s *Scope) Stat(ctx context.Context, path string) *lazy.Value[Stat] {
+	path = normalizePath(path)
 	item := s.item(ctx, path)
 
-	return lazy.Go(ctx, nil, func(ctx context.Context) (Stat, error) {
+	return lazy.Go(s.ctx, nil, func(ctx context.Context) (Stat, error) {
 		row, err := item.Get(ctx)
 		if err != nil {
 			if errors.Is(err, icat.ErrNoSuchItem) {
@@ -133,13 +136,19 @@ func (s *Scope) Stat(ctx context.Context, path string) *lazy.Value[Stat] {
 }
 
 // Stats resolves many paths in one query.
-func (s *Scope) Stats(ctx context.Context, paths []string) *lazy.Value[map[string]Stat] {
-	return lazy.Go(ctx, s.catalogSem, func(ctx context.Context) (map[string]Stat, error) {
+func (s *Scope) Stats(_ context.Context, paths []string) *lazy.Value[map[string]Stat] {
+	paths = normalizePaths(paths)
+
+	// Resolved before the catalog slot is taken, not inside it. A goroutine holding a slot
+	// must never wait on a value that needs one.
+	groups := s.groupIDs(s.ctx)
+
+	return lazy.Go(s.ctx, s.catalogSem, func(ctx context.Context) (map[string]Stat, error) {
 		if len(paths) == 0 {
 			return map[string]Stat{}, nil
 		}
 
-		ids, err := s.groupIDs(ctx).Get(ctx)
+		ids, err := groups.Get(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -163,6 +172,13 @@ func (s *Scope) Stats(ctx context.Context, paths []string) *lazy.Value[map[strin
 		for _, row := range rows {
 			out[row.FullPath] = statOf(row)
 		}
+
+		// Record the absences too. Without this, a bulk request over paths that mostly do
+		// not exist -- which is the common shape, since callers ask about paths they are
+		// not sure about -- would send every follow-up lookup back to the catalog one at a
+		// time, reintroducing exactly the N+1 the batch exists to avoid.
+		s.recordAbsent(paths, out)
+
 		return out, nil
 	})
 }
@@ -171,7 +187,7 @@ func (s *Scope) Stats(ctx context.Context, paths []string) *lazy.Value[map[strin
 func (s *Scope) ObjectType(ctx context.Context, path string) *lazy.Value[ObjectType] {
 	stat := s.Stat(ctx, path)
 
-	return lazy.Go(ctx, nil, func(ctx context.Context) (ObjectType, error) {
+	return lazy.Go(s.ctx, nil, func(ctx context.Context) (ObjectType, error) {
 		st, err := stat.Get(ctx)
 		if err != nil {
 			return ObjectTypeNone, err
@@ -184,7 +200,7 @@ func (s *Scope) ObjectType(ctx context.Context, path string) *lazy.Value[ObjectT
 func (s *Scope) Permission(ctx context.Context, path string) *lazy.Value[Permission] {
 	stat := s.Stat(ctx, path)
 
-	return lazy.Go(ctx, nil, func(ctx context.Context) (Permission, error) {
+	return lazy.Go(s.ctx, nil, func(ctx context.Context) (Permission, error) {
 		st, err := stat.Get(ctx)
 		if err != nil {
 			return icat.PermissionNone, err
@@ -197,7 +213,7 @@ func (s *Scope) Permission(ctx context.Context, path string) *lazy.Value[Permiss
 func (s *Scope) UUID(ctx context.Context, path string) *lazy.Value[string] {
 	stat := s.Stat(ctx, path)
 
-	return lazy.Go(ctx, nil, func(ctx context.Context) (string, error) {
+	return lazy.Go(s.ctx, nil, func(ctx context.Context) (string, error) {
 		st, err := stat.Get(ctx)
 		if err != nil {
 			return "", err
@@ -210,9 +226,11 @@ func (s *Scope) UUID(ctx context.Context, path string) *lazy.Value[string] {
 //
 // The catalog query behind this is not scoped to the requesting user, so a handler must
 // confirm the user may see the path before calling it.
-func (s *Scope) ACL(ctx context.Context, path string) *lazy.Value[[]ACLEntry] {
+func (s *Scope) ACL(_ context.Context, path string) *lazy.Value[[]ACLEntry] {
+	path = normalizePath(path)
+
 	return memoize(s, memoKey{kindACL, path}, func() *lazy.Value[[]ACLEntry] {
-		return lazy.Go(ctx, s.catalogSem, func(ctx context.Context) ([]ACLEntry, error) {
+		return lazy.Go(s.ctx, s.catalogSem, func(ctx context.Context) ([]ACLEntry, error) {
 			perms, err := s.deps.ICAT.PermsForItems(ctx, []string{path})
 			if err != nil {
 				return nil, err
@@ -223,8 +241,10 @@ func (s *Scope) ACL(ctx context.Context, path string) *lazy.Value[[]ACLEntry] {
 }
 
 // ACLs resolves access lists for many paths in one query.
-func (s *Scope) ACLs(ctx context.Context, paths []string) *lazy.Value[map[string][]ACLEntry] {
-	return lazy.Go(ctx, s.catalogSem, func(ctx context.Context) (map[string][]ACLEntry, error) {
+func (s *Scope) ACLs(_ context.Context, paths []string) *lazy.Value[map[string][]ACLEntry] {
+	paths = normalizePaths(paths)
+
+	return lazy.Go(s.ctx, s.catalogSem, func(ctx context.Context) (map[string][]ACLEntry, error) {
 		if len(paths) == 0 {
 			return map[string][]ACLEntry{}, nil
 		}
@@ -243,6 +263,11 @@ func (s *Scope) ACLs(ctx context.Context, paths []string) *lazy.Value[map[string
 		for path, ps := range byPath {
 			out[path] = aclOf(ps)
 		}
+
+		// Seed the per-path memo, empty results included, so a handler that batches and
+		// then reports each path individually does not pay a round trip per path.
+		s.seedACLs(paths, out)
+
 		return out, nil
 	})
 }
@@ -252,9 +277,14 @@ func (s *Scope) ACLs(ctx context.Context, paths []string) *lazy.Value[map[string
 // This is the one read that goes over the protocol rather than the catalog. iRODS applies
 // its own visibility rules to metadata, and the Clojure service read AVUs through Jargon
 // for the same reason.
-func (s *Scope) AVUs(ctx context.Context, path string) *lazy.Value[[]AVU] {
+func (s *Scope) AVUs(_ context.Context, path string) *lazy.Value[[]AVU] {
+	path = normalizePath(path)
+
 	return memoize(s, memoKey{kindAVUs, path}, func() *lazy.Value[[]AVU] {
-		return lazy.Go(ctx, s.protocolSem, func(ctx context.Context) ([]AVU, error) {
+		s.protocol.Add(1)
+		return lazy.Go(s.ctx, s.protocolSem, func(ctx context.Context) ([]AVU, error) {
+			defer s.protocol.Done()
+
 			sess, err := s.session(ctx)
 			if err != nil {
 				return nil, err
@@ -265,9 +295,12 @@ func (s *Scope) AVUs(ctx context.Context, path string) *lazy.Value[[]AVU] {
 }
 
 // UserExists reports whether an iRODS account exists. Groups do not count.
-func (s *Scope) UserExists(ctx context.Context, user string) *lazy.Value[bool] {
+func (s *Scope) UserExists(_ context.Context, user string) *lazy.Value[bool] {
 	return memoize(s, memoKey{kindUserExists, user}, func() *lazy.Value[bool] {
-		return lazy.Go(ctx, s.protocolSem, func(ctx context.Context) (bool, error) {
+		s.protocol.Add(1)
+		return lazy.Go(s.ctx, s.protocolSem, func(ctx context.Context) (bool, error) {
+			defer s.protocol.Done()
+
 			sess, err := s.session(ctx)
 			if err != nil {
 				return false, err
@@ -277,10 +310,17 @@ func (s *Scope) UserExists(ctx context.Context, user string) *lazy.Value[bool] {
 	})
 }
 
-// UserGroups reports the groups a user belongs to, zone-qualified.
-func (s *Scope) UserGroups(ctx context.Context, user string) *lazy.Value[[]string] {
+// UserGroups reports the groups a user belongs to, as bare names.
+//
+// They are not zone-qualified. The endpoint that reports them appends the zone itself,
+// which is a distinction worth stating: a caller that assumed otherwise would compare
+// qualified names against bare ones and silently never match.
+func (s *Scope) UserGroups(_ context.Context, user string) *lazy.Value[[]string] {
 	return memoize(s, memoKey{kindUserGroups, user}, func() *lazy.Value[[]string] {
-		return lazy.Go(ctx, s.protocolSem, func(ctx context.Context) ([]string, error) {
+		s.protocol.Add(1)
+		return lazy.Go(s.ctx, s.protocolSem, func(ctx context.Context) ([]string, error) {
+			defer s.protocol.Done()
+
 			sess, err := s.session(ctx)
 			if err != nil {
 				return nil, err

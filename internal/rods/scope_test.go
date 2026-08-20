@@ -3,10 +3,13 @@ package rods
 import (
 	"context"
 	"errors"
+	"strconv"
 	"testing"
+	"time"
 
 	"github.com/cyverse-de/data-info/internal/icat"
 	"github.com/cyverse-de/data-info/internal/icattest"
+	"github.com/cyverse-de/data-info/internal/irodsclient"
 	"github.com/cyverse-de/data-info/internal/lazy"
 )
 
@@ -16,6 +19,21 @@ const (
 	testHome = "/iplant/home/wregglej"
 )
 
+// testPool returns a pool that never connects; the tests that need one only need it to be
+// non-nil, since they exercise catalog-backed reads.
+func testPool(t *testing.T) *irodsclient.Pool {
+	t.Helper()
+
+	pool, err := irodsclient.NewPool(irodsclient.Config{
+		Host: "irods.invalid", Port: 1247, Zone: testZone, ProxyUser: "rods",
+	})
+	if err != nil {
+		t.Fatalf("NewPool: %v", err)
+	}
+	t.Cleanup(pool.Close)
+	return pool
+}
+
 func testScope(t *testing.T) (*Scope, *icattest.Fake) {
 	t.Helper()
 
@@ -24,7 +42,10 @@ func testScope(t *testing.T) (*Scope, *icattest.Fake) {
 	fake.AddDataObject(testHome+"/a.txt", 100, icat.AccessRead)
 	fake.AddDataObject(testHome+"/b.txt", 200, icat.AccessWrite)
 
-	scope := Open(Deps{ICAT: fake, Zone: testZone}, Options{User: testUser})
+	scope, err := Open(context.Background(), Deps{ICAT: fake, IRODS: testPool(t), Zone: testZone}, Options{User: testUser})
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
 	t.Cleanup(scope.Close)
 	return scope, fake
 }
@@ -236,7 +257,10 @@ func TestErrorsPropagate(t *testing.T) {
 	fake := icattest.New()
 	fake.Err = errors.New("catalog is down")
 
-	scope := Open(Deps{ICAT: fake, Zone: testZone}, Options{User: testUser})
+	scope, err := Open(context.Background(), Deps{ICAT: fake, IRODS: testPool(t), Zone: testZone}, Options{User: testUser})
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
 	defer scope.Close()
 
 	ctx := context.Background()
@@ -261,4 +285,184 @@ func TestLookupsRunConcurrently(t *testing.T) {
 	if err := lazy.Await(ctx, lazy.Wait(a), lazy.Wait(b), lazy.Wait(c)); err != nil {
 		t.Fatalf("resolving: %v", err)
 	}
+}
+
+// TestConcurrentLookupsDoNotStarveTheGroupLookup covers a deadlock the earlier tests could
+// not see.
+//
+// Every permission-filtered catalog lookup waits on the user's group ids. When the group
+// lookup also needed a catalog slot, enough concurrent lookups would take every slot and
+// then all block waiting for a lookup that could never get one. The tests missed it because
+// the fake answered instantly, so the semaphore never filled; this one makes queries slow
+// enough to saturate it.
+func TestConcurrentLookupsDoNotStarveTheGroupLookup(t *testing.T) {
+	fake := icattest.New()
+	fake.Delay = 10 * time.Millisecond
+	for i := 0; i < 50; i++ {
+		fake.AddDataObject(testHome+"/f"+strconv.Itoa(i)+".txt", 1, icat.AccessRead)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	scope, err := Open(ctx, Deps{ICAT: fake, IRODS: testPool(t), Zone: testZone},
+		Options{User: testUser, CatalogParallelism: 5})
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer scope.Close()
+
+	values := make([]*lazy.Value[Stat], 0, 50)
+	for i := 0; i < 50; i++ {
+		values = append(values, scope.Stat(ctx, testHome+"/f"+strconv.Itoa(i)+".txt"))
+	}
+
+	for i, v := range values {
+		if _, err := v.Get(ctx); err != nil {
+			t.Fatalf("lookup %d failed, which means the catalog slots deadlocked: %v", i, err)
+		}
+	}
+}
+
+// TestBatchedStatsUnderConcurrency is the same hazard on the bulk path.
+func TestBatchedStatsUnderConcurrency(t *testing.T) {
+	fake := icattest.New()
+	fake.Delay = 10 * time.Millisecond
+	fake.AddCollection(testHome, icat.AccessOwn)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	scope, err := Open(ctx, Deps{ICAT: fake, IRODS: testPool(t), Zone: testZone},
+		Options{User: testUser, CatalogParallelism: 2})
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer scope.Close()
+
+	values := make([]*lazy.Value[map[string]Stat], 0, 10)
+	for i := 0; i < 10; i++ {
+		values = append(values, scope.Stats(ctx, []string{testHome}))
+	}
+	for i, v := range values {
+		if _, err := v.Get(ctx); err != nil {
+			t.Fatalf("batch %d failed, which means the catalog slots deadlocked: %v", i, err)
+		}
+	}
+}
+
+// TestAbsentPathsAfterABatchCostNothing covers the other half of batching. Callers ask
+// about paths they are unsure of, so a bulk request is often mostly absent paths; if only
+// the found ones were remembered, every follow-up lookup would go back to the catalog one
+// at a time.
+func TestAbsentPathsAfterABatchCostNothing(t *testing.T) {
+	scope, fake := testScope(t)
+	ctx := context.Background()
+
+	paths := []string{testHome}
+	for i := 0; i < 20; i++ {
+		paths = append(paths, testHome+"/missing"+strconv.Itoa(i)+".txt")
+	}
+
+	if _, err := scope.Stats(ctx, paths).Get(ctx); err != nil {
+		t.Fatalf("Stats: %v", err)
+	}
+	before := fake.GetItemsCalls.Load()
+
+	for _, p := range paths {
+		if _, err := scope.Stat(ctx, p).Get(ctx); err != nil {
+			t.Fatalf("Stat(%s): %v", p, err)
+		}
+	}
+
+	if after := fake.GetItemsCalls.Load(); after != before {
+		t.Errorf("looking up %d paths after a batch cost %d extra queries, want 0", len(paths), after-before)
+	}
+}
+
+// TestACLsAfterABatchCostNothing is the same guarantee for access lists.
+func TestACLsAfterABatchCostNothing(t *testing.T) {
+	scope, fake := testScope(t)
+	ctx := context.Background()
+
+	paths := []string{testHome, testHome + "/a.txt", testHome + "/no-perms.txt"}
+	fake.AddPerm(testHome, testUser, testZone, icat.AccessOwn)
+
+	if _, err := scope.ACLs(ctx, paths).Get(ctx); err != nil {
+		t.Fatalf("ACLs: %v", err)
+	}
+	before := fake.PermsCalls.Load()
+
+	for _, p := range paths {
+		if _, err := scope.ACL(ctx, p).Get(ctx); err != nil {
+			t.Fatalf("ACL(%s): %v", p, err)
+		}
+	}
+
+	if after := fake.PermsCalls.Load(); after != before {
+		t.Errorf("per-path lookups after a batch cost %d extra queries, want 0", after-before)
+	}
+}
+
+// TestTrailingSlashesAreNormalised guards the layer's job of hiding catalog spelling. The
+// catalog reports canonical paths, so a caller's trailing slash must not make a lookup miss
+// or repeat.
+func TestTrailingSlashesAreNormalised(t *testing.T) {
+	scope, fake := testScope(t)
+	ctx := context.Background()
+
+	if _, err := scope.Stats(ctx, []string{testHome + "/"}).Get(ctx); err != nil {
+		t.Fatalf("Stats: %v", err)
+	}
+	before := fake.GetItemsCalls.Load()
+
+	st, err := scope.Stat(ctx, testHome).Get(ctx)
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+	if !st.Exists {
+		t.Error("a path fetched with a trailing slash did not resolve without one")
+	}
+	if after := fake.GetItemsCalls.Load(); after != before {
+		t.Error("the trailing slash caused a redundant query")
+	}
+
+	withSlash, err := scope.Stat(ctx, testHome+"/").Get(ctx)
+	if err != nil {
+		t.Fatalf("Stat with a trailing slash: %v", err)
+	}
+	if withSlash.Path != st.Path {
+		t.Errorf("path = %q with a slash and %q without", withSlash.Path, st.Path)
+	}
+}
+
+func TestOpenValidates(t *testing.T) {
+	fake := icattest.New()
+	pool := testPool(t)
+
+	tests := []struct {
+		name string
+		deps Deps
+		opts Options
+	}{
+		{"no user", Deps{ICAT: fake, IRODS: pool, Zone: testZone}, Options{}},
+		{"no catalog", Deps{IRODS: pool, Zone: testZone}, Options{User: testUser}},
+		{"no pool", Deps{ICAT: fake, Zone: testZone}, Options{User: testUser}},
+		{"no zone", Deps{ICAT: fake, IRODS: pool}, Options{User: testUser}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := Open(context.Background(), tt.deps, tt.opts); err == nil {
+				t.Error("Open accepted an incomplete configuration")
+			}
+		})
+	}
+}
+
+// TestCloseIsIdempotent covers the deferred-Close-plus-explicit-Close pattern.
+func TestCloseIsIdempotent(t *testing.T) {
+	scope, _ := testScope(t)
+	scope.Close()
+	scope.Close()
 }

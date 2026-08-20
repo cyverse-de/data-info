@@ -64,7 +64,18 @@ func Failed[T any](err error) *Value[T] {
 }
 
 // Get waits for the computation and returns its result. ctx bounds only the wait.
+//
+// A result that is already there is returned even if ctx is done. Both cases of a two-way
+// select are ready in that situation and Go picks between them at random, so a caller
+// awaiting after its deadline passed would get the value or a cancellation depending on the
+// run -- which is both wrong, since the answer was sitting there, and unpleasant to debug.
 func (v *Value[T]) Get(ctx context.Context) (T, error) {
+	select {
+	case <-v.done:
+		return v.value, v.err
+	default:
+	}
+
 	select {
 	case <-v.done:
 		return v.value, v.err

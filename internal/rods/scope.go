@@ -22,6 +22,8 @@ package rods
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/cyverse-de/data-info/internal/icat"
@@ -76,14 +78,25 @@ type Scope struct {
 	deps Deps
 	opts Options
 
+	// ctx bounds every memoized computation. Memoized work is shared, so binding it to
+	// whichever caller happened to ask first would let one handler's short deadline kill
+	// a value the rest of the request still needs.
+	ctx    context.Context
+	cancel context.CancelFunc
+
 	catalogSem  *semaphore.Weighted
 	protocolSem *semaphore.Weighted
 
-	mu    sync.Mutex
-	memo  map[memoKey]any
-	rows  map[string]icat.Row
-	sess  *irodsclient.Session
-	group *lazy.Value[[]int64]
+	mu     sync.Mutex
+	memo   map[memoKey]any
+	rows   map[string]icat.Row
+	sess   *irodsclient.Session
+	group  *lazy.Value[[]int64]
+	closed bool
+
+	// protocol tracks work still using the iRODS session, so Close does not return it to
+	// the pool while a call is in flight.
+	protocol sync.WaitGroup
 }
 
 // memoKey identifies one remembered lookup.
@@ -103,8 +116,24 @@ const (
 	kindUserGroups
 )
 
-// Open returns a request-scoped view. It performs no I/O.
-func Open(deps Deps, opts Options) *Scope {
+// Open returns a request-scoped view bound to ctx. It performs no I/O.
+//
+// ctx should be the request's context: everything the scope resolves belongs to that
+// request and should stop when it does.
+func Open(ctx context.Context, deps Deps, opts Options) (*Scope, error) {
+	if opts.User == "" {
+		return nil, fmt.Errorf("rods: a user is required")
+	}
+	if deps.ICAT == nil {
+		return nil, fmt.Errorf("rods: a catalog store is required")
+	}
+	if deps.IRODS == nil {
+		return nil, fmt.Errorf("rods: an iRODS pool is required")
+	}
+	if deps.Zone == "" {
+		return nil, fmt.Errorf("rods: a zone is required")
+	}
+
 	if opts.CatalogParallelism <= 0 {
 		opts.CatalogParallelism = DefaultCatalogParallelism
 	}
@@ -112,14 +141,28 @@ func Open(deps Deps, opts Options) *Scope {
 		opts.ProtocolParallelism = DefaultProtocolParallelism
 	}
 
+	scopeCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+
+	// Still tied to the request: WithoutCancel detaches so that one caller's derived
+	// deadline cannot kill shared work, and this restores the request's own lifetime.
+	go func() {
+		select {
+		case <-ctx.Done():
+			cancel()
+		case <-scopeCtx.Done():
+		}
+	}()
+
 	return &Scope{
 		deps:        deps,
 		opts:        opts,
+		ctx:         scopeCtx,
+		cancel:      cancel,
 		catalogSem:  semaphore.NewWeighted(opts.CatalogParallelism),
 		protocolSem: semaphore.NewWeighted(opts.ProtocolParallelism),
 		memo:        make(map[memoKey]any),
 		rows:        make(map[string]icat.Row),
-	}
+	}, nil
 }
 
 // User is whose permissions this scope reads with.
@@ -129,7 +172,23 @@ func (s *Scope) User() string { return s.opts.User }
 func (s *Scope) Zone() string { return s.deps.Zone }
 
 // Close releases anything the scope holds. It is safe to call more than once.
+//
+// It waits for protocol work already in flight before returning the session to the pool.
+// Returning it early would let the pool evict and tear down the connections a call is still
+// using -- the scope deliberately lets a caller stop waiting without cancelling the work, so
+// that is not a rare case.
 func (s *Scope) Close() {
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return
+	}
+	s.closed = true
+	s.mu.Unlock()
+
+	s.cancel()
+	s.protocol.Wait()
+
 	s.mu.Lock()
 	sess := s.sess
 	s.sess = nil
@@ -146,6 +205,10 @@ func (s *Scope) Close() {
 // the reads, and a session costs a connection the server may not have spare.
 func (s *Scope) session(ctx context.Context) (*irodsclient.Session, error) {
 	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return nil, fmt.Errorf("rods: the scope is closed")
+	}
 	if s.sess != nil {
 		defer s.mu.Unlock()
 		return s.sess, nil
@@ -160,7 +223,12 @@ func (s *Scope) session(ctx context.Context) (*irodsclient.Session, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Another goroutine may have opened one while this was connecting.
+	// Another goroutine may have opened one while this was connecting, and Close may have
+	// run. Either way this one is surplus.
+	if s.closed {
+		sess.Close()
+		return nil, fmt.Errorf("rods: the scope is closed")
+	}
 	if s.sess != nil {
 		sess.Close()
 		return s.sess, nil
@@ -228,13 +296,76 @@ func (s *Scope) groupIDs(ctx context.Context) *lazy.Value[[]int64] {
 }
 
 // groupIDsLocked is groupIDs for callers that already hold the lock.
+//
+// It deliberately takes no catalog slot. Every other catalog lookup waits on this one, so
+// if it needed a slot of its own it could be starved by the very lookups that are waiting
+// for it: once CatalogParallelism lookups hold every slot, none can proceed and none can
+// release. That is a real deadlock, not a theoretical one. The general rule this follows is
+// that nothing running under the catalog semaphore may wait on another value that needs it;
+// this is the only shared dependency, so exempting it is enough to keep that true.
 func (s *Scope) groupIDsLocked(ctx context.Context) *lazy.Value[[]int64] {
 	if s.group != nil {
 		return s.group
 	}
 
-	s.group = lazy.Go(ctx, s.catalogSem, func(ctx context.Context) ([]int64, error) {
+	s.group = lazy.Go(ctx, nil, func(ctx context.Context) ([]int64, error) {
 		return s.deps.ICAT.UserGroupIDs(ctx, s.opts.User, s.deps.Zone)
 	})
 	return s.group
+}
+
+// normalizePath puts a path into the form the catalog reports, so that a caller's trailing
+// slash cannot make a lookup miss.
+//
+// The catalog trims trailing slashes when it splits a path, so rows come back canonical. A
+// scope that keyed its memo and its published rows by the caller's spelling would report a
+// path as absent when the only difference was a slash, and would re-query for one it had
+// already fetched. Hiding that is this layer's job.
+func normalizePath(p string) string {
+	if p == "/" {
+		return p
+	}
+	return strings.TrimRight(p, "/")
+}
+
+// normalizePaths normalises a batch, preserving order.
+func normalizePaths(paths []string) []string {
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		out = append(out, normalizePath(p))
+	}
+	return out
+}
+
+// recordAbsent marks requested paths the catalog did not return, so a later single-path
+// lookup answers immediately instead of querying again.
+func (s *Scope) recordAbsent(requested []string, found map[string]Stat) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, p := range requested {
+		if _, ok := found[p]; ok {
+			continue
+		}
+		key := memoKey{kindItem, p}
+		if _, ok := s.memo[key]; ok {
+			continue
+		}
+		s.memo[key] = lazy.Failed[icat.Row](icat.ErrNoSuchItem)
+	}
+}
+
+// seedACLs records batched access lists against their per-path keys, empty results
+// included, so a handler that batches and then reports each path pays nothing extra.
+func (s *Scope) seedACLs(requested []string, found map[string][]ACLEntry) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, p := range requested {
+		key := memoKey{kindACL, p}
+		if _, ok := s.memo[key]; ok {
+			continue
+		}
+		s.memo[key] = lazy.Resolved(found[p])
+	}
 }
