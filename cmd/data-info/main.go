@@ -12,10 +12,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/cyverse-de/data-info/internal/clients/asynctasks"
 	"github.com/cyverse-de/data-info/internal/config"
 	"github.com/cyverse-de/data-info/internal/handlers"
 	"github.com/cyverse-de/data-info/internal/icat"
 	"github.com/cyverse-de/data-info/internal/irodsclient"
+	"github.com/cyverse-de/data-info/internal/worker"
 	"github.com/cyverse-de/go-mod/logging"
 	"github.com/cyverse-de/go-mod/otelutils"
 	"github.com/sirupsen/logrus"
@@ -29,7 +31,27 @@ var version = "dev"
 // stay under the deployment's terminationGracePeriodSeconds, which is Kubernetes' default
 // of 30s unless a manifest says otherwise, or the kubelet sends SIGKILL at the same moment
 // this deadline expires and shutdown never completes.
-const shutdownGrace = 20 * time.Second
+// serverGrace bounds how long in-flight requests have to finish, and drainGrace how long the
+// background jobs then have to stop and report. Their sum has to stay under the deployment's
+// terminationGracePeriodSeconds, or the kubelet sends SIGKILL while a job is still trying to
+// release its paths -- which is the leak the drain exists to prevent.
+//
+// No manifest sets that field for this service, so it is Kubernetes' default of 30 seconds
+// and these are sized to fit inside it with a little room. They are deliberately tight: the
+// drain wants longer than this, and it can have it as soon as the manifest asks for a longer
+// grace period.
+const (
+	serverGrace = 10 * time.Second
+	drainGrace  = 15 * time.Second
+)
+
+// asyncTasksTimeout bounds one call to the async-tasks service.
+//
+// It is short on purpose, despite the call that matters most being the one that records a
+// task's final status and releases its paths. During shutdown the whole drain has to finish
+// inside drainGrace, so an attempt that could outlast that window would waste it rather than
+// use it: several quick tries beat one long one that never returns.
+const asyncTasksTimeout = 5 * time.Second
 
 func main() {
 	if err := run(); err != nil {
@@ -78,23 +100,46 @@ func run() error {
 	})
 	defer shutdownTracing()
 
+	// Set when jobs are still running at exit, so their connections are left alone. Closing
+	// a pool out from under an in-flight job would make it fail against a closed handle
+	// instead of reporting itself -- and its report is what releases its paths.
+	skipClose := false
+
 	pool, err := irodsclient.NewPool(irodsPoolConfig(cfg))
 	if err != nil {
 		return fmt.Errorf("building the iRODS client: %w", err)
 	}
-	defer pool.Close()
+	defer func() {
+		if !skipClose {
+			pool.Close()
+		}
+	}()
 
 	store, err := icat.Open(icatConfig(cfg))
 	if err != nil {
 		return fmt.Errorf("connecting to the iRODS catalog: %w", err)
 	}
 	defer func() {
+		if skipClose {
+			return
+		}
 		if err := store.Close(); err != nil {
 			log.WithError(err).Error("closing the catalog connection")
 		}
 	}()
 
-	srv := newHTTPServer(cfg, buildServer(cfg, version, log, networkDeps(pool, store)))
+	tasks, err := asynctasks.New(cfg.Services.AsyncTasks, asyncTasksTimeout)
+	if err != nil {
+		return fmt.Errorf("building the async-tasks client: %w", err)
+	}
+
+	runner := worker.NewRunner(tasks, log, worker.InstanceID())
+
+	deps := networkDeps(pool, store)
+	deps.Tasks = tasks
+	deps.Worker = runner
+
+	srv := newHTTPServer(cfg, buildServer(cfg, version, log, deps))
 
 	errs := make(chan error, 1)
 	go func() {
@@ -116,12 +161,43 @@ func run() error {
 		log.Info("shutting down")
 	}
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
-	defer cancel()
+	serverCtx, cancelServer := context.WithTimeout(context.Background(), serverGrace)
+	defer cancelServer()
 
-	if err := srv.Shutdown(shutdownCtx); err != nil {
-		return fmt.Errorf("shutting down: %w", err)
+	// Logged rather than returned. Shutdown reports a deadline overrun whenever a request
+	// outlasts the grace -- which is exactly when the pod is busy and jobs are most likely
+	// running -- and returning here would skip the drain below, locking their paths for
+	// good over what is only a slow request.
+	if err := srv.Shutdown(serverCtx); err != nil {
+		log.WithError(err).Error("the listener did not close cleanly; draining jobs anyway")
 	}
+
+	// After the listener, not before: a request already in flight may still start a job,
+	// and a runner that had stopped accepting them would refuse it.
+	//
+	// Its own budget, not what the server left over. Sharing one deadline would give the
+	// runner whatever a slow request did not use, and a single terminal post can take
+	// longer than that -- so the drain would time out precisely when it matters. The two
+	// budgets together have to stay under the deployment's terminationGracePeriodSeconds.
+	//
+	// This is the whole reason the runner exists in this shape. Each job is cancelled,
+	// returns, and is recorded as failed, which sets the task's end date and releases the
+	// paths it held. Without it a rollout leaves those paths locked -- and nothing else
+	// releases them, because the stall timeout this service registers does not complete the
+	// task. See docs/deferred-fixes.md.
+	drainCtx, cancelDrain := context.WithTimeout(context.Background(), drainGrace)
+	defer cancelDrain()
+
+	if err := runner.Shutdown(drainCtx); err != nil {
+		// The jobs are still running against the pool and the catalog. Closing those now
+		// would pull the connections out from under them, so they are left open and the
+		// process exits with them -- which loses nothing, since it is exiting anyway, and
+		// gives each job its best chance of reporting before the kubelet kills it.
+		log.WithError(err).Error("could not drain the background jobs before exiting; " +
+			"leaving the backend connections open so they can still report")
+		skipClose = true
+	}
+
 	log.Info("stopped")
 	return nil
 }
