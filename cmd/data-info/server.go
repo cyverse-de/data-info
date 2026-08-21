@@ -116,6 +116,9 @@ func registerDataRoutes(e *echo.Echo, cfg *config.Config, log *logrus.Entry, dep
 		Log:               log,
 		Worker:            deps.Worker,
 		AdminUsers:        adminUsersOf(cfg),
+		AnonUser:          cfg.AnonUser,
+		AnonBaseURL:       cfg.AnonFiles.BaseURL,
+		AnonMappings:      cfg.AnonFiles.Mappings,
 	}
 	// Assigned only when present. These fields are interfaces, and a nil concrete pointer
 	// stored in one is not itself nil, so a guard on the field would never fire.
@@ -185,6 +188,14 @@ func registerDataRoutes(e *echo.Echo, cfg *config.Config, log *logrus.Entry, dep
 	e.DELETE("/data/:data-id/children", writes.DeleteChildrenByID)
 	e.DELETE("/trash", writes.EmptyTrash)
 	e.POST("/restorer", writes.Restore)
+
+	// Sharing. These report a failure per path inside a successful response, because the DE
+	// runs them over a selection and one item nobody owns must not fail the rest.
+	e.POST("/sharer", writes.Share)
+	e.POST("/unsharer", writes.Unshare)
+	e.POST("/anonymizer", writes.Anonymize)
+	e.PUT("/data/:data-id/permissions/:share-with/:permission", writes.AddPermission)
+	e.DELETE("/data/:data-id/permissions/:unshare-with", writes.RemovePermission)
 }
 
 // adminUsersOf names the accounts whose access to a path is structural.

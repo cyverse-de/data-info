@@ -93,6 +93,22 @@ func report(logErr func(echo.Context, *Error, error), c echo.Context, apiErr *Er
 	}
 }
 
+// Envelope renders an error as the fields a response body would carry.
+//
+// It is for the endpoints that report a failure per item inside a successful response: a
+// caller reading one of those should not have to parse a different shape from the one a whole
+// failed request produces.
+func Envelope(err error) map[string]any {
+	apiErr, _ := toAPIError(err, StyleTrap)
+
+	out := make(map[string]any, len(apiErr.Extra)+1)
+	out["error_code"] = string(apiErr.Code)
+	for key, value := range apiErr.Extra {
+		out[key] = value
+	}
+	return out
+}
+
 // toAPIError normalises any error into the envelope. The second return value, when
 // non-empty, is a verbatim body to send instead of the marshalled envelope.
 func toAPIError(err error, style Style) (*Error, string) {

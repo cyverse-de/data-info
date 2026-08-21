@@ -122,6 +122,27 @@ func requireAllWriteable(ctx context.Context, scope *rods.Scope, user string, re
 	return nil
 }
 
+// requireAllAreFiles rejects a request naming anything that is not a data object.
+func requireAllAreFiles(ctx context.Context, scope *rods.Scope, requested []string) error {
+	stats, err := scope.Stats(ctx, requested).Get(ctx)
+	if err != nil {
+		return err
+	}
+
+	var refused []string
+	for _, path := range requested {
+		if stat, ok := stats[path]; !ok || stat.Type != rods.ObjectTypeFile {
+			refused = append(refused, path)
+		}
+	}
+	if len(refused) > 0 {
+		// The singular key with a list in it, which is what this validator attaches. It
+		// reads like a mistake and it is one, but callers parse it.
+		return apierror.New(apierror.ErrNotAFile).With("path", refused)
+	}
+	return nil
+}
+
 // requireOwns rejects one path the caller does not own.
 func requireOwns(ctx context.Context, scope *rods.Scope, user, path string) error {
 	stat, err := scope.Stat(ctx, path).Get(ctx)

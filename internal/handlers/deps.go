@@ -61,6 +61,12 @@ type Deps struct {
 	// a permission repair leaves them alone.
 	AdminUsers map[string]bool
 
+	// AnonUser is the account anonymous access is granted to, and AnonBaseURL and
+	// AnonMappings say where the service that serves it can be reached.
+	AnonUser     string
+	AnonBaseURL  string
+	AnonMappings map[string]string
+
 	// Log is where work that outlives a request reports itself. A request's own failures
 	// travel back to the caller and are logged by the error handler; this is for the
 	// background cleanup that has no caller left to tell.
@@ -188,4 +194,21 @@ func bindBody(c echo.Context, into any) error {
 		return schemaError("the request body could not be parsed")
 	}
 	return nil
+}
+
+// visiblePermissions drops the entries the service does not report: the requesting user's
+// own, and the service and administrative accounts a deployment filters out. Reporting
+// those would expose the proxy account's access on every path.
+func (d Deps) visiblePermissions(acl []rods.ACLEntry, user string) []userPermission {
+	out := make([]userPermission, 0, len(acl))
+	for _, entry := range acl {
+		if entry.User == user || d.PermsFilter[entry.User] {
+			continue
+		}
+		if entry.Permission == rods.PermissionNone {
+			continue
+		}
+		out = append(out, userPermission{User: entry.User, Permission: string(entry.Permission)})
+	}
+	return out
 }
