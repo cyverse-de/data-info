@@ -12,6 +12,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/cyverse-de/data-info/internal/clients/asynctasks"
 )
 
 // Runner sends each case to both services and compares the answers.
@@ -38,6 +40,15 @@ type Runner struct {
 
 	// User is who the harness acts as when building and inspecting fixtures.
 	User string
+
+	// Tasks reads async tasks. When nil, async cases are reported as skipped rather than
+	// run: without it their state probe would race the job it is meant to observe, which
+	// is worse than not running them, because it fails intermittently and in the
+	// direction of passing.
+	Tasks *asynctasks.Client
+
+	// AsyncTimeout bounds the wait for one task. Zero means DefaultAsyncTimeout.
+	AsyncTimeout time.Duration
 }
 
 // Result is one case's outcome.
@@ -88,11 +99,10 @@ func (r *Runner) runOne(ctx context.Context, c Case) Result {
 		return r.runRead(ctx, c)
 	case TierWrite:
 		return r.runWrite(ctx, c)
+	case TierAsync:
+		return r.runAsync(ctx, c)
 	default:
-		// Async cases need the task to be polled to completion before the outcome can be
-		// read, which the async machinery has not landed yet. Refusing is better than
-		// comparing a result that may not have happened.
-		return Result{Case: c, Skipped: fmt.Sprintf("tier %q is not supported yet", c.Tier)}
+		return Result{Case: c, Skipped: fmt.Sprintf("tier %q is not a tier", c.Tier)}
 	}
 }
 
@@ -124,13 +134,82 @@ func (r *Runner) runRead(ctx context.Context, c Case) Result {
 // requesting user's own permission. Access granted to somebody else is not covered; see the
 // note on StateOf.
 func (r *Runner) runWrite(ctx context.Context, c Case) Result {
+	paired, result := r.sendPaired(ctx, c)
+	if paired == nil {
+		return result
+	}
+	return r.withStateDiffs(ctx, c, paired, paired.diffs)
+}
+
+// runAsync is runWrite with the job waited on first.
+//
+// The endpoints these cases hit return as soon as the task is created, so reading the tree
+// straight afterwards races the work. Waiting for the task to carry an end date settles
+// that, and the wait is not only bookkeeping: the end date is what releases the paths, so a
+// case that gets one has also observed the lock being freed.
+//
+// The status trail is compared too. terrain's move poller reads that sequence to show
+// progress, which makes it contract rather than diagnostics.
+func (r *Runner) runAsync(ctx context.Context, c Case) Result {
+	if r.Tasks == nil {
+		return Result{Case: c, Skipped: "no async-tasks URL was configured, so async cases would race the job they are meant to observe"}
+	}
+
+	paired, result := r.sendPaired(ctx, c)
+	if paired == nil {
+		return result
+	}
+	diffs := paired.diffs
+
+	referenceID := taskIDFrom(paired.referenceResp.Body)
+	candidateID := taskIDFrom(paired.candidateResp.Body)
+
+	// Neither side started a job -- an error, or a request that turned out to be a no-op.
+	// Whether that agreement is correct is the response diff's business, not ours.
+	if referenceID == "" && candidateID == "" {
+		return r.withStateDiffs(ctx, c, paired, diffs)
+	}
+
+	referenceTask, err := r.awaitTask(ctx, referenceID)
+	if err != nil {
+		return Result{Case: c, Err: fmt.Errorf("waiting for the reference's task: %w", err)}
+	}
+	candidateTask, err := r.awaitTask(ctx, candidateID)
+	if err != nil {
+		return Result{Case: c, Err: fmt.Errorf("waiting for the candidate's task: %w", err)}
+	}
+
+	for _, d := range r.Normalizer.Compare(
+		Response{Status: 200, Body: statusTrail(referenceTask)},
+		Response{Status: 200, Body: statusTrail(candidateTask)},
+	) {
+		diffs = append(diffs, Diff{Kind: "task:" + d.Kind, Detail: d.Detail})
+	}
+
+	return r.withStateDiffs(ctx, c, paired, diffs)
+}
+
+// pairedRun is what a paired case produced: which subtree each service was given, and what
+// each answered.
+type pairedRun struct {
+	referenceRoot string
+	candidateRoot string
+	referenceResp Response
+	candidateResp Response
+	diffs         []Diff
+}
+
+// sendPaired builds a subtree per service, sends the case to each, and diffs the answers.
+// A nil first return means the case is finished -- skipped or failed -- and the Result says
+// why.
+func (r *Runner) sendPaired(ctx context.Context, c Case) (*pairedRun, Result) {
 	if r.Fixtures == nil || r.Reader == nil {
-		return Result{Case: c, Skipped: "no scratch collection was configured, so write cases cannot be paired"}
+		return nil, Result{Case: c, Skipped: "no scratch collection was configured, so paired cases cannot be run"}
 	}
 
 	referenceRoot, candidateRoot, err := r.Fixtures.Prepare(ctx, c, r.User)
 	if err != nil {
-		return Result{Case: c, Err: fmt.Errorf("preparing fixtures: %w", err)}
+		return nil, Result{Case: c, Err: fmt.Errorf("preparing fixtures: %w", err)}
 	}
 
 	referenceVars := r.varsWithRoot(referenceRoot)
@@ -143,7 +222,7 @@ func (r *Runner) runWrite(ctx context.Context, c Case) Result {
 		} {
 			seeded, err := r.Fixtures.Seed(ctx, c.Seed, r.User, root)
 			if err != nil {
-				return Result{Case: c, Err: fmt.Errorf("seeding fixtures: %w", err)}
+				return nil, Result{Case: c, Err: fmt.Errorf("seeding fixtures: %w", err)}
 			}
 			for k, v := range seeded {
 				vars[k] = v
@@ -151,35 +230,40 @@ func (r *Runner) runWrite(ctx context.Context, c Case) Result {
 		}
 	}
 
-	referenceCase := c.Expand(referenceVars)
-	candidateCase := c.Expand(candidateVars)
-
-	referenceResp, err := r.send(ctx, r.Reference, referenceCase)
+	referenceResp, err := r.send(ctx, r.Reference, c.Expand(referenceVars))
 	if err != nil {
-		return Result{Case: c, Err: fmt.Errorf("reference: %w", err)}
+		return nil, Result{Case: c, Err: fmt.Errorf("reference: %w", err)}
 	}
 
-	candidateResp, err := r.send(ctx, r.Candidate, candidateCase)
+	candidateResp, err := r.send(ctx, r.Candidate, c.Expand(candidateVars))
 	if err != nil {
-		return Result{Case: c, Err: fmt.Errorf("candidate: %w", err)}
+		return nil, Result{Case: c, Err: fmt.Errorf("candidate: %w", err)}
 	}
 
-	diffs := r.Normalizer.Compare(referenceResp, candidateResp)
+	return &pairedRun{
+		referenceRoot: referenceRoot,
+		candidateRoot: candidateRoot,
+		referenceResp: referenceResp,
+		candidateResp: candidateResp,
+		diffs:         r.Normalizer.Compare(referenceResp, candidateResp),
+	}, Result{}
+}
 
-	referenceState, err := r.Reader.StateOf(ctx, r.User, referenceRoot)
+// withStateDiffs reads back both subtrees and appends what differs.
+func (r *Runner) withStateDiffs(ctx context.Context, c Case, paired *pairedRun, diffs []Diff) Result {
+	referenceState, err := r.Reader.StateOf(ctx, r.User, paired.referenceRoot)
 	if err != nil {
 		return Result{Case: c, Err: fmt.Errorf("reading the reference's result: %w", err)}
 	}
-	candidateState, err := r.Reader.StateOf(ctx, r.User, candidateRoot)
+	candidateState, err := r.Reader.StateOf(ctx, r.User, paired.candidateRoot)
 	if err != nil {
 		return Result{Case: c, Err: fmt.Errorf("reading the candidate's result: %w", err)}
 	}
 
-	stateDiffs := r.Normalizer.Compare(
+	for _, d := range r.Normalizer.Compare(
 		Response{Status: 200, Body: referenceState},
 		Response{Status: 200, Body: candidateState},
-	)
-	for _, d := range stateDiffs {
+	) {
 		diffs = append(diffs, Diff{Kind: "state:" + d.Kind, Detail: d.Detail})
 	}
 

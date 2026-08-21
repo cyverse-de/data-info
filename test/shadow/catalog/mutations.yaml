@@ -5,20 +5,29 @@ cases:
   # canonicalised out, so what is compared is where things ended up rather than what they were
   # called on the way.
   #
-  # The async cases -- move, rename, delete, restore -- return before the work is done, so the
-  # state comparison races the job. They are marked write rather than async until the harness
-  # can poll a task to completion; what that costs is recorded in the skip below.
+  # Cases whose endpoint returns before the work is done are tier async: the harness waits
+  # for the task to carry an end date before reading the tree, and compares the status trail
+  # as well. The end date is the wait's real subject -- it is what releases the path lock --
+  # so a case that gets one has watched the lock being freed too.
+  #
+  # The error paths of the same endpoints stay tier write. They fail validation and return
+  # without creating a task, so there is nothing to wait for.
 
   - id: move-a-file
-    tier: write
+    tier: async
     method: POST
     path: /mover
     query: {user: "{{.User}}"}
     seed: {filename: movable.txt, content: "move me\n"}
+    body: {sources: ["{{.SeedPath}}"], dest: "{{.Root}}/elsewhere"}
+
+  - id: move-a-file-onto-itself
+    tier: async
+    method: POST
+    path: /mover
+    query: {user: "{{.User}}"}
+    seed: {filename: staying.txt, content: "already there\n"}
     body: {sources: ["{{.SeedPath}}"], dest: "{{.Root}}"}
-    skip: >-
-      the move runs asynchronously, so reading the tree straight afterwards races the job;
-      needs the async tier, which polls the task to a terminal status first
 
   - id: move-to-a-missing-destination
     tier: write
@@ -57,6 +66,14 @@ cases:
     seed: {filename: unchanged.txt, content: "same name\n"}
     body: {filename: unchanged.txt}
 
+  - id: rename-a-file
+    tier: async
+    method: PUT
+    path: /data/{{.SeedID}}/name
+    query: {user: "{{.User}}"}
+    seed: {filename: before.txt, content: "renamed\n"}
+    body: {filename: after.txt}
+
   - id: rename-an-unknown-id
     tier: write
     method: PUT
@@ -71,6 +88,14 @@ cases:
     query: {user: "{{.User}}"}
     seed: {filename: named.txt, content: "named\n"}
     body: {filename: ""}
+
+  - id: delete-a-file
+    tier: async
+    method: POST
+    path: /deleter
+    query: {user: "{{.User}}"}
+    seed: {filename: doomed.txt, content: "delete me\n"}
+    body: {paths: ["{{.SeedPath}}"]}
 
   - id: delete-something-that-is-not-there
     tier: write
@@ -94,6 +119,20 @@ cases:
     path: /deleter
     query: {user: "{{.User}}"}
     body: {paths: ["/{{.Zone}}/home/{{.User}}"]}
+
+  # Restoring needs the object to be in the trash, which takes a delete first -- two requests
+  # in one case, which the catalog cannot express yet. It is the gap worth closing next: the
+  # collision rename a restore does when something already occupies the original path is
+  # exactly the kind of outcome only a state probe catches.
+  - id: restore-a-deleted-file
+    tier: async
+    method: POST
+    path: /restorer
+    query: {user: "{{.User}}"}
+    body: {paths: ["{{.Root}}/doomed.txt"]}
+    skip: >-
+      needs a delete to run first, and a case is one request; the multi-step case model is
+      not built yet
 
   - id: restore-an-empty-selection
     tier: write

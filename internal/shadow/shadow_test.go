@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/cyverse-de/data-info/internal/clients/asynctasks"
 )
 
 func TestCompareIgnoresGeneratedValues(t *testing.T) {
@@ -132,8 +135,13 @@ func TestCatalogLoads(t *testing.T) {
 		if c.Method == "" || c.Path == "" {
 			t.Errorf("case %q has no method or path", c.ID)
 		}
-		if c.Tier == "" {
-			t.Errorf("case %q has no tier", c.ID)
+		switch c.Tier {
+		case TierRead, TierWrite, TierAsync:
+		default:
+			// A misspelled tier would be skipped at run time with a reason that reads
+			// like a limitation rather than a typo, so the case would quietly stop
+			// being checked.
+			t.Errorf("case %q has tier %q, which is not a tier", c.ID, c.Tier)
 		}
 	}
 	t.Logf("%d cases across %d groups", len(cases), len(catalog.Groups))
@@ -296,5 +304,89 @@ func TestWriteCasesAreSkippedWithoutScratch(t *testing.T) {
 	result := runner.runOne(context.Background(), Case{ID: "x", Tier: TierWrite, Method: "POST", Path: "/data/directories"})
 	if result.Skipped == "" {
 		t.Error("a write case ran without a scratch collection")
+	}
+}
+
+// TestTaskIDFrom covers the shapes an async endpoint's response actually takes. An id that
+// is missed means the harness reads the tree while the job is still writing it, and an id
+// invented from a malformed body means it waits for a task that does not exist.
+func TestTaskIDFrom(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body string
+		want string
+	}{
+		{"a move", `{"user":"u","sources":["/a"],"dest":"/b","async-task-id":"abc-123"}`, "abc-123"},
+		{"nothing to do", `{"user":"u","source":"/a","dest":"/a"}`, ""},
+		{"an error envelope", `{"error_code":"ERR_DOES_NOT_EXIST","path":"/a"}`, ""},
+		{"not JSON at all", `<html>502</html>`, ""},
+		{"an empty body", ``, ""},
+		{"a JSON array", `[{"async-task-id":"abc-123"}]`, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := taskIDFrom([]byte(tc.body)); got != tc.want {
+				t.Errorf("taskIDFrom(%s) = %q, want %q", tc.body, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestStatusTrailComparesSequenceNotTiming pins what the async tier actually asserts about a
+// task's history: the order of the statuses and their details, with the paths inside them
+// canonicalised across the paired fixtures, and nothing about when they happened.
+func TestStatusTrailComparesSequenceNotTiming(t *testing.T) {
+	at := func(s string) *time.Time {
+		parsed, err := time.Parse(time.RFC3339, s)
+		if err != nil {
+			t.Fatalf("parsing %q: %v", s, err)
+		}
+		return &parsed
+	}
+	trail := func(root string, when string, statuses ...[2]string) *asynctasks.Task {
+		task := &asynctasks.Task{EndDate: at(when)}
+		for _, s := range statuses {
+			task.Statuses = append(task.Statuses, asynctasks.Status{
+				Status:      s[0],
+				Detail:      strings.ReplaceAll(s[1], "{ROOT}", root),
+				CreatedDate: *at(when),
+			})
+		}
+		return task
+	}
+
+	n := NewNormalizer("RUN")
+	sequence := [][2]string{
+		{"registered", ""},
+		{"running", "moving {ROOT}/movable.txt"},
+		{"completed", ""},
+	}
+
+	// Same sequence, opposite sides of the paired fixture, hours apart.
+	reference := trail("/z/scratch/RUN/A", "2026-08-21T10:00:00Z", sequence...)
+	candidate := trail("/z/scratch/RUN/B", "2026-08-21T13:31:07Z", sequence...)
+
+	if diffs := n.Compare(
+		Response{Status: 200, Body: statusTrail(reference)},
+		Response{Status: 200, Body: statusTrail(candidate)},
+	); len(diffs) != 0 {
+		t.Errorf("identical trails on opposite sides differed: %+v", diffs)
+	}
+
+	// A status the other side never reported has to show up.
+	shortened := trail("/z/scratch/RUN/B", "2026-08-21T10:00:00Z", sequence[:2]...)
+	if diffs := n.Compare(
+		Response{Status: 200, Body: statusTrail(reference)},
+		Response{Status: 200, Body: statusTrail(shortened)},
+	); len(diffs) == 0 {
+		t.Error("a missing terminal status produced no difference")
+	}
+
+	// So does the same sequence in the wrong order: terrain's poller reads it in order.
+	reordered := trail("/z/scratch/RUN/B", "2026-08-21T10:00:00Z", sequence[1], sequence[0], sequence[2])
+	if diffs := n.Compare(
+		Response{Status: 200, Body: statusTrail(reference)},
+		Response{Status: 200, Body: statusTrail(reordered)},
+	); len(diffs) == 0 {
+		t.Error("a reordered status trail produced no difference")
 	}
 }
