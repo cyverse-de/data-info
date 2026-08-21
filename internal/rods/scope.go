@@ -113,6 +113,7 @@ const (
 	kindACL
 	kindAVUs
 	kindUserExists
+	kindUserKind
 	kindUserGroups
 	kindChildCounts
 )

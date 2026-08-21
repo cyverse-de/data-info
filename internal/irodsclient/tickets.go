@@ -63,6 +63,32 @@ func CreateTicket(ctx context.Context, s *Session, name, ticketType, path string
 	return err
 }
 
+// SetTicketLimits applies the optional caps a ticket carries. A nil limit is left alone.
+func SetTicketLimits(ctx context.Context, s *Session, name string, uses, fileWrite *int64) error {
+	_, err := Do(ctx, s, func(fsys *irodsfs.FileSystem) (struct{}, error) {
+		if uses != nil {
+			if err := fsys.ModifyTicketUseLimit(name, *uses); err != nil {
+				return struct{}{}, err
+			}
+		}
+		if fileWrite != nil {
+			if err := fsys.ModifyTicketWriteFileLimit(name, *fileWrite); err != nil {
+				return struct{}{}, err
+			}
+		}
+		return struct{}{}, nil
+	})
+	return err
+}
+
+// AddTicketGroup allows a group to use a ticket.
+func AddTicketGroup(ctx context.Context, s *Session, name, group string) error {
+	_, err := Do(ctx, s, func(fsys *irodsfs.FileSystem) (struct{}, error) {
+		return struct{}{}, fsys.AddTicketAllowedGroup(name, group)
+	})
+	return err
+}
+
 // GetTicket returns one ticket by name.
 func GetTicket(ctx context.Context, s *Session, name string) (*Ticket, error) {
 	found, err := Do(ctx, s, func(fsys *irodsfs.FileSystem) (*types.IRODSTicket, error) {

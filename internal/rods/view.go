@@ -358,6 +358,19 @@ func (s *Scope) UserExists(_ context.Context, user string) *lazy.Value[bool] {
 	})
 }
 
+// UserKind reports what an account name refers to, which is what decides whether its holder
+// may administer groups.
+//
+// From the catalog, for the same reason UserExists is: this is asked on every group request
+// and the connections the zone grants this service are the scarce resource.
+func (s *Scope) UserKind(_ context.Context, user string) *lazy.Value[icat.UserKind] {
+	return memoize(s, memoKey{kindUserKind, user}, func() *lazy.Value[icat.UserKind] {
+		return lazy.Go(s.ctx, s.catalogSem, func(ctx context.Context) (icat.UserKind, error) {
+			return s.deps.ICAT.LookupUser(ctx, user, s.deps.Zone)
+		})
+	})
+}
+
 // UserGroups reports the groups a user belongs to, as bare names.
 //
 // They are not zone-qualified; the endpoint that reports them appends the zone itself. A

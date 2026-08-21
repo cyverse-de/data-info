@@ -67,6 +67,11 @@ type Deps struct {
 	AnonBaseURL  string
 	AnonMappings map[string]string
 
+	// KifshareURL and KifshareTemplate say where a ticket can be redeemed. The template is
+	// a deployment's to decide, because it addresses a service this one does not own.
+	KifshareURL      string
+	KifshareTemplate string
+
 	// Log is where work that outlives a request reports itself. A request's own failures
 	// travel back to the caller and are logged by the error handler; this is for the
 	// background cleanup that has no caller left to tell.

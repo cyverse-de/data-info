@@ -62,6 +62,37 @@ func (s *Scope) CreateTicket(ctx context.Context, name, ticketType, path string)
 	return irodsclient.CreateTicket(ctx, sess, name, ticketType, normalizePath(path))
 }
 
+// TicketLimits are the optional caps a ticket can carry.
+//
+// iRODS sets them after the ticket exists rather than at creation, so a failure part-way
+// leaves a ticket that works but is less restricted than asked for -- which is why the caller
+// removes it rather than reporting partial success.
+type TicketLimits struct {
+	Uses      *int64
+	FileWrite *int64
+}
+
+// SetTicketLimits applies the caps a ticket was asked for.
+func (s *Scope) SetTicketLimits(ctx context.Context, name string, limits TicketLimits) error {
+	sess, err := s.session(ctx)
+	if err != nil {
+		return err
+	}
+	return irodsclient.SetTicketLimits(ctx, sess, name, limits.Uses, limits.FileWrite)
+}
+
+// PublicizeTicket lets anyone with the ticket use it, by allowing the public group.
+func (s *Scope) PublicizeTicket(ctx context.Context, name string) error {
+	sess, err := s.session(ctx)
+	if err != nil {
+		return err
+	}
+	return irodsclient.AddTicketGroup(ctx, sess, name, PublicGroup)
+}
+
+// PublicGroup is the iRODS group that stands for "anyone".
+const PublicGroup = "public"
+
 // DeleteTicket removes a ticket by name.
 func (s *Scope) DeleteTicket(ctx context.Context, name string) error {
 	sess, err := s.session(ctx)

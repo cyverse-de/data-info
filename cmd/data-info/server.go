@@ -119,6 +119,8 @@ func registerDataRoutes(e *echo.Echo, cfg *config.Config, log *logrus.Entry, dep
 		AnonUser:          cfg.AnonUser,
 		AnonBaseURL:       cfg.AnonFiles.BaseURL,
 		AnonMappings:      cfg.AnonFiles.Mappings,
+		KifshareURL:       cfg.Kifshare.ExternalURL,
+		KifshareTemplate:  cfg.Kifshare.DownloadTemplate,
 	}
 	// Assigned only when present. These fields are interfaces, and a nil concrete pointer
 	// stored in one is not itself nil, so a guard on the field would never fire.
@@ -196,6 +198,20 @@ func registerDataRoutes(e *echo.Echo, cfg *config.Config, log *logrus.Entry, dep
 	e.POST("/anonymizer", writes.Anonymize)
 	e.PUT("/data/:data-id/permissions/:share-with/:permission", writes.AddPermission)
 	e.DELETE("/data/:data-id/permissions/:unshare-with", writes.RemovePermission)
+
+	// Tickets. These are (ok ...) routes in the reference, so every error code answers 500.
+	tickets := handlers.NewTickets(hd)
+	e.POST("/tickets", tickets.Add, ok)
+	e.POST("/ticket-lister", tickets.List, ok)
+	e.POST("/ticket-deleter", tickets.Delete, ok)
+
+	// Groups. These are (ok ...) routes too, except that the forbidden response pins its own
+	// status because the route documents a 403 explicitly.
+	groups := handlers.NewGroups(hd)
+	e.POST("/groups", groups.Create, ok)
+	e.GET("/groups/:group-name", groups.Get, ok)
+	e.PUT("/groups/:group-name", groups.Update, ok)
+	e.DELETE("/groups/:group-name", groups.Delete, ok)
 }
 
 // adminUsersOf names the accounts whose access to a path is structural.
