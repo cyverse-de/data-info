@@ -122,8 +122,9 @@ reproducing a crash, and callers cannot be relying on one.
 `POST /data` with a UTF-8 filename answers `ERR_ILLEGAL_ARGUMENT` with a 400, from
 compojure-api's coercion of the multipart parameters rather than from any deliberate check.
 
-**Not reproduced.** Go's multipart reader decodes the name and the upload succeeds. This is
-the one difference on this list that *widens* what the service accepts, so it needs a
-decision rather than a default: either the Go service should reject the same names, or the
-rest of the DE has to be checked for handling them. Raised with the shadow case
-`upload-a-utf8-name`, which pins the current behavior either way.
+**Not reproduced, by decision.** Go's multipart reader decodes the name and the upload
+succeeds. This is the one entry on this list that *widens* what the service accepts, and it
+was signed off as an improvement rather than a regression to reproduce: the reference's 400
+is an accident of its coercion layer, not a rule anybody wrote. The shadow case
+`upload-a-utf8-name` will keep reporting the difference until the Clojure service is gone,
+which is the intended outcome, not a defect to chase.

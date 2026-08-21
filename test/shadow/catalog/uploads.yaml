@@ -21,8 +21,9 @@ cases:
     query: {user: "{{.User}}", dest: "{{.Root}}"}
     upload: {filename: empty.txt, content: ""}
 
-  # A name that is not ASCII, to catch an encoding difference in the multipart header
-  # rather than in the data.
+  # A name that is not ASCII. The reference refuses these with a 400 from its coercion
+  # layer and this service accepts them, which was signed off as an improvement -- so this
+  # case is expected to differ for as long as both services run. See deferred-fixes entry 9.
   - id: upload-a-utf8-name
     tier: write
     method: POST
