@@ -86,19 +86,9 @@ func TestStatusForCoversEveryEmittedCode(t *testing.T) {
 	}
 
 	// The 31 codes the Clojure service emits, taken from a grep of its source.
-	for _, c := range emittedCodes {
+	for _, c := range EmittedCodes() {
 		if !covered[c] {
 			t.Errorf("code %s is emitted by the Clojure service but has no status assertion", c)
 		}
 	}
-}
-
-var emittedCodes = []Code{
-	ErrNotAUser, ErrDoesNotExist, ErrNotWriteable, ErrNotReadable, ErrExists,
-	ErrNotAFolder, ErrNotAFile, ErrTooManyPaths, ErrNotOwner, ErrNotAuthorized,
-	ErrTooManyResults, ErrBadOrMissingField, ErrBadPathLength, ErrPageNotPos,
-	ErrNotFound, ErrInvalidPage, ErrIncompleteRename, ErrChunkTooSmall,
-	ErrBadDirnameLength, ErrBadBasenameLength, ErrTicketExists, ErrTicketDoesNotExist,
-	ErrMissingQueryParam, ErrBadRequest, ErrUnavailable, ErrRequestFailed,
-	ErrInvalidJSON, ErrForbidden, ErrConflict, ErrConfigInvalid, ErrBadQueryParameter,
 }

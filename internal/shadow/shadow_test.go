@@ -2,12 +2,14 @@ package shadow
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/cyverse-de/data-info/internal/apierror"
 	"github.com/cyverse-de/data-info/internal/clients/asynctasks"
 )
 
@@ -465,5 +467,75 @@ func TestStepExpandsPerSide(t *testing.T) {
 	// template and quietly point at the first side's tree.
 	if step.Path != "/deleter" || step.Body.(map[string]any)["paths"].([]any)[0] != "{{.Root}}/doomed.txt" {
 		t.Error("Expand mutated the step it was given")
+	}
+}
+
+// TestReportNamesUnelicitedCodes covers the cutover gate that every error code data-info can
+// return is exercised at least once. The report is where that stops being an assertion and
+// becomes a measurement, so it has to name what is missing rather than only counting.
+func TestReportCodeCoverage(t *testing.T) {
+	all := apierror.EmittedCodes()
+
+	t.Run("nothing elicited", func(t *testing.T) {
+		var out strings.Builder
+		if _, err := Report(&out, []Result{{Case: Case{ID: "a"}}}); err != nil {
+			t.Fatalf("Report: %v", err)
+		}
+		got := out.String()
+		if !strings.Contains(got, fmt.Sprintf("error codes elicited: 0 of %d", len(all))) {
+			t.Errorf("report did not count zero coverage:\n%s", got)
+		}
+		// Naming them is the point: a count alone tells nobody which case to write.
+		for _, c := range all {
+			if !strings.Contains(got, string(c)) {
+				t.Errorf("report did not name the unelicited code %s", c)
+			}
+		}
+	})
+
+	t.Run("one elicited", func(t *testing.T) {
+		var out strings.Builder
+		results := []Result{{Case: Case{ID: "a"}, Code: string(apierror.ErrDoesNotExist)}}
+		if _, err := Report(&out, results); err != nil {
+			t.Fatalf("Report: %v", err)
+		}
+		got := out.String()
+		if !strings.Contains(got, fmt.Sprintf("error codes elicited: 1 of %d", len(all))) {
+			t.Errorf("report did not count the elicited code:\n%s", got)
+		}
+		missing := got[strings.Index(got, "not elicited by any case:"):]
+		if strings.Contains(missing, string(apierror.ErrDoesNotExist)) {
+			t.Error("an elicited code was still listed as missing")
+		}
+	})
+
+	t.Run("coverage does not decide the verdict", func(t *testing.T) {
+		var out strings.Builder
+		// A run with no differences passes even though it elicited nothing: coverage is
+		// a property of the catalog, not a disagreement between the services.
+		matched, err := Report(&out, []Result{{Case: Case{ID: "a"}}})
+		if err != nil {
+			t.Fatalf("Report: %v", err)
+		}
+		if !matched {
+			t.Error("a run with no diffs failed because of missing code coverage")
+		}
+	})
+}
+
+// TestErrorCodeFrom keeps the observation honest: a body that is not an error envelope must
+// not be recorded as covering anything.
+func TestErrorCodeFrom(t *testing.T) {
+	for _, tc := range []struct{ name, body, want string }{
+		{"an error envelope", `{"error_code":"ERR_DOES_NOT_EXIST","path":"/a"}`, "ERR_DOES_NOT_EXIST"},
+		{"a success body", `{"id":"abc","path":"/a"}`, ""},
+		{"not JSON", `<html>502</html>`, ""},
+		{"empty", ``, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := errorCodeFrom([]byte(tc.body)); got != tc.want {
+				t.Errorf("errorCodeFrom(%s) = %q, want %q", tc.body, got, tc.want)
+			}
+		})
 	}
 }

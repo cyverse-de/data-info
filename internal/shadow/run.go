@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cyverse-de/data-info/internal/apierror"
 	"github.com/cyverse-de/data-info/internal/clients/asynctasks"
 )
 
@@ -57,6 +58,12 @@ type Result struct {
 	Diffs   []Diff
 	Skipped string
 	Err     error
+
+	// Code is the error_code the reference service returned, when it returned one. It is
+	// recorded rather than asserted: the harness compares the two services against each
+	// other, so what a case elicits is an observation about the run, not an expectation
+	// the case declares.
+	Code string
 }
 
 // Passed reports whether the case matched.
@@ -121,7 +128,11 @@ func (r *Runner) runRead(ctx context.Context, c Case) Result {
 		return Result{Case: c, Err: fmt.Errorf("candidate: %w", err)}
 	}
 
-	return Result{Case: c, Diffs: r.Normalizer.Compare(reference, candidate)}
+	return Result{
+		Case:  c,
+		Diffs: r.Normalizer.Compare(reference, candidate),
+		Code:  errorCodeFrom(reference.Body),
+	}
 }
 
 // runWrite gives each service its own copy of the fixture and compares two things: what each
@@ -332,7 +343,18 @@ func (r *Runner) withStateDiffs(ctx context.Context, c Case, paired *pairedRun, 
 		diffs = append(diffs, Diff{Kind: "state:" + d.Kind, Detail: d.Detail})
 	}
 
-	return Result{Case: c, Diffs: diffs}
+	return Result{Case: c, Diffs: diffs, Code: errorCodeFrom(paired.referenceResp.Body)}
+}
+
+// errorCodeFrom pulls the error_code out of a response, if it carries one.
+func errorCodeFrom(body []byte) string {
+	var envelope struct {
+		Code string `json:"error_code"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return ""
+	}
+	return envelope.Code
 }
 
 // varsWithRoot points a case at one side's copy of the fixture.
@@ -463,7 +485,42 @@ func Report(w io.Writer, results []Result) (bool, error) {
 		out.printf("note: skipped cases were not compared; the run is not evidence about them\n")
 	}
 
+	reportCodeCoverage(out, results)
+
 	return failed == 0, out.err
+}
+
+// reportCodeCoverage names the error codes no case elicited.
+//
+// Cutover asks that every code data-info can return be exercised at least once, and the
+// only honest way to know is to look at what a run actually produced -- a case cannot
+// declare the code it expects, because the harness compares the two services against each
+// other rather than against a fixture. A code missing here means either no case reaches it
+// or the case that used to has drifted onto a different failure.
+//
+// Reported, never fatal. Coverage is a property of the catalog, and failing a run over it
+// would confuse "the two services disagree" with "we have not written that case yet".
+func reportCodeCoverage(out *errWriter, results []Result) {
+	seen := map[string]bool{}
+	for _, res := range results {
+		if res.Code != "" {
+			seen[res.Code] = true
+		}
+	}
+
+	var missing []string
+	for _, c := range apierror.EmittedCodes() {
+		if !seen[string(c)] {
+			missing = append(missing, string(c))
+		}
+	}
+	sort.Strings(missing)
+
+	total := len(apierror.EmittedCodes())
+	out.printf("\nerror codes elicited: %d of %d\n", total-len(missing), total)
+	if len(missing) > 0 {
+		out.printf("not elicited by any case: %s\n", strings.Join(missing, ", "))
+	}
 }
 
 // errWriter records the first write failure so a report does not have to check every line.
