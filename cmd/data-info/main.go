@@ -12,10 +12,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/cyverse-de/data-info/internal/clients/asynctasks"
 	"github.com/cyverse-de/data-info/internal/config"
 	"github.com/cyverse-de/data-info/internal/handlers"
 	"github.com/cyverse-de/data-info/internal/icat"
 	"github.com/cyverse-de/data-info/internal/irodsclient"
+	"github.com/cyverse-de/data-info/internal/worker"
 	"github.com/cyverse-de/go-mod/logging"
 	"github.com/cyverse-de/go-mod/otelutils"
 	"github.com/sirupsen/logrus"
@@ -30,6 +32,11 @@ var version = "dev"
 // of 30s unless a manifest says otherwise, or the kubelet sends SIGKILL at the same moment
 // this deadline expires and shutdown never completes.
 const shutdownGrace = 20 * time.Second
+
+// asyncTasksTimeout bounds one call to the async-tasks service. It is generous because the
+// call that matters most is the one recording a task's final status: giving up on that
+// leaves the task's paths locked, so waiting is cheaper than failing.
+const asyncTasksTimeout = 30 * time.Second
 
 func main() {
 	if err := run(); err != nil {
@@ -94,7 +101,18 @@ func run() error {
 		}
 	}()
 
-	srv := newHTTPServer(cfg, buildServer(cfg, version, log, networkDeps(pool, store)))
+	tasks, err := asynctasks.New(cfg.Services.AsyncTasks, asyncTasksTimeout)
+	if err != nil {
+		return fmt.Errorf("building the async-tasks client: %w", err)
+	}
+
+	runner := worker.NewRunner(tasks, log, worker.InstanceID())
+
+	deps := networkDeps(pool, store)
+	deps.Tasks = tasks
+	deps.Worker = runner
+
+	srv := newHTTPServer(cfg, buildServer(cfg, version, log, deps))
 
 	errs := make(chan error, 1)
 	go func() {
@@ -122,6 +140,19 @@ func run() error {
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		return fmt.Errorf("shutting down: %w", err)
 	}
+
+	// After the listener, not before: a request already in flight may still start a job,
+	// and a runner that had stopped accepting them would refuse it.
+	//
+	// This is the whole reason the runner exists in this shape. Each job is cancelled,
+	// returns, and is recorded as failed, which sets the task's end date and releases the
+	// paths it held. Without it a rollout leaves those paths locked -- and nothing else
+	// releases them, because the stall timeout this service registers does not complete the
+	// task. See docs/deferred-fixes.md.
+	if err := runner.Shutdown(shutdownCtx); err != nil {
+		log.WithError(err).Error("could not drain the background jobs before exiting")
+	}
+
 	log.Info("stopped")
 	return nil
 }

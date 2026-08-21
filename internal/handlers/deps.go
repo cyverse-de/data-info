@@ -10,8 +10,10 @@ import (
 	"github.com/cyverse-de/data-info/internal/apierror"
 	"github.com/cyverse-de/data-info/internal/icat"
 	"github.com/cyverse-de/data-info/internal/irodsclient"
+	"github.com/cyverse-de/data-info/internal/locks"
 	"github.com/cyverse-de/data-info/internal/paths"
 	"github.com/cyverse-de/data-info/internal/rods"
+	"github.com/cyverse-de/data-info/internal/worker"
 	"github.com/labstack/echo/v4"
 	"github.com/sirupsen/logrus"
 )
@@ -41,6 +43,12 @@ type Deps struct {
 	// used where the reference implementation asks whether something exists at all,
 	// independently of whether the caller can see it.
 	ProxyUser string
+
+	// Tasks records work that outlives the request which asked for it, and Worker runs it.
+	// The lock every mutating endpoint consults is derived from what Tasks holds, so an
+	// endpoint that changes a path needs both.
+	Tasks  locks.Reader
+	Worker *worker.Runner
 
 	// Log is where work that outlives a request reports itself. A request's own failures
 	// travel back to the caller and are logged by the error handler; this is for the
@@ -83,6 +91,18 @@ func (d Deps) Logger() *logrus.Entry {
 	discard := logrus.New()
 	discard.SetOutput(io.Discard)
 	return logrus.NewEntry(discard)
+}
+
+// RequireUnlocked rejects paths that unfinished work already holds.
+//
+// Every endpoint that changes a path calls this first. It answers nothing when no task
+// client is configured, which is how the read-only test wiring stays usable -- a deployment
+// always has one, because startup validates the URL.
+func (d Deps) RequireUnlocked(ctx context.Context, paths ...string) error {
+	if d.Tasks == nil {
+		return nil
+	}
+	return locks.Validate(ctx, d.Tasks, paths)
 }
 
 // CheckPathCount rejects a bulk request carrying more paths than the service allows.

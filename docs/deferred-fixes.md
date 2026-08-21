@@ -190,3 +190,65 @@ the path that is validated the path that is created.
 
 Pinned by the shadow case `create-through-a-parent-reference`, which is expected to differ.
 
+## 14. A task that never reports leaves its paths locked forever
+
+There is no lock table. A path is locked when some unfinished async task names it, and a task
+is unfinished exactly when its `end_date` is null — `validate-unlocked` asks async-tasks for
+tasks with `include_null_end=true` and an end date after the year 9999, which is how it
+spells "everything still running".
+
+The `statuschangetimeout` behaviour looks like the safety net for a task whose process died,
+and it is not. Its processor
+(`async-tasks/behaviors/statuschangetimeout/statuschangetimeout.go`) calls `CompleteTask` —
+the only thing that sets `end_date` — **only when the behaviour's data carries
+`complete: true`**. Neither of the two places that register it does:
+
+- `services/rename.clj:106`
+- `services/write.clj:131`
+
+Both send `{"statuses":[{"start_status":"running","end_status":"detected-stalled","timeout":"10m"}]}`.
+
+So the timeout adds a `detected-stalled` status and stops. **A pod killed mid-move locks
+those paths permanently**, not for ten minutes, and nothing releases them but a person.
+(Checked against QA: 106 data-* tasks, none with a null end date, so nothing is stuck there
+right now — the mechanism is what is wrong, not the current state.)
+
+**What this port does about it.** `internal/worker` guarantees that a job which starts
+reaches a terminal status: the terminal post is made with `context.WithoutCancel` and retried
+a hundred times, and `Runner.Shutdown` cancels each running job, waits for it, and lets it
+record itself as failed — which sets the end date and releases its paths. That turns a
+rollout from a source of permanent locks into a non-event.
+
+**Still open, and it is not this service's call alone:** adding `"complete": true` to the
+behaviour data would make the ten-minute timeout actually release the lock, covering the case
+this service cannot — SIGKILL, OOM, a node dying. The risk is a genuinely slow job that goes
+ten minutes without posting a status having its paths released while it is still working. A
+move posts per path per step, so that window is unlikely, but it is a real trade and wants a
+decision rather than a default.
+
+**Consequence for the cutover:** the drain gate in stage 3 is a hard requirement, not a
+nicety. Any in-flight move, rename, delete or restore at the swap will lock its paths
+permanently if its pod goes away.
+
+## 15. The lock's prefix test does not respect component boundaries
+
+`validate-unlocked` decides that two paths collide with
+
+```clojure
+(some #(string/starts-with? (ft/add-trailing-slash %) path) locked-paths)
+(some #(string/starts-with? (ft/add-trailing-slash path) %) locked-paths)
+```
+
+Each compares one path against another plus a slash without requiring the match to end on a
+component boundary, so a locked `/a/b` collides with `/ab` and a locked `/a` collides with
+`/ab/c`. Neither is inside the other; the request is refused with `ERR_CONFLICT` for no
+reason. (The comments beside those clauses also describe them backwards — `starts-with? a b`
+asks whether *a* begins with *b*, so clause one finds ancestors of the locked path, not
+descendants.)
+
+**Not reproduced.** `internal/locks` uses `a == b || a starts with b+"/" || b starts with
+a+"/"`, which is what the comments meant. It is strictly more permissive than the reference
+— it can only allow pairs the reference refused spuriously, never allow one it refused for a
+real reason — but it is a behaviour change and is signed off as one here rather than slipped
+in. `TestConflicts` pins both the cases that must still collide and the ones that must not.
+

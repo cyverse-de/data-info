@@ -8,12 +8,14 @@ import (
 	"time"
 
 	"github.com/cyverse-de/data-info/internal/apierror"
+	"github.com/cyverse-de/data-info/internal/clients/asynctasks"
 	"github.com/cyverse-de/data-info/internal/config"
 	"github.com/cyverse-de/data-info/internal/handlers"
 	"github.com/cyverse-de/data-info/internal/icat"
 	"github.com/cyverse-de/data-info/internal/irodsclient"
 	dimw "github.com/cyverse-de/data-info/internal/middleware"
 	"github.com/cyverse-de/data-info/internal/paths"
+	"github.com/cyverse-de/data-info/internal/worker"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/sirupsen/logrus"
@@ -48,6 +50,11 @@ type Deps struct {
 	// tests that only exercise the status endpoints.
 	IRODS *irodsclient.Pool
 	ICAT  icat.Store
+
+	// Tasks records long-running work, and Worker runs it. Both are nil until an endpoint
+	// that starts a task is registered.
+	Tasks  *asynctasks.Client
+	Worker *worker.Runner
 }
 
 // buildServer assembles the HTTP server. It is separate from main so tests can exercise
@@ -103,6 +110,12 @@ func registerDataRoutes(e *echo.Echo, cfg *config.Config, log *logrus.Entry, dep
 		ProxyUser:         cfg.IRODS.User,
 		BadChars:          cfg.BadChars,
 		Log:               log,
+		Worker:            deps.Worker,
+	}
+	// Left nil rather than assigned unconditionally: Deps.Tasks is an interface, and a nil
+	// *asynctasks.Client stored in one is not nil, so the guard on it would never fire.
+	if deps.Tasks != nil {
+		hd.Tasks = deps.Tasks
 	}
 
 	stats := handlers.NewStats(hd)
