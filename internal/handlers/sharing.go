@@ -146,7 +146,31 @@ func (h *Writes) applyShare(
 		return "", apierror.New(apierror.ErrNotOwner).With("user", user).With("path", path)
 	}
 
-	return service.Share(ctx, scope, h.shareRequest(user, sharee, path, rods.Permission(permission)))
+	level, err := sharePermission(permission)
+	if err != nil {
+		return "", err
+	}
+
+	return service.Share(ctx, scope, h.shareRequest(user, sharee, path, level))
+}
+
+// sharePermission reads the access level a share asks for.
+//
+// Validated rather than passed through, and this is not a formality. An unrecognised level
+// maps to iRODS' null access, which *removes* the sharee's access -- so a typo in this field
+// would quietly unshare something and report success. The reference declares it as an enum,
+// so a bad value never reaches its handler.
+func sharePermission(value string) (rods.Permission, error) {
+	switch rods.Permission(strings.TrimSpace(value)) {
+	case rods.PermissionRead:
+		return rods.PermissionRead, nil
+	case rods.PermissionWrite:
+		return rods.PermissionWrite, nil
+	case rods.PermissionOwn:
+		return rods.PermissionOwn, nil
+	default:
+		return "", schemaError("permission must be read, write or own")
+	}
 }
 
 // Unshare handles POST /unsharer.
@@ -237,9 +261,13 @@ func (h *Writes) applyUnshare(
 
 // AddPermission handles PUT /data/{data-id}/permissions/{share-with}/{permission}.
 func (h *Writes) AddPermission(c echo.Context) error {
+	level, err := sharePermission(c.Param("permission"))
+	if err != nil {
+		return err
+	}
+
 	return h.changePermission(c, func(ctx context.Context, scope *rods.Scope, user, other, path string) error {
-		_, err := service.Share(ctx, scope,
-			h.shareRequest(user, other, path, rods.Permission(c.Param("permission"))))
+		_, err := service.Share(ctx, scope, h.shareRequest(user, other, path, level))
 		return err
 	}, c.Param("share-with"))
 }

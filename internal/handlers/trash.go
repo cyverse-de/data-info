@@ -141,8 +141,12 @@ func (h *Writes) deletePaths(
 	// happened is visible to the caller, because the response only names the ones that
 	// moved.
 	trashPaths := map[string]string{}
+	userTrash := h.deps.Layout.UserTrash(user)
 	for _, path := range requested {
-		if h.deps.Layout.InTrash(path) {
+		// The caller's own trash, not the zone's. Something the caller owns that is sitting
+		// in somebody else's trash has not been deleted by them, so it goes to theirs and
+		// stays recoverable rather than being removed outright.
+		if path == userTrash || strings.HasPrefix(path, userTrash+"/") {
 			continue
 		}
 

@@ -24,22 +24,32 @@ func (s *Scope) DeleteGroup(ctx context.Context, name string) error {
 	return irodsclient.DeleteGroup(ctx, sess, name, s.deps.Zone)
 }
 
-// AddGroupMember puts a user in a group.
+// AddGroupMember puts a user of the local zone in a group.
 func (s *Scope) AddGroupMember(ctx context.Context, group, user string) error {
-	sess, err := s.session(ctx)
-	if err != nil {
-		return err
-	}
-	return irodsclient.AddGroupMember(ctx, sess, group, user, s.deps.Zone)
+	return s.AddGroupMemberIn(ctx, group, user, s.deps.Zone)
 }
 
-// RemoveGroupMember takes a user out of a group.
-func (s *Scope) RemoveGroupMember(ctx context.Context, group, user string) error {
+// AddGroupMemberIn puts a user of a named zone in a group.
+func (s *Scope) AddGroupMemberIn(ctx context.Context, group, user, zone string) error {
 	sess, err := s.session(ctx)
 	if err != nil {
 		return err
 	}
-	return irodsclient.RemoveGroupMember(ctx, sess, group, user, s.deps.Zone)
+	return irodsclient.AddGroupMember(ctx, sess, group, user, zone)
+}
+
+// RemoveGroupMember takes a user of the local zone out of a group.
+func (s *Scope) RemoveGroupMember(ctx context.Context, group, user string) error {
+	return s.RemoveGroupMemberIn(ctx, group, user, s.deps.Zone)
+}
+
+// RemoveGroupMemberIn takes a user of a named zone out of a group.
+func (s *Scope) RemoveGroupMemberIn(ctx context.Context, group, user, zone string) error {
+	sess, err := s.session(ctx)
+	if err != nil {
+		return err
+	}
+	return irodsclient.RemoveGroupMember(ctx, sess, group, user, zone)
 }
 
 // GroupMembers returns the names of a group's members.

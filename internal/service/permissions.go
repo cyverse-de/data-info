@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/cyverse-de/data-info/internal/lazy"
 	"github.com/cyverse-de/data-info/internal/paths"
@@ -306,6 +307,11 @@ func ancestorsOf(path string, stop func(string) bool) []string {
 
 	for current := paths.Dir(path); ; current = paths.Dir(current) {
 		if current == "" || current == "/" || current == "." || stop(current) {
+			return out
+		}
+		// A path outside the expected layout would otherwise walk all the way up, and
+		// granting a sharee read on the zone root would give them the whole zone's listing.
+		if strings.Count(current, "/") < 2 {
 			return out
 		}
 		out = append(out, current)

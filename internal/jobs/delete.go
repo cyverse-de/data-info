@@ -34,7 +34,10 @@ func (d Delete) Run(ctx context.Context, task *asynctasks.Task, progress worker.
 		return err
 	}
 
-	trashPaths := mapFrom(task.Data, "trash-paths")
+	trashPaths, err := mapFrom(task.Data, "trash-paths")
+	if err != nil {
+		return err
+	}
 
 	scope, err := d.Deps.OpenScope(ctx, d.Deps.ProxyUser)
 	if err != nil {
@@ -134,7 +137,7 @@ func (d Delete) delete(
 // clean them up on delete. There is no way to ask for the tickets on one path, so this lists
 // them and filters -- which is what the reference's query amounted to as well.
 func (d Delete) deleteTickets(ctx context.Context, scope *rods.Scope, path string) error {
-	tickets, err := scope.TicketsForPath(ctx, path)
+	tickets, err := scope.TicketsUnderPath(ctx, path)
 	if err != nil {
 		return fmt.Errorf("listing the tickets on %q: %w", path, err)
 	}
@@ -160,18 +163,29 @@ func partitionByTrash(requested []string, trashPaths map[string]string) (trashed
 	return trashed, deleted
 }
 
-// mapFrom reads a map of strings out of a task's data, skipping anything of another shape.
-func mapFrom(data map[string]any, key string) map[string]string {
-	raw, ok := data[key].(map[string]any)
+// mapFrom reads a map of strings out of a task's data.
+//
+// Strict, and deliberately so. Absence from this map is the signal that a path is already in
+// the trash and should be removed outright, so data of the wrong shape read as an empty map
+// would force-delete everything the task named -- unrecoverably, and reporting success.
+func mapFrom(data map[string]any, key string) (map[string]string, error) {
+	raw, ok := data[key]
 	if !ok {
-		return map[string]string{}
+		return nil, fmt.Errorf("the task has no %q", key)
 	}
 
-	out := make(map[string]string, len(raw))
-	for name, value := range raw {
-		if text, ok := value.(string); ok {
-			out[name] = text
-		}
+	object, ok := raw.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("the task's %q is not an object", key)
 	}
-	return out
+
+	out := make(map[string]string, len(object))
+	for name, value := range object {
+		text, ok := value.(string)
+		if !ok {
+			return nil, fmt.Errorf("the task's %q names something other than a path for %q", key, name)
+		}
+		out[name] = text
+	}
+	return out, nil
 }

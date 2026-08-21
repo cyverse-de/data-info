@@ -307,7 +307,6 @@ func cachedProber(ttl time.Duration, probe func(context.Context) error) handlers
 	})
 }
 
-// icatConfig derives the catalog connection from the service configuration.
 // amqpConfig describes the broker and exchange from the service configuration.
 func amqpConfig(cfg *config.Config) amqp.Config {
 	return amqp.Config{
@@ -318,6 +317,7 @@ func amqpConfig(cfg *config.Config) amqp.Config {
 	}
 }
 
+// icatConfig derives the catalog connection from the service configuration.
 func icatConfig(cfg *config.Config) icat.Config {
 	return icat.Config{URI: cfg.ICATConnectionString()}
 }

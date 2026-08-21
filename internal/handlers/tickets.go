@@ -103,9 +103,20 @@ func (t *Tickets) Add(c echo.Context) error {
 		return err
 	}
 
+	// The tickets themselves are issued by the service's own account, not by the caller.
+	// iRODS scopes a ticket listing to whoever holds the connection, and these endpoints
+	// decide who may see a ticket from the permissions on its path -- so a ticket owned by
+	// one user would be invisible to another who can write to the same path, and invisible
+	// to the deletion cleanup, which also runs as the service. The reference does the same.
+	proxy, err := t.deps.OpenProxyScope(ctx)
+	if err != nil {
+		return err
+	}
+	defer proxy.Close()
+
 	views := make([]ticketView, 0, len(requested))
 	for _, path := range requested {
-		view, err := t.create(ctx, scope, path, mode, public, limits)
+		view, err := t.create(ctx, proxy, path, mode, public, limits)
 		if err != nil {
 			return err
 		}
@@ -192,9 +203,18 @@ func (t *Tickets) List(c echo.Context) error {
 		return err
 	}
 
+	// Listed as the service, for the same reason they are issued as it: which tickets a
+	// caller may see is decided by the permissions on the path, not by who happens to own
+	// the ticket.
+	proxy, err := t.deps.OpenProxyScope(ctx)
+	if err != nil {
+		return err
+	}
+	defer proxy.Close()
+
 	out := make(map[string][]ticketView, len(requested))
 	for _, path := range requested {
-		tickets, err := scope.TicketsForPath(ctx, path)
+		tickets, err := proxy.TicketsForPath(ctx, path)
 		if err != nil {
 			return err
 		}
@@ -239,10 +259,22 @@ func (t *Tickets) Delete(c echo.Context) error {
 
 	// Which paths the tickets are on decides whether they may be deleted, so they are
 	// resolved first and a ticket that names nothing fails the request.
+	proxy, err := t.deps.OpenProxyScope(ctx)
+	if err != nil {
+		return err
+	}
+	defer proxy.Close()
+
 	var covered, missing []string
 	for _, name := range body.Tickets {
-		ticket, err := scope.GetTicket(ctx, name)
-		if err != nil || ticket == nil {
+		ticket, err := proxy.GetTicket(ctx, name)
+		if err != nil {
+			// Not folded into the missing list. A connection failure reported as "this
+			// ticket does not exist" would tell a caller retrying through a blip that
+			// their tickets were already gone.
+			return err
+		}
+		if ticket == nil {
 			missing = append(missing, name)
 			continue
 		}
@@ -263,7 +295,7 @@ func (t *Tickets) Delete(c echo.Context) error {
 	}
 
 	for _, name := range body.Tickets {
-		if err := scope.DeleteTicket(ctx, name); err != nil {
+		if err := proxy.DeleteTicket(ctx, name); err != nil {
 			return err
 		}
 	}

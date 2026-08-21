@@ -93,7 +93,8 @@ func (g *Groups) Create(c echo.Context) error {
 		return err
 	}
 	for _, member := range body.Members {
-		if err := scope.AddGroupMember(ctx, body.Name, unqualify(member, g.deps.Layout.Zone)); err != nil {
+		account, zone := splitAccount(member, g.deps.Layout.Zone)
+		if err := scope.AddGroupMemberIn(ctx, body.Name, account, zone); err != nil {
 			return err
 		}
 	}
@@ -154,7 +155,8 @@ func (g *Groups) Update(c echo.Context) error {
 		if held[member] {
 			continue
 		}
-		if err := scope.AddGroupMember(ctx, name, unqualify(member, g.deps.Layout.Zone)); err != nil {
+		account, zone := splitAccount(member, g.deps.Layout.Zone)
+		if err := scope.AddGroupMemberIn(ctx, name, account, zone); err != nil {
 			return err
 		}
 	}
@@ -162,7 +164,8 @@ func (g *Groups) Update(c echo.Context) error {
 		if desired[member] {
 			continue
 		}
-		if err := scope.RemoveGroupMember(ctx, name, unqualify(member, g.deps.Layout.Zone)); err != nil {
+		account, zone := splitAccount(member, g.deps.Layout.Zone)
+		if err := scope.RemoveGroupMemberIn(ctx, name, account, zone); err != nil {
 			return err
 		}
 	}
@@ -290,8 +293,13 @@ func qualify(name, zone string) string {
 	return name + "#" + zone
 }
 
-// unqualify removes the local zone from an account name. iRODS takes the bare name when
-// changing a group's membership.
-func unqualify(name, zone string) string {
-	return strings.TrimSuffix(name, "#"+zone)
+// splitAccount separates a possibly-qualified account name into its name and its zone.
+//
+// Both are needed: iRODS takes them as separate arguments, so passing "someone#otherzone"
+// through as a name would have it looked up in the local zone under a name containing a hash.
+func splitAccount(name, defaultZone string) (account, zone string) {
+	if at := strings.LastIndex(name, "#"); at >= 0 {
+		return name[:at], name[at+1:]
+	}
+	return name, defaultZone
 }

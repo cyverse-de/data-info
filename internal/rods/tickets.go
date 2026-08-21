@@ -19,12 +19,29 @@ func (s *Scope) Tickets(ctx context.Context) ([]Ticket, error) {
 	return irodsclient.ListTickets(ctx, sess)
 }
 
-// TicketsForPath lists the tickets granting access to a path or anything under it.
+// TicketsForPath lists the tickets issued on exactly this path.
 //
-// iRODS cannot be asked this directly, so everything is listed and filtered here. That is
-// fine at the DE's ticket counts and it is what the callers need; if it ever stops being
-// fine, the filter belongs in the client library rather than in a cache here.
+// Not on its ancestors. A ticket on a collection is a grant on that collection, and it stays
+// valid for everything else in it -- reporting it here would inflate a listing, and removing
+// it when one file inside is deleted would revoke access to the rest.
+//
+// iRODS cannot be asked for the tickets on a path, so everything is listed and filtered here.
+// That is fine at the DE's ticket counts; if it ever stops being fine, the filter belongs in
+// the client library rather than in a cache here.
 func (s *Scope) TicketsForPath(ctx context.Context, path string) ([]Ticket, error) {
+	return s.ticketsMatching(ctx, path, false)
+}
+
+// TicketsUnderPath lists the tickets on a path and on everything inside it.
+//
+// For deletion only. Removing a collection takes its contents with it, so a ticket on
+// something inside is left pointing at nothing -- iRODS does not clean those up and the
+// reference does not either. Including them here is a deliberate improvement on that.
+func (s *Scope) TicketsUnderPath(ctx context.Context, path string) ([]Ticket, error) {
+	return s.ticketsMatching(ctx, path, true)
+}
+
+func (s *Scope) ticketsMatching(ctx context.Context, path string, includeDescendants bool) ([]Ticket, error) {
 	all, err := s.Tickets(ctx)
 	if err != nil {
 		return nil, err
@@ -35,9 +52,8 @@ func (s *Scope) TicketsForPath(ctx context.Context, path string) ([]Ticket, erro
 	out := make([]Ticket, 0, len(all))
 	for _, ticket := range all {
 		on := strings.TrimRight(ticket.Path, "/")
-		// A ticket on a collection covers what is inside it, so deleting that collection
-		// invalidates the ticket just as surely as deleting the object it named.
-		if on == path || strings.HasPrefix(path, on+"/") || strings.HasPrefix(on, path+"/") {
+
+		if on == path || (includeDescendants && strings.HasPrefix(on, path+"/")) {
 			out = append(out, ticket)
 		}
 	}
@@ -45,12 +61,28 @@ func (s *Scope) TicketsForPath(ctx context.Context, path string) ([]Ticket, erro
 }
 
 // GetTicket returns one ticket by name, or nil when there is none.
+//
+// Resolved by listing and matching rather than by asking for the one ticket. The client's
+// direct lookup builds a GenQuery with a condition on the ticket-string column without
+// selecting it, and iRODS 4.3.1 answers that with nothing -- so a ticket this service had
+// just created came back as missing. Verified against QA: the listing finds it and the direct
+// lookup does not.
+//
+// The cost is one query for every ticket the account owns rather than one for the ticket
+// asked about. At the DE's ticket counts that is not worth a workaround with a subtler
+// failure; if it becomes worth it, the fix belongs in the client library.
 func (s *Scope) GetTicket(ctx context.Context, name string) (*Ticket, error) {
-	sess, err := s.session(ctx)
+	all, err := s.Tickets(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return irodsclient.GetTicket(ctx, sess, name)
+
+	for _, ticket := range all {
+		if ticket.Name == name {
+			return &ticket, nil
+		}
+	}
+	return nil, nil
 }
 
 // CreateTicket issues a ticket granting an access type on a path.

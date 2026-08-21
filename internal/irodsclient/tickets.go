@@ -89,22 +89,6 @@ func AddTicketGroup(ctx context.Context, s *Session, name, group string) error {
 	return err
 }
 
-// GetTicket returns one ticket by name.
-func GetTicket(ctx context.Context, s *Session, name string) (*Ticket, error) {
-	found, err := Do(ctx, s, func(fsys *irodsfs.FileSystem) (*types.IRODSTicket, error) {
-		return fsys.GetTicket(name)
-	})
-	if err != nil {
-		return nil, err
-	}
-	if found == nil {
-		return nil, nil
-	}
-
-	ticket := convertTicket(found)
-	return &ticket, nil
-}
-
 // convertTicket maps a go-irodsclient ticket onto ours.
 func convertTicket(t *types.IRODSTicket) Ticket {
 	return Ticket{

@@ -8,20 +8,30 @@ import (
 	"github.com/cyverse-de/data-info/internal/icat"
 )
 
+// Two spellings of the same account have to compare equal, or every membership update would
+// remove everyone and add them straight back.
 func TestQualification(t *testing.T) {
 	cases := []struct {
-		name      string
-		in        string
-		qualified string
-		bare      string
+		name        string
+		in          string
+		qualified   string
+		wantAccount string
+		wantZone    string
 	}{
-		{name: "a bare name", in: "wregglej", qualified: "wregglej#iplant", bare: "wregglej"},
-		{name: "already qualified", in: "wregglej#iplant", qualified: "wregglej#iplant", bare: "wregglej"},
 		{
-			// Another zone's account stays qualified: the suffix is not this zone's, so
-			// removing it would name a different account.
-			name: "an account from another zone",
-			in:   "someone#other", qualified: "someone#other", bare: "someone#other",
+			name: "a bare name", in: "wregglej",
+			qualified: "wregglej#iplant", wantAccount: "wregglej", wantZone: testZone,
+		},
+		{
+			name: "already qualified", in: "wregglej#iplant",
+			qualified: "wregglej#iplant", wantAccount: "wregglej", wantZone: testZone,
+		},
+		{
+			// iRODS takes the name and the zone separately, so an account from another
+			// zone has to keep its own -- passing the whole string as a name would look it
+			// up locally under a name containing a hash.
+			name: "an account from another zone", in: "someone#other",
+			qualified: "someone#other", wantAccount: "someone", wantZone: "other",
 		},
 	}
 
@@ -30,8 +40,11 @@ func TestQualification(t *testing.T) {
 			if got := qualify(tc.in, testZone); got != tc.qualified {
 				t.Errorf("qualify(%q) = %q, want %q", tc.in, got, tc.qualified)
 			}
-			if got := unqualify(qualify(tc.in, testZone), testZone); got != tc.bare {
-				t.Errorf("unqualify(qualify(%q)) = %q, want %q", tc.in, got, tc.bare)
+
+			account, zone := splitAccount(qualify(tc.in, testZone), testZone)
+			if account != tc.wantAccount || zone != tc.wantZone {
+				t.Errorf("splitAccount(%q) = (%q, %q), want (%q, %q)",
+					tc.in, account, zone, tc.wantAccount, tc.wantZone)
 			}
 		})
 	}

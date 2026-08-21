@@ -38,9 +38,12 @@ func (m Move) Run(ctx context.Context, task *asynctasks.Task, progress worker.Pr
 
 	destinations := DestinationsUnder(destination, sources)
 
-	// Reported before anything moves, so a failure part-way through does not make the
-	// notification claim more than happened.
 	runErr := m.move(ctx, scope, task.Username, sources, destinations, progress)
+
+	// The notification names everything that was asked for, not everything that moved. A
+	// partial failure is reported as a failure over the whole list, which is what the
+	// reference does and what the DE renders; the task's status history is where the detail
+	// of how far it got lives.
 
 	m.Deps.notify(ctx, notifications.Move(task.Username, sources, destinations, runErr != nil))
 	return runErr
