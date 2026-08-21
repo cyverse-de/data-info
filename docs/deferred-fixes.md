@@ -219,12 +219,16 @@ a hundred times, and `Runner.Shutdown` cancels each running job, waits for it, a
 record itself as failed — which sets the end date and releases its paths. That turns a
 rollout from a source of permanent locks into a non-event.
 
-**Still open, and it is not this service's call alone:** adding `"complete": true` to the
-behaviour data would make the ten-minute timeout actually release the lock, covering the case
-this service cannot — SIGKILL, OOM, a node dying. The risk is a genuinely slow job that goes
-ten minutes without posting a status having its paths released while it is still working. A
-move posts per path per step, so that window is unlikely, but it is a real trade and wants a
-decision rather than a default.
+**Decided, and done:** every task this service creates registers the behaviour with
+`"complete": true` (`asynctasks.StallBehavior`), so the ten-minute timeout completes the task
+and releases its paths. That covers what the drain cannot — SIGKILL, OOM, a node dying. The
+trade, accepted knowingly: a job that genuinely goes ten minutes without posting a status has
+its paths released while it is still working. Jobs here report per path per step, so that
+window belongs to a process that is gone rather than one that is busy.
+
+The Clojure service still omits the flag, so until cutover a task it creates behaves the old
+way. That is a one-line change in `services/rename.clj` and `services/write.clj` if the
+benefit is wanted before then; it is not required for the port.
 
 **Consequence for the cutover:** the drain gate in stage 3 is a hard requirement, not a
 nicety. Any in-flight move, rename, delete or restore at the swap will lock its paths
