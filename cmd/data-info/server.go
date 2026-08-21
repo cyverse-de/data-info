@@ -123,6 +123,12 @@ func registerDataRoutes(e *echo.Echo, cfg *config.Config, log *logrus.Entry, dep
 		AnonMappings:      cfg.AnonFiles.Mappings,
 		KifshareURL:       cfg.Kifshare.ExternalURL,
 		KifshareTemplate:  cfg.Kifshare.DownloadTemplate,
+		PathLists: handlers.PathListSettings{
+			HTIdentifier:         cfg.PathLists.HT.FileIdentifier,
+			HTInfoType:           cfg.PathLists.HT.InfoType,
+			MultiInputIdentifier: cfg.PathLists.MultiInput.FileIdentifier,
+			MultiInputInfoType:   cfg.PathLists.MultiInput.InfoType,
+		},
 	}
 	// Assigned only when present. These fields are interfaces, and a nil concrete pointer
 	// stored in one is not itself nil, so a guard on the field would never fire.
@@ -228,6 +234,10 @@ func registerDataRoutes(e *echo.Echo, cfg *config.Config, log *logrus.Entry, dep
 	e.POST("/data/:data-id/metadata/copy", avus.Copy)
 	e.GET("/admin/data/:data-id/metadata", avus.AdminGet)
 	e.PATCH("/admin/data/:data-id/metadata", avus.AdminAdd)
+
+	// Path lists: a file listing what a selection contains, which an analysis then runs
+	// over.
+	e.POST("/path-list-creator", handlers.NewPathLists(hd).Create)
 }
 
 // adminUsersOf names the accounts whose access to a path is structural.

@@ -72,6 +72,9 @@ type Deps struct {
 	AnonBaseURL  string
 	AnonMappings map[string]string
 
+	// PathLists names the file identifiers and info types generated path lists carry.
+	PathLists PathListSettings
+
 	// KifshareURL and KifshareTemplate say where a ticket can be redeemed. The template is
 	// a deployment's to decide, because it addresses a service this one does not own.
 	KifshareURL      string
@@ -105,6 +108,17 @@ func (d Deps) OpenScope(ctx context.Context, user string) (*rods.Scope, error) {
 		return nil, fmt.Errorf("opening a data store view for %q: %w", user, err)
 	}
 	return scope, nil
+}
+
+// PathListSettings describes the two kinds of path list this service writes. Both the
+// identifier and the info type are configured, because whoever reads the file back keys on
+// them.
+type PathListSettings struct {
+	HTIdentifier string
+	HTInfoType   string
+
+	MultiInputIdentifier string
+	MultiInputInfoType   string
 }
 
 // MetadataClient is the part of the metadata service this service uses.
