@@ -5,8 +5,7 @@
                                           SortFieldDocs
                                           SortFieldOptionalKey
                                           StandardUserQueryParams]]
-        [data-info.routes.schemas.common]
-        [heuristomancer.core :as info])
+        [data-info.routes.schemas.common])
   (:require [common-swagger-api.schema.data :as data-schema]
             [schema.core :as s]))
 
