@@ -1,13 +1,16 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
 
 	"github.com/cyverse-de/data-info/internal/apierror"
+	"github.com/cyverse-de/data-info/internal/clients/metadata"
 	"github.com/cyverse-de/data-info/internal/icat"
 	"github.com/cyverse-de/data-info/internal/irodsclient"
 	"github.com/cyverse-de/data-info/internal/jobs"
@@ -57,6 +60,10 @@ type Deps struct {
 	Notifier  jobs.Notifier
 	Publisher jobs.Publisher
 
+	// Metadata holds the template AVUs the DE manages, which are separate from the ones
+	// iRODS stores. Several endpoints report the two merged.
+	Metadata MetadataClient
+
 	// AdminUsers are accounts whose access to a path is structural rather than shared, so
 	// a permission repair leaves them alone.
 	AdminUsers map[string]bool
@@ -66,6 +73,13 @@ type Deps struct {
 	AnonUser     string
 	AnonBaseURL  string
 	AnonMappings map[string]string
+
+	// PathLists names the file identifiers and info types generated path lists carry.
+	PathLists PathListSettings
+
+	// DataONE describes where harvested objects are served and how the files describing
+	// them are marked.
+	DataONE DataONESettings
 
 	// KifshareURL and KifshareTemplate say where a ticket can be redeemed. The template is
 	// a deployment's to decide, because it addresses a service this one does not own.
@@ -100,6 +114,42 @@ func (d Deps) OpenScope(ctx context.Context, user string) (*rods.Scope, error) {
 		return nil, fmt.Errorf("opening a data store view for %q: %w", user, err)
 	}
 	return scope, nil
+}
+
+// PathListSettings describes the two kinds of path list this service writes. Both the
+// identifier and the info type are configured, because whoever reads the file back keys on
+// them.
+type PathListSettings struct {
+	HTIdentifier string
+	HTInfoType   string
+
+	MultiInputIdentifier string
+	MultiInputInfoType   string
+}
+
+// DataONESettings describe the repository the exported metadata files are written for.
+type DataONESettings struct {
+	// MemberNodeBase is where the member node serves objects, which the resource map's
+	// identifiers are built from.
+	MemberNodeBase string
+
+	// OREAttribute marks a file as a resource map, and FormatIDAttribute records its
+	// format, both of which the harvester reads.
+	OREAttribute      string
+	FormatIDAttribute string
+
+	// MetadataDirname is the directory metadata files go in, and MetadataDirAttribute
+	// records where that directory is on the data set itself.
+	MetadataDirname      string
+	MetadataDirAttribute string
+}
+
+// MetadataClient is the part of the metadata service this service uses.
+type MetadataClient interface {
+	ListAVUs(ctx context.Context, user, targetType, targetID string) (map[string]any, error)
+	UpdateAVUs(ctx context.Context, user, targetType, targetID string, body any) error
+	SetAVUs(ctx context.Context, user, targetType, targetID string, body any) error
+	CopyAVUs(ctx context.Context, user, targetType, targetID string, targets []metadata.CopyTarget) error
 }
 
 // Logger returns where background work should report itself, never nil.
@@ -196,6 +246,31 @@ func schemaError(reason string) error {
 // on the routes marked StyleOK, which is most of the bulk endpoints.
 func bindBody(c echo.Context, into any) error {
 	if err := c.Bind(into); err != nil {
+		return schemaError("the request body could not be parsed")
+	}
+	return nil
+}
+
+// decodeBody reads a request body as JSON and nothing else.
+//
+// Use this rather than bindBody wherever the destination is a map. echo's binder folds the
+// route's path and query parameters into a map destination alongside the body, so a request
+// to /data/{data-id}/metadata arrives carrying a data-id key that the caller never sent --
+// and this service forwards what it does not recognise to the metadata service, which
+// rejects it.
+func decodeBody(c echo.Context, into any) error {
+	body, err := io.ReadAll(c.Request().Body)
+	if err != nil {
+		return schemaError("the request body could not be read")
+	}
+
+	// An absent body is not a malformed one. Several of these endpoints accept a request
+	// that changes nothing.
+	if len(bytes.TrimSpace(body)) == 0 {
+		return nil
+	}
+
+	if err := json.Unmarshal(body, into); err != nil {
 		return schemaError("the request body could not be parsed")
 	}
 	return nil

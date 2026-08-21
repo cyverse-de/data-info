@@ -54,6 +54,21 @@ func requireNoneExist(ctx context.Context, scope *rods.Scope, requested []string
 	return nil
 }
 
+// requirePathExists rejects one path that is not there, reporting it under the singular key.
+//
+// Its plural sibling above reports a list. Which of the two an endpoint uses is decided by
+// which validator the reference reached for there, and callers read the key.
+func requirePathExists(ctx context.Context, scope *rods.Scope, path string) error {
+	stat, err := scope.Stat(ctx, path).Get(ctx)
+	if err != nil {
+		return err
+	}
+	if !stat.Exists {
+		return apierror.New(apierror.ErrDoesNotExist).With("path", path)
+	}
+	return nil
+}
+
 // requireIsDir rejects a path that is not a collection.
 func requireIsDir(ctx context.Context, scope *rods.Scope, path string) error {
 	stat, err := scope.Stat(ctx, path).Get(ctx)

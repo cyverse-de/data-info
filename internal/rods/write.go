@@ -353,6 +353,115 @@ func (s *Scope) SetAVU(ctx context.Context, path string, avu AVU) error {
 	return nil
 }
 
+// AddAVUIfAbsent records a metadata triple unless the path already carries the same attribute
+// and value.
+//
+// iRODS allows duplicates, and adding one that is already there would leave two rows a caller
+// then has to delete twice. The unit is deliberately not part of the comparison: that is what
+// the reference compares on, so re-adding an AVU with a different unit is a no-op rather than
+// a change.
+func (s *Scope) AddAVUIfAbsent(ctx context.Context, path string, avu AVU) error {
+	path = normalizePath(path)
+
+	sess, err := s.session(ctx)
+	if err != nil {
+		return err
+	}
+
+	existing, err := irodsclient.ListAVUs(ctx, sess, path)
+	if err != nil {
+		return err
+	}
+	for _, current := range existing {
+		if current.Attribute == avu.Attribute && current.Value == avu.Value {
+			return nil
+		}
+	}
+
+	if err := irodsclient.AddAVU(ctx, sess, path, avu); err != nil {
+		return err
+	}
+
+	s.invalidate(path)
+	return nil
+}
+
+// DeleteAVU removes a metadata triple, matching on attribute and value.
+//
+// The unit is not compared, for the same reason it is not compared when adding: the reference
+// deletes by attribute and value, so an AVU whose unit has drifted is still removed rather
+// than left behind.
+func (s *Scope) DeleteAVU(ctx context.Context, path string, avu AVU) error {
+	path = normalizePath(path)
+
+	sess, err := s.session(ctx)
+	if err != nil {
+		return err
+	}
+
+	existing, err := irodsclient.ListAVUs(ctx, sess, path)
+	if err != nil {
+		return err
+	}
+
+	for _, current := range existing {
+		if current.Attribute != avu.Attribute || current.Value != avu.Value {
+			continue
+		}
+		if err := irodsclient.DeleteAVU(ctx, sess, path, current); err != nil {
+			return err
+		}
+	}
+
+	s.invalidate(path)
+	return nil
+}
+
+// MaxReadableFileSize bounds what ReadFile will return.
+//
+// These files are configuration a person wrote -- a CSV of metadata, a path list -- so this
+// is generous for that and small enough that pointing the endpoint at a data file fails
+// rather than filling memory.
+const MaxReadableFileSize = 32 << 20
+
+// ReadFile returns a data object's contents, up to MaxReadableFileSize.
+func (s *Scope) ReadFile(ctx context.Context, path string) ([]byte, error) {
+	sess, err := s.session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return irodsclient.ReadFile(ctx, sess, normalizePath(path), MaxReadableFileSize)
+}
+
+// ChildEntry is one member of a collection, with enough to know what it is.
+type ChildEntry struct {
+	Path  string
+	IsDir bool
+}
+
+// ChildEntries lists what a collection holds, saying which members are collections.
+//
+// Children answers the same question without the types, and most callers only need paths.
+// This exists for the walks that have to descend, which would otherwise cost a stat per
+// member to find out where to go.
+func (s *Scope) ChildEntries(ctx context.Context, path string) ([]ChildEntry, error) {
+	sess, err := s.session(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	entries, err := irodsclient.List(ctx, sess, normalizePath(path))
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]ChildEntry, 0, len(entries))
+	for _, entry := range entries {
+		out = append(out, ChildEntry{Path: entry.Path, IsDir: entry.Type == irodsclient.ObjectTypeDir})
+	}
+	return out, nil
+}
+
 // invalidate forgets what the scope remembered about a path, so a read after a write sees
 // the change rather than the answer from before it.
 func (s *Scope) invalidate(path string) {

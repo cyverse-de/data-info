@@ -102,4 +102,6 @@ files AS (
 SELECT t.*, COUNT(*) OVER () AS total_count
   FROM (SELECT * FROM folders UNION SELECT * FROM files) AS t
  ORDER BY type ASC, %s %s
+ -- A null limit means every row, which the path-list endpoint needs: it walks a whole tree
+ -- and a page boundary there would silently truncate the list it produces.
  LIMIT $7 OFFSET $8

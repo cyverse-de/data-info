@@ -45,6 +45,33 @@ func WriteFile(ctx context.Context, s *Session, path string, r io.Reader, resour
 	})
 }
 
+// ReadFile returns a data object's whole contents.
+//
+// For the few callers that need a file this service wrote or is about to interpret -- a CSV
+// of metadata, a path list -- and not for downloads, which stream. The limit is what keeps a
+// caller from being handed a terabyte because somebody pointed this at the wrong path.
+func ReadFile(ctx context.Context, s *Session, path string, limit int64) ([]byte, error) {
+	return DoPath(ctx, s, path, func(fsys *irodsfs.FileSystem) ([]byte, error) {
+		handle, err := fsys.OpenFile(path, "", "r")
+		if err != nil {
+			return nil, err
+		}
+		defer handle.Close() //nolint:errcheck // nothing was written
+
+		// One byte past the limit, so that a file which is too large fails rather than
+		// arriving truncated. A CSV of metadata cut off mid-row would be applied as far as
+		// it went and reported as a success.
+		contents, err := io.ReadAll(io.LimitReader(handle, limit+1))
+		if err != nil {
+			return nil, err
+		}
+		if int64(len(contents)) > limit {
+			return nil, fmt.Errorf("%q is larger than the %d bytes this endpoint will read", path, limit)
+		}
+		return contents, nil
+	})
+}
+
 // RenameFile moves a data object to another path.
 //
 // Used to publish an upload written to a temporary name. Both paths are expected to be in

@@ -143,8 +143,14 @@ func pagedFolder(ctx context.Context, qr queryer, q ListingQuery) ([]ListingRow,
 	if len(q.GroupIDs) == 0 && (q.User == "" || q.Zone == "") {
 		return nil, fmt.Errorf("icat: a user and zone are required when resolving groups")
 	}
-	if q.Limit <= 0 {
-		return nil, fmt.Errorf("icat: a positive limit is required, got %d", q.Limit)
+	// A negative limit means every row. The paged endpoints always set one; the path-list
+	// endpoint walks a whole tree and must not be cut off at a page boundary.
+	var limit any = q.Limit
+	switch {
+	case q.Limit < 0:
+		limit = nil
+	case q.Limit == 0:
+		return nil, fmt.Errorf("icat: a positive limit is required, or a negative one for no limit")
 	}
 	if q.Offset < 0 {
 		return nil, fmt.Errorf("icat: a non-negative offset is required, got %d", q.Offset)
@@ -194,7 +200,7 @@ func pagedFolder(ctx context.Context, qr queryer, q ListingQuery) ([]ListingRow,
 	var rows []ListingRow
 	err := qr.SelectContext(ctx, &rows, statement,
 		strings.TrimRight(q.Path, "/"), q.User, q.Zone, groupIDs,
-		infoTypes, q.IncludeUnknownInfoType, q.Limit, q.Offset, attribute, string(entityType))
+		infoTypes, q.IncludeUnknownInfoType, limit, q.Offset, attribute, string(entityType))
 	if err != nil {
 		return nil, fmt.Errorf("icat: listing %q: %w", q.Path, err)
 	}

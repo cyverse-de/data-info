@@ -14,6 +14,7 @@ import (
 
 	"github.com/cyverse-de/data-info/internal/amqp"
 	"github.com/cyverse-de/data-info/internal/clients/asynctasks"
+	"github.com/cyverse-de/data-info/internal/clients/metadata"
 	"github.com/cyverse-de/data-info/internal/clients/notifications"
 	"github.com/cyverse-de/data-info/internal/config"
 	"github.com/cyverse-de/data-info/internal/handlers"
@@ -59,6 +60,10 @@ const asyncTasksTimeout = 5 * time.Second
 // thing a job does and the work is already committed by then, so waiting long for one would
 // only hold a job's goroutine open.
 const notificationsTimeout = 10 * time.Second
+
+// metadataTimeout bounds one call to the metadata service. It sits inside a request rather
+// than after one, so it has to stay well under the request timeout.
+const metadataTimeout = 30 * time.Second
 
 func main() {
 	if err := run(); err != nil {
@@ -153,7 +158,13 @@ func run() error {
 	}
 	defer publisher.Close()
 
+	metadataClient, err := metadata.New(cfg.Services.Metadata, metadataTimeout)
+	if err != nil {
+		return fmt.Errorf("building the metadata client: %w", err)
+	}
+
 	deps := networkDeps(pool, store)
+	deps.Metadata = metadataClient
 	deps.Tasks = tasks
 	deps.Worker = runner
 	deps.Notifier = notifier

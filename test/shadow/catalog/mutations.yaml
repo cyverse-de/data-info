@@ -199,3 +199,57 @@ cases:
     method: DELETE
     path: /groups/definitely-not-a-group
     query: {user: "{{.User}}"}
+
+  # Metadata. These merge what the metadata service holds with what iRODS does, so a
+  # difference here can come from either side.
+  - id: list-metadata-for-an-unknown-id
+    tier: read
+    method: GET
+    path: /data/00000000-0000-0000-0000-000000000000/metadata
+    query: {user: "{{.User}}"}
+
+  - id: add-a-reserved-avu
+    tier: write
+    method: PATCH
+    path: /data/{{.SeedID}}/metadata
+    query: {user: "{{.User}}"}
+    seed: {filename: tagged.txt, content: "tag me\n"}
+    body: {irods-avus: [{attr: "ipc-not-yours", value: "no", unit: ""}]}
+
+  - id: add-an-avu
+    tier: write
+    method: PATCH
+    path: /data/{{.SeedID}}/metadata
+    query: {user: "{{.User}}"}
+    seed: {filename: tagged.txt, content: "tag me\n"}
+    body: {irods-avus: [{attr: "harness-attr", value: "harness-value", unit: ""}]}
+
+  - id: set-avus-to-an-empty-list
+    tier: write
+    method: PUT
+    path: /data/{{.SeedID}}/metadata
+    query: {user: "{{.User}}"}
+    seed: {filename: tagged.txt, content: "tag me\n"}
+    body: {irods-avus: []}
+
+  - id: metadata-save-to-a-missing-directory
+    tier: write
+    method: POST
+    path: /data/{{.SeedID}}/metadata/save
+    query: {user: "{{.User}}"}
+    seed: {filename: described.txt, content: "describe me\n"}
+    body: {dest: "{{.Root}}/nowhere/out.json", recursive: false}
+
+  - id: path-list-from-an-empty-selection
+    tier: write
+    method: POST
+    path: /path-list-creator
+    query: {user: "{{.User}}", dest: "{{.Root}}/list.txt"}
+    body: {paths: ["{{.Root}}/nothing-here"]}
+
+  - id: path-list-with-no-destination
+    tier: write
+    method: POST
+    path: /path-list-creator
+    query: {user: "{{.User}}"}
+    body: {paths: ["{{.Root}}"]}
