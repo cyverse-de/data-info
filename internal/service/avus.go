@@ -14,6 +14,10 @@ import (
 const (
 	ReservedUnit = "ipc-reserved-unit"
 	SystemUnit   = "ipc-system-avu"
+
+	// InfoTypeUnit is what an info-type AVU carries. It is not SystemUnit: info-typer and
+	// the reference both write this one, and every typed file in the data store has it.
+	InfoTypeUnit = "ipc-data-info"
 )
 
 // reservedAttributePrefix marks an attribute as the DE's rather than a user's. Matched

@@ -1,45 +1,56 @@
 package handlers
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/cyverse-de/data-info/internal/service"
+	"github.com/labstack/echo/v4"
 )
 
-// The delimiter arrives URL-encoded, because a comma cannot be sent in a query parameter
-// unescaped.
+// The delimiter is sent URL-encoded, because a comma cannot go in a query parameter
+// unescaped -- but echo decodes it before a handler sees it. The cases here go through a real
+// request for that reason: testing the helper against the still-encoded value hid a second
+// decode that rejected a literal percent sign.
 func TestCSVSeparator(t *testing.T) {
 	cases := []struct {
 		name    string
-		in      string
+		query   string
 		want    rune
 		wantErr bool
 	}{
-		{name: "absent means a comma", in: "", want: ','},
-		{name: "an encoded comma", in: "%2C", want: ','},
-		{name: "a literal tab", in: "\t", want: '\t'},
-		{name: "an encoded tab", in: "%09", want: '\t'},
-		{name: "a semicolon", in: ";", want: ';'},
-		{name: "more than one character", in: "ab", wantErr: true},
-		{name: "an encoded string", in: "%2C%2C", wantErr: true},
+		{name: "absent means a comma", query: "", want: ','},
+		{name: "an encoded comma", query: "separator=%2C", want: ','},
+		{name: "an encoded tab", query: "separator=%09", want: '\t'},
+		// Encoded, because Go's query parser drops a parameter list containing a bare
+		// semicolon. The endpoint documents the value as URL-encoded for this reason.
+		{name: "an encoded semicolon", query: "separator=%3B", want: ';'},
+		{name: "an encoded percent sign", query: "separator=%25", want: '%'},
+		{name: "more than one character", query: "separator=ab", wantErr: true},
+		{name: "an encoded string", query: "separator=%2C%2C", wantErr: true},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := csvSeparator(tc.in)
+			e := echo.New()
+			req := httptest.NewRequest(http.MethodPost, "/x?"+tc.query, nil)
+			c := e.NewContext(req, httptest.NewRecorder())
+
+			got, err := csvSeparator(c.QueryParam("separator"))
 
 			if tc.wantErr {
 				if err == nil {
-					t.Fatalf("csvSeparator(%q) = %q, want an error", tc.in, got)
+					t.Fatalf("separator %q = %q, want an error", tc.query, got)
 				}
 				return
 			}
 			if err != nil {
-				t.Fatalf("csvSeparator(%q): %v", tc.in, err)
+				t.Fatalf("separator %q: %v", tc.query, err)
 			}
 			if got != tc.want {
-				t.Errorf("csvSeparator(%q) = %q, want %q", tc.in, got, tc.want)
+				t.Errorf("separator %q = %q, want %q", tc.query, got, tc.want)
 			}
 		})
 	}
@@ -70,11 +81,12 @@ func TestResolveCSVPath(t *testing.T) {
 }
 
 // A row with fewer values than the header has attributes is not an error; it simply carries
-// fewer AVUs. A blank attribute name contributes nothing.
+// fewer AVUs. The result is always a slice and never nil, because the response declares an
+// array and a nil one marshals to null.
 func TestCSVAVUs(t *testing.T) {
-	attributes := []string{"item", "", "institution", "department"}
+	attributes := []string{"item", "institution", "department"}
 
-	got := csvAVUs(attributes, []string{"fake-1", "ignored", "UofA"})
+	got := csvAVUs(attributes, []string{"fake-1", "UofA"})
 
 	want := []service.AVU{
 		{Attribute: "item", Value: "fake-1"},
@@ -87,6 +99,10 @@ func TestCSVAVUs(t *testing.T) {
 		if got[i] != want[i] {
 			t.Errorf("avus[%d] = %+v, want %+v", i, got[i], want[i])
 		}
+	}
+
+	if empty := csvAVUs(nil, nil); empty == nil {
+		t.Error("an empty result is nil, which marshals to null rather than []")
 	}
 }
 

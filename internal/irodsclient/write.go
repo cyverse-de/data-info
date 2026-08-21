@@ -58,7 +58,17 @@ func ReadFile(ctx context.Context, s *Session, path string, limit int64) ([]byte
 		}
 		defer handle.Close() //nolint:errcheck // nothing was written
 
-		return io.ReadAll(io.LimitReader(handle, limit))
+		// One byte past the limit, so that a file which is too large fails rather than
+		// arriving truncated. A CSV of metadata cut off mid-row would be applied as far as
+		// it went and reported as a success.
+		contents, err := io.ReadAll(io.LimitReader(handle, limit+1))
+		if err != nil {
+			return nil, err
+		}
+		if int64(len(contents)) > limit {
+			return nil, fmt.Errorf("%q is larger than the %d bytes this endpoint will read", path, limit)
+		}
+		return contents, nil
 	})
 }
 

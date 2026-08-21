@@ -21,6 +21,10 @@ type PathListQuery struct {
 	// InfoTypes keeps only files of those types. Empty keeps everything.
 	InfoTypes []string
 
+	// IncludeUnknown keeps files with no info type at all. It is set independently of
+	// InfoTypes, because asking for only untyped files is a real request.
+	IncludeUnknown bool
+
 	// FoldersOnly lists folders instead of files. The two are exclusive: a path list holds
 	// one kind or the other, never both.
 	FoldersOnly bool

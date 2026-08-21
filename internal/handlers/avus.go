@@ -115,11 +115,6 @@ func (a *AVUs) add(c echo.Context, whom func(echo.Context) (string, error), allo
 	if err != nil {
 		return err
 	}
-	if !allowReserved {
-		if err := requireNoReservedAVUs(body.IRODSAVUs); err != nil {
-			return err
-		}
-	}
 
 	scope, err := a.deps.OpenScope(ctx, user)
 	if err != nil {
@@ -137,6 +132,15 @@ func (a *AVUs) add(c echo.Context, whom func(echo.Context) (string, error), allo
 	}
 	if err := requireWriteable(ctx, scope, stat.Path); err != nil {
 		return err
+	}
+
+	// After the access checks, not before. A caller who can neither see the item nor write
+	// the AVU they sent is told about the item, which is the failure they can act on -- and
+	// which is the order the reference validates in.
+	if !allowReserved {
+		if err := requireNoReservedAVUs(body.IRODSAVUs); err != nil {
+			return err
+		}
 	}
 
 	// The metadata service first. Its half of the change is the one a caller is most likely
@@ -175,9 +179,6 @@ func (a *AVUs) Set(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := requireNoReservedAVUs(body.IRODSAVUs); err != nil {
-		return err
-	}
 
 	scope, err := a.deps.OpenScope(ctx, user)
 	if err != nil {
@@ -194,6 +195,9 @@ func (a *AVUs) Set(c echo.Context) error {
 		return err
 	}
 	if err := requireWriteable(ctx, scope, stat.Path); err != nil {
+		return err
+	}
+	if err := requireNoReservedAVUs(body.IRODSAVUs); err != nil {
 		return err
 	}
 
@@ -349,9 +353,17 @@ func bindAVUChange(c echo.Context) (avuChangeRequest, error) {
 		}
 	}
 
-	list, ok := raw["irods-avus"].([]any)
-	if !ok {
+	present, given := raw["irods-avus"]
+	if !given || present == nil {
 		return out, nil
+	}
+
+	list, ok := present.([]any)
+	if !ok {
+		// Not "no AVUs". On the set route those are indistinguishable in effect -- an empty
+		// list removes every AVU the caller can see -- so a body this cannot read is
+		// refused rather than obeyed.
+		return avuChangeRequest{}, schemaError("irods-avus must be a list")
 	}
 
 	for _, item := range list {

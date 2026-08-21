@@ -5,7 +5,6 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"strings"
 
 	"github.com/cyverse-de/data-info/internal/apierror"
@@ -83,7 +82,7 @@ func (a *AVUs) Save(c echo.Context) error {
 		return err
 	}
 
-	item, err := a.collect(ctx, scope, user, source, body.Recursive)
+	item, err := a.collect(ctx, scope, user, source, body.Recursive, new(int))
 	if err != nil {
 		return err
 	}
@@ -114,13 +113,25 @@ func (a *AVUs) Save(c echo.Context) error {
 }
 
 // collect gathers one item's metadata, and its children's when the request asks for it.
+//
+// The visited count is carried through the walk and checked against the request limit. Each
+// item costs a stat, an access list and an HTTP call to the metadata service, so a recursive
+// export of a large collection would otherwise hold a request -- and an iRODS connection --
+// open for thousands of round trips. The reference counts what is under the folder before
+// starting; counting as it goes reaches the same limit without a second recursive query.
 func (a *AVUs) collect(
 	ctx context.Context,
 	scope *rods.Scope,
 	user string,
 	stat rods.Stat,
 	recursive bool,
+	visited *int,
 ) (savedItem, error) {
+	*visited++
+	if err := a.deps.CheckPathCount(*visited); err != nil {
+		return savedItem{}, err
+	}
+
 	described, err := service.StatOf(ctx, scope, user, stat.Path, service.StatOptions{
 		Fields:      service.ParseFieldSet("", ""),
 		Layout:      a.deps.Layout,
@@ -161,7 +172,7 @@ func (a *AVUs) collect(
 			return savedItem{}, err
 		}
 
-		child, err := a.collect(ctx, scope, user, childStat, recursive)
+		child, err := a.collect(ctx, scope, user, childStat, recursive, visited)
 		if err != nil {
 			return savedItem{}, err
 		}
@@ -310,15 +321,17 @@ func (a *AVUs) readCSV(ctx context.Context, scope *rods.Scope, src string, separ
 }
 
 // csvAVUs pairs the header's attributes with one row's values.
+//
+// Always a slice, never nil: the response declares an array and a nil one marshals to null,
+// which breaks a client counting the entries. A row with fewer values than the header has
+// attributes simply carries fewer AVUs -- that is not an error, and the reference zips the
+// two the same way.
 func csvAVUs(attributes, values []string) []service.AVU {
-	var out []service.AVU
+	out := make([]service.AVU, 0, len(attributes))
 
 	for i, attribute := range attributes {
 		if i >= len(values) {
 			break
-		}
-		if attribute == "" {
-			continue
 		}
 		out = append(out, service.AVU{Attribute: attribute, Value: values[i]})
 	}
@@ -340,12 +353,9 @@ func csvSeparator(raw string) (rune, error) {
 		return ',', nil
 	}
 
-	decoded, err := url.QueryUnescape(raw)
-	if err != nil {
-		return 0, schemaError("separator is not a valid URL-encoded character")
-	}
-
-	runes := []rune(decoded)
+	// Not decoded again. echo has already percent-decoded the query parameter, so a second
+	// pass would reject a literal percent sign -- which the reference accepts.
+	runes := []rune(raw)
 	if len(runes) != 1 {
 		return 0, schemaError("separator must be a single character")
 	}
@@ -407,12 +417,19 @@ func (a *AVUs) SaveORE(c echo.Context) error {
 		return err
 	}
 
+	// Both files are created before the resource map is built, even though the resource map
+	// is what is about to be written. It refers to itself and to the DataCite file by the
+	// identifiers iRODS assigns, and an object has no identifier until it exists -- so
+	// building first would produce a map naming itself as the empty string, and only a
+	// second save of the same data set would come out right. The reference creates them
+	// both up front for exactly this reason.
 	if _, err := scope.WriteFile(ctx, dataCitePath, strings.NewReader(document)); err != nil {
 		return err
 	}
+	if err := a.ensureExists(ctx, scope, orePath); err != nil {
+		return err
+	}
 
-	// The resource map is written second because it names the DataCite file, and both have
-	// to exist before their identifiers can be read back.
 	resourceMap, err := a.buildResourceMap(ctx, scope, dataSet.Path, metadataDir, orePath, dataCitePath, avus)
 	if err != nil {
 		return err
@@ -454,6 +471,23 @@ func (a *AVUs) buildResourceMap(
 	}), nil
 }
 
+// ensureExists creates an empty data object when there is nothing at the path.
+//
+// Rewriting one that is already there would change its identifier, and the resource map from
+// a previous save refers to it by that identifier.
+func (a *AVUs) ensureExists(ctx context.Context, scope *rods.Scope, path string) error {
+	present, err := scope.FileExists(ctx, path)
+	if err != nil {
+		return err
+	}
+	if present {
+		return nil
+	}
+
+	_, err = scope.WriteFile(ctx, path, strings.NewReader(""))
+	return err
+}
+
 // oreFiles are the objects a resource map refers to.
 type oreFiles struct {
 	resourceMap metadatafiles.ArchivedFile
@@ -471,18 +505,19 @@ func (a *AVUs) archivedFiles(
 	var out oreFiles
 
 	for _, dir := range []string{dataSetPath, metadataDir} {
-		children, err := scope.Children(ctx, dir)
+		// Everything underneath, not just what the collection directly holds. A data set
+		// with subfolders would otherwise publish a resource map that under-declares what
+		// DataONE should harvest, which is worse than failing: the harvest succeeds and
+		// silently takes less than the data set contains.
+		files, err := a.filesUnder(ctx, scope, dir)
 		if err != nil {
 			return oreFiles{}, err
 		}
 
-		for _, path := range children {
+		for _, path := range files {
 			stat, err := scope.Stat(ctx, path).Get(ctx)
 			if err != nil {
 				return oreFiles{}, err
-			}
-			if stat.Type != rods.ObjectTypeFile {
-				continue
 			}
 
 			file := metadatafiles.ArchivedFile{ID: stat.UUID, URI: a.uriFor(stat.UUID)}
@@ -497,6 +532,29 @@ func (a *AVUs) archivedFiles(
 		}
 	}
 
+	return out, nil
+}
+
+// filesUnder lists every data object at or below a collection.
+func (a *AVUs) filesUnder(ctx context.Context, scope *rods.Scope, path string) ([]string, error) {
+	entries, err := scope.ChildEntries(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+
+	var out []string
+	for _, entry := range entries {
+		if !entry.IsDir {
+			out = append(out, entry.Path)
+			continue
+		}
+
+		below, err := a.filesUnder(ctx, scope, entry.Path)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, below...)
+	}
 	return out, nil
 }
 

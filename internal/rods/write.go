@@ -433,6 +433,35 @@ func (s *Scope) ReadFile(ctx context.Context, path string) ([]byte, error) {
 	return irodsclient.ReadFile(ctx, sess, normalizePath(path), MaxReadableFileSize)
 }
 
+// ChildEntry is one member of a collection, with enough to know what it is.
+type ChildEntry struct {
+	Path  string
+	IsDir bool
+}
+
+// ChildEntries lists what a collection holds, saying which members are collections.
+//
+// Children answers the same question without the types, and most callers only need paths.
+// This exists for the walks that have to descend, which would otherwise cost a stat per
+// member to find out where to go.
+func (s *Scope) ChildEntries(ctx context.Context, path string) ([]ChildEntry, error) {
+	sess, err := s.session(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	entries, err := irodsclient.List(ctx, sess, normalizePath(path))
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]ChildEntry, 0, len(entries))
+	for _, entry := range entries {
+		out = append(out, ChildEntry{Path: entry.Path, IsDir: entry.Type == irodsclient.ObjectTypeDir})
+	}
+	return out, nil
+}
+
 // invalidate forgets what the scope remembered about a path, so a read after a write sees
 // the change rather than the answer from before it.
 func (s *Scope) invalidate(path string) {

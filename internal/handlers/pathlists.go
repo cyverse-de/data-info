@@ -63,10 +63,13 @@ func (p *PathLists) Create(c echo.Context) error {
 	}
 	requested := trimAll(body.Paths)
 
+	infoTypes, includeUnknown := infoTypeFilter(c)
+
 	query := service.PathListQuery{
 		FileIdentifier: identifier,
 		NamePattern:    c.QueryParam("name-pattern"),
-		InfoTypes:      infoTypeValues(c),
+		InfoTypes:      infoTypes,
+		IncludeUnknown: includeUnknown,
 		FoldersOnly:    foldersOnly,
 		Recursive:      recursive,
 	}
@@ -196,13 +199,14 @@ func (p *PathLists) walk(
 	query service.PathListQuery,
 ) ([]service.PathListEntry, error) {
 	rows, err := scope.Listing(ctx, icat.ListingQuery{
-		Path:          path,
-		User:          user,
-		Zone:          p.deps.Layout.Zone,
-		InfoTypes:     query.InfoTypes,
-		EntityType:    service.ListingEntityType(query.Recursive, query.FoldersOnly),
-		SortColumn:    icat.SortColumn("full_path"),
-		SortDirection: icat.SortAscending,
+		Path:                   path,
+		User:                   user,
+		Zone:                   p.deps.Layout.Zone,
+		InfoTypes:              query.InfoTypes,
+		IncludeUnknownInfoType: query.IncludeUnknown,
+		EntityType:             service.ListingEntityType(query.Recursive, query.FoldersOnly),
+		SortColumn:             icat.SortColumn("full_path"),
+		SortDirection:          icat.SortAscending,
 		// Every row. A page boundary here would silently truncate the list.
 		Limit:             -1,
 		InfoTypeAttribute: p.deps.InfoTypeAttribute,
@@ -260,10 +264,13 @@ func (p *PathLists) recordType(ctx context.Context, dest, listType string) error
 	}
 	defer proxy.Close()
 
+	// The unit is the one info-typer and the reference both write. A file carrying a
+	// different one would be typed as far as this service is concerned and untyped as far
+	// as anything reading the unit is.
 	return proxy.SetAVU(ctx, dest, rods.AVU{
 		Attribute: p.deps.InfoTypeAttribute,
 		Value:     listType,
-		Unit:      service.SystemUnit,
+		Unit:      service.InfoTypeUnit,
 	})
 }
 
@@ -276,10 +283,4 @@ func entryOf(stat rods.Stat) service.PathListEntry {
 		InfoType:   stat.InfoType,
 		Permission: stat.Permission,
 	}
-}
-
-// infoTypeValues reads the info-type filter, which may be repeated or comma-separated.
-func infoTypeValues(c echo.Context) []string {
-	types, _ := infoTypeFilter(c)
-	return types
 }
