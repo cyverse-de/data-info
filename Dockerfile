@@ -1,39 +1,41 @@
-FROM clojure:temurin-25-lein-trixie
+# The service's image. The Clojure tree lives on main until cutover and builds its own image
+# from the Dockerfile there, so the two never need to coexist in one checkout: data-info
+# builds from main and data-info-next from this branch, each from the plain name.
+FROM golang:1.26 AS build
 
-WORKDIR /usr/src/app
+WORKDIR /src
 
-RUN apt-get update && \
-    apt-get install -y git && \
-    rm -rf /var/lib/apt/lists/*
+# The module graph first, so a source-only change reuses the download layer.
+COPY go.mod go.sum ./
+RUN go mod download
 
-RUN ln -s "/opt/java/openjdk/bin/java" "/bin/data-info"
+COPY . .
 
-COPY project.clj /usr/src/app/
-RUN lein deps
+# Statically linked, because the runtime image has no libc to link against. Nothing here
+# needs cgo: the iRODS client and the postgres driver are both pure Go.
+#
+# No -X stamping of the version. The service reports a constant it holds in source, the way
+# project.clj declares the Clojure service's, so the build needs no arguments to produce a
+# binary that identifies itself -- and none of the DE's build paths pass any.
+RUN CGO_ENABLED=0 go build \
+      -trimpath \
+      -ldflags "-s -w" \
+      -o /out/data-info \
+      ./cmd/data-info
 
-COPY conf/main/logback.xml /usr/src/app/
-COPY . /usr/src/app
+# Distroless rather than a shell image. There is nothing to exec into, which is the point:
+# this service holds iRODS and catalog credentials, and the smaller the runtime the less
+# there is to reach them with.
+#
+# Worth knowing for anyone debugging it: this image does ship an /etc/mime.types, Debian's,
+# and its answers are not the ones the DE has always given -- it calls .vcf text/vcard where
+# data-info reports text/x-vcard. That is why internal/mediatype carries its own table rather
+# than letting the standard library's mime package seed itself from that file.
+FROM gcr.io/distroless/static-debian12:nonroot
 
-RUN lein do clean, uberjar && \
-    cp target/data-info-standalone.jar .
+COPY --from=build /out/data-info /bin/data-info
 
-# Pre-load the class metadata data-info needs at startup into an AOT cache, roughly halving startup
-# time. shutdown-agents is needed because loading the config namespace shells out for the hostname,
-# and the agent pool's non-daemon threads would otherwise hold the JVM open for their 60s keepalive,
-# adding a minute to every build. It makes no difference to the long-running service.
-RUN data-info -XX:AOTCacheOutput=/usr/src/app/data-info.aot \
-      -Dlogback.configurationFile=/usr/src/app/logback.xml \
-      -cp data-info-standalone.jar \
-      clojure.main -e "(require 'data-info.core 'data-info.routes) (shutdown-agents)"
-
-# Only the jar belongs on the classpath. This image builds in place, so the working directory is the
-# whole source tree; nothing in it is needed at runtime. logback is configured by absolute path
-# above, data_info.core takes its config from --config, and the resources that ship under nexml/ and
-# scripts/ are packaged into the jar. Keeping the working directory off the classpath is also what
-# lets the AOT cache load: the dumper refuses a non-empty directory, and a runtime classpath that
-# differs from the dumped one is rejected. A missing or rejected cache only logs an error; data-info
-# still starts.
-ENTRYPOINT ["data-info", "-Dlogback.configurationFile=/usr/src/app/logback.xml", "-XX:AOTCache=/usr/src/app/data-info.aot", "-cp", "data-info-standalone.jar", "data_info.core"]
+ENTRYPOINT ["/bin/data-info"]
 CMD ["--help"]
 
 ARG git_commit=unknown
