@@ -10,6 +10,7 @@ import (
 	"github.com/cyverse-de/data-info/internal/amqp"
 	"github.com/cyverse-de/data-info/internal/apierror"
 	"github.com/cyverse-de/data-info/internal/clients/asynctasks"
+	"github.com/cyverse-de/data-info/internal/clients/metadata"
 	"github.com/cyverse-de/data-info/internal/clients/notifications"
 	"github.com/cyverse-de/data-info/internal/config"
 	"github.com/cyverse-de/data-info/internal/handlers"
@@ -59,6 +60,7 @@ type Deps struct {
 	Worker    *worker.Runner
 	Notifier  *notifications.Client
 	Publisher *amqp.Publisher
+	Metadata  *metadata.Client
 }
 
 // buildServer assembles the HTTP server. It is separate from main so tests can exercise
@@ -133,6 +135,9 @@ func registerDataRoutes(e *echo.Echo, cfg *config.Config, log *logrus.Entry, dep
 	}
 	if deps.Publisher != nil {
 		hd.Publisher = deps.Publisher
+	}
+	if deps.Metadata != nil {
+		hd.Metadata = deps.Metadata
 	}
 
 	stats := handlers.NewStats(hd)
@@ -212,6 +217,17 @@ func registerDataRoutes(e *echo.Echo, cfg *config.Config, log *logrus.Entry, dep
 	e.GET("/groups/:group-name", groups.Get, ok)
 	e.PUT("/groups/:group-name", groups.Update, ok)
 	e.DELETE("/groups/:group-name", groups.Delete, ok)
+
+	// Metadata. These merge what the metadata service holds with what iRODS does, and the
+	// administrative pair acts as the service's own account so that it sees and may write
+	// the DE's own AVUs.
+	avus := handlers.NewAVUs(hd)
+	e.GET("/data/:data-id/metadata", avus.Get)
+	e.PATCH("/data/:data-id/metadata", avus.Add)
+	e.PUT("/data/:data-id/metadata", avus.Set)
+	e.POST("/data/:data-id/metadata/copy", avus.Copy)
+	e.GET("/admin/data/:data-id/metadata", avus.AdminGet)
+	e.PATCH("/admin/data/:data-id/metadata", avus.AdminAdd)
 }
 
 // adminUsersOf names the accounts whose access to a path is structural.

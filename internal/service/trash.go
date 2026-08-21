@@ -11,11 +11,9 @@ import (
 )
 
 // TrashOriginAttribute records where something was before it was trashed, so that restoring
-// it can put it back. The unit is the DE's marker for metadata it manages itself.
-const (
-	TrashOriginAttribute = "ipc-trash-origin"
-	SystemAVUUnit        = "ipc-system-avu"
-)
+// it can put it back. It is written with SystemUnit, the DE's marker for metadata it manages
+// itself.
+const TrashOriginAttribute = "ipc-trash-origin"
 
 // trashSuffixLength is how many characters are appended to a name in the trash. Two things
 // with the same name deleted from different collections would otherwise collide.

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/cyverse-de/data-info/internal/apierror"
+	"github.com/cyverse-de/data-info/internal/clients/metadata"
 	"github.com/cyverse-de/data-info/internal/icat"
 	"github.com/cyverse-de/data-info/internal/irodsclient"
 	"github.com/cyverse-de/data-info/internal/jobs"
@@ -57,6 +58,10 @@ type Deps struct {
 	Notifier  jobs.Notifier
 	Publisher jobs.Publisher
 
+	// Metadata holds the template AVUs the DE manages, which are separate from the ones
+	// iRODS stores. Several endpoints report the two merged.
+	Metadata MetadataClient
+
 	// AdminUsers are accounts whose access to a path is structural rather than shared, so
 	// a permission repair leaves them alone.
 	AdminUsers map[string]bool
@@ -100,6 +105,14 @@ func (d Deps) OpenScope(ctx context.Context, user string) (*rods.Scope, error) {
 		return nil, fmt.Errorf("opening a data store view for %q: %w", user, err)
 	}
 	return scope, nil
+}
+
+// MetadataClient is the part of the metadata service this service uses.
+type MetadataClient interface {
+	ListAVUs(ctx context.Context, user, targetType, targetID string) (map[string]any, error)
+	UpdateAVUs(ctx context.Context, user, targetType, targetID string, body any) error
+	SetAVUs(ctx context.Context, user, targetType, targetID string, body any) error
+	CopyAVUs(ctx context.Context, user, targetType, targetID string, targets []metadata.CopyTarget) error
 }
 
 // Logger returns where background work should report itself, never nil.

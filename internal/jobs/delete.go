@@ -107,7 +107,7 @@ func (d Delete) delete(
 		err := scope.SetAVU(ctx, trashPath, rods.AVU{
 			Attribute: service.TrashOriginAttribute,
 			Value:     path,
-			Unit:      service.SystemAVUUnit,
+			Unit:      service.SystemUnit,
 		})
 		if err != nil {
 			return fmt.Errorf("recording where %q came from: %w", trashPath, err)
