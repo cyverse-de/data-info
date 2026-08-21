@@ -102,6 +102,20 @@ type ListingQuery = icat.ListingQuery
 // ChildCounts is how many files and subfolders a collection holds.
 type ChildCounts = icat.ChildCounts
 
+// Permits reports whether a held access level satisfies a required one.
+//
+// iRODS access is a ladder rather than a set of flags -- own implies write implies read --
+// so a check is a comparison and not a membership test.
+func Permits(held, required Permission) bool {
+	rank := map[Permission]int{
+		PermissionNone:  0,
+		PermissionRead:  1,
+		PermissionWrite: 2,
+		PermissionOwn:   3,
+	}
+	return rank[held] >= rank[required] && held != PermissionNone
+}
+
 var _ View = (*Scope)(nil)
 
 // item resolves one path's catalog row, answering from a published row when one is already

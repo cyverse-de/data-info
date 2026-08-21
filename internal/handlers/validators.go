@@ -72,7 +72,7 @@ func requireWriteable(ctx context.Context, scope *rods.Scope, path string) error
 	if err != nil {
 		return err
 	}
-	if !permits(stat.Permission, rods.PermissionWrite) {
+	if !rods.Permits(stat.Permission, rods.PermissionWrite) {
 		return apierror.New(apierror.ErrNotWriteable).With("path", path)
 	}
 	return nil
@@ -96,6 +96,28 @@ func requireOwnsAll(ctx context.Context, scope *rods.Scope, user string, request
 	}
 	if len(unowned) > 0 {
 		return apierror.New(apierror.ErrNotOwner).With("user", user).With("paths", unowned)
+	}
+	return nil
+}
+
+// requireAllWriteable rejects a request naming anything the caller cannot write to.
+func requireAllWriteable(ctx context.Context, scope *rods.Scope, user string, requested []string) error {
+	stats, err := scope.Stats(ctx, requested).Get(ctx)
+	if err != nil {
+		return err
+	}
+
+	var refused []string
+	for _, path := range requested {
+		stat, ok := stats[path]
+		if !ok || !rods.Permits(stat.Permission, rods.PermissionWrite) {
+			refused = append(refused, path)
+		}
+	}
+	if len(refused) > 0 {
+		// The plural key with no user, which is what this validator attaches -- unlike its
+		// singular sibling above, which attaches neither.
+		return apierror.New(apierror.ErrNotWriteable).With("paths", refused)
 	}
 	return nil
 }

@@ -56,7 +56,7 @@ func (h *Reads) Existence(c echo.Context) error {
 		// Present *and* readable. The reference asks both questions, and they can differ:
 		// iRODS has access levels between none and read, and a user holding one of those
 		// can see the object in the catalog without being able to read it.
-		out[p] = stat.Exists && permits(stat.Permission, rods.PermissionRead)
+		out[p] = stat.Exists && rods.Permits(stat.Permission, rods.PermissionRead)
 	}
 
 	return writeJSONOK(c, map[string]any{"paths": out})

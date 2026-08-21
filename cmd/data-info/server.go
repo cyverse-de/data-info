@@ -177,6 +177,14 @@ func registerDataRoutes(e *echo.Echo, cfg *config.Config, log *logrus.Entry, dep
 	e.PUT("/data/:data-id/name", writes.RenameByID)
 	e.PUT("/data/:data-id/dir", writes.MoveByID)
 	e.PUT("/data/:data-id/children/dir", writes.MoveChildrenByID)
+
+	// Trash and restore. A delete moves to the trash unless the thing is already there, in
+	// which case there is nowhere further to move it.
+	e.POST("/deleter", writes.Delete)
+	e.DELETE("/data/:data-id", writes.DeleteByID)
+	e.DELETE("/data/:data-id/children", writes.DeleteChildrenByID)
+	e.DELETE("/trash", writes.EmptyTrash)
+	e.POST("/restorer", writes.Restore)
 }
 
 // adminUsersOf names the accounts whose access to a path is structural.

@@ -455,7 +455,7 @@ func requirePermission(
 	if err != nil {
 		return err
 	}
-	if permits(stat.Permission, required) {
+	if rods.Permits(stat.Permission, required) {
 		return nil
 	}
 	return insufficientPermission(required).With("paths", []string{path}).With("user", user)

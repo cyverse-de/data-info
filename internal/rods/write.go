@@ -318,6 +318,41 @@ func (s *Scope) Children(ctx context.Context, path string) ([]string, error) {
 	return out, nil
 }
 
+// SetAVU records a metadata triple, replacing any the path already carries under the same
+// attribute.
+//
+// iRODS allows several values under one attribute, so adding without removing would leave
+// both -- and a path with two different recorded origins is a path that cannot be restored.
+func (s *Scope) SetAVU(ctx context.Context, path string, avu AVU) error {
+	path = normalizePath(path)
+
+	sess, err := s.session(ctx)
+	if err != nil {
+		return err
+	}
+
+	existing, err := irodsclient.ListAVUs(ctx, sess, path)
+	if err != nil {
+		return err
+	}
+
+	for _, current := range existing {
+		if current.Attribute != avu.Attribute {
+			continue
+		}
+		if err := irodsclient.DeleteAVU(ctx, sess, path, current); err != nil {
+			return err
+		}
+	}
+
+	if err := irodsclient.AddAVU(ctx, sess, path, avu); err != nil {
+		return err
+	}
+
+	s.invalidate(path)
+	return nil
+}
+
 // invalidate forgets what the scope remembered about a path, so a read after a write sees
 // the change rather than the answer from before it.
 func (s *Scope) invalidate(path string) {
