@@ -26,9 +26,11 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// version is injected at build time with -ldflags "-X main.version=...". It is reported by
-// GET / and by --version.
-var version = "dev"
+// version is what GET / and --version report. It is a constant in the source rather than a
+// linker flag: project.clj declares the Clojure service's the same way, and what that
+// service actually reports is the defproject string, not anything the build stamps in.
+// Bump it here when the port's version moves.
+const version = "3.0.2-SNAPSHOT"
 
 // serverGrace bounds how long in-flight requests have to finish, and drainGrace how long the
 // background jobs then have to stop and report. Their sum has to stay under the deployment's

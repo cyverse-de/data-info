@@ -14,14 +14,15 @@ RUN go mod download
 
 COPY . .
 
-# Only the one the binary is stamped with; the labels' args are declared in the final stage.
-ARG descriptive_version=unknown
-
 # Statically linked, because the runtime image has no libc to link against. Nothing here
 # needs cgo: the iRODS client and the postgres driver are both pure Go.
+#
+# No -X stamping of the version. The service reports a constant it holds in source, the way
+# project.clj declares the Clojure service's, so the build needs no arguments to produce a
+# binary that identifies itself -- and none of the DE's build paths pass any.
 RUN CGO_ENABLED=0 go build \
       -trimpath \
-      -ldflags "-s -w -X main.version=${descriptive_version}" \
+      -ldflags "-s -w" \
       -o /out/data-info \
       ./cmd/data-info
 
