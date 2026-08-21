@@ -1,0 +1,53 @@
+# The Go service's image. The Clojure service's Dockerfile stays beside it until cutover,
+# when this becomes the only one and takes over the plain name.
+#
+# Named rather than replacing Dockerfile because both trees are deployed at once during the
+# port: data-info runs the Clojure image and data-info-next runs this one, from the same
+# commit, so a difference between them is a difference in the code and not in what was built.
+FROM golang:1.26 AS build
+
+WORKDIR /src
+
+# The module graph first, so a source-only change reuses the download layer.
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+
+ARG git_commit=unknown
+ARG version=unknown
+ARG descriptive_version=unknown
+
+# Statically linked, because the runtime image has no libc to link against. Nothing here
+# needs cgo: the iRODS client and the postgres driver are both pure Go.
+RUN CGO_ENABLED=0 go build \
+      -trimpath \
+      -ldflags "-s -w -X main.version=${descriptive_version}" \
+      -o /out/data-info \
+      ./cmd/data-info
+
+# Distroless rather than a shell image. There is nothing to exec into, which is the point:
+# this service holds iRODS and catalog credentials, and the smaller the runtime the less
+# there is to reach them with.
+#
+# Worth knowing for anyone debugging it: the standard library's mime package seeds itself
+# from /etc/mime.types, which this image does not ship. That is why internal/mediatype
+# carries its own table rather than consulting it -- otherwise the same file would report
+# one content type here and another on a workstation.
+FROM gcr.io/distroless/static-debian12:nonroot
+
+COPY --from=build /out/data-info /bin/data-info
+
+ENTRYPOINT ["/bin/data-info"]
+CMD ["--help"]
+
+ARG git_commit=unknown
+ARG version=unknown
+ARG descriptive_version=unknown
+
+LABEL org.cyverse.git-ref="$git_commit"
+LABEL org.cyverse.version="$version"
+LABEL org.cyverse.descriptive-version="$descriptive_version"
+LABEL org.label-schema.vcs-ref="$git_commit"
+LABEL org.label-schema.vcs-url="https://github.com/cyverse-de/data-info"
+LABEL org.label-schema.version="$descriptive_version"
