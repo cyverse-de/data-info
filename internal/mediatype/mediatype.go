@@ -12,8 +12,10 @@
 // this cannot.
 //
 // The table is the whole answer. Go's mime package seeds itself from the host's
-// /etc/mime.types at init, so consulting it would make the same file report one type on a
-// workstation and another in a distroless image that ships no such file -- a
+// /etc/mime.types at init, and that file differs everywhere: the runtime image ships
+// Debian's, which is not Tika's -- it calls .vcf text/vcard where the DE has always
+// reported text/x-vcard -- and a workstation's is different again. Consulting it would
+// make the same file report one type in the cluster and another in a test, which is a
 // deployment-dependent answer for a value callers compare.
 package mediatype
 

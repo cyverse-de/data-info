@@ -14,8 +14,7 @@ RUN go mod download
 
 COPY . .
 
-ARG git_commit=unknown
-ARG version=unknown
+# Only the one the binary is stamped with; the labels' args are declared in the final stage.
 ARG descriptive_version=unknown
 
 # Statically linked, because the runtime image has no libc to link against. Nothing here
@@ -30,10 +29,10 @@ RUN CGO_ENABLED=0 go build \
 # this service holds iRODS and catalog credentials, and the smaller the runtime the less
 # there is to reach them with.
 #
-# Worth knowing for anyone debugging it: the standard library's mime package seeds itself
-# from /etc/mime.types, which this image does not ship. That is why internal/mediatype
-# carries its own table rather than consulting it -- otherwise the same file would report
-# one content type here and another on a workstation.
+# Worth knowing for anyone debugging it: this image does ship an /etc/mime.types, Debian's,
+# and its answers are not the ones the DE has always given -- it calls .vcf text/vcard where
+# data-info reports text/x-vcard. That is why internal/mediatype carries its own table rather
+# than letting the standard library's mime package seed itself from that file.
 FROM gcr.io/distroless/static-debian12:nonroot
 
 COPY --from=build /out/data-info /bin/data-info
