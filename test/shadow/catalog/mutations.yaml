@@ -120,19 +120,42 @@ cases:
     query: {user: "{{.User}}"}
     body: {paths: ["/{{.Zone}}/home/{{.User}}"]}
 
-  # Restoring needs the object to be in the trash, which takes a delete first -- two requests
-  # in one case, which the catalog cannot express yet. It is the gap worth closing next: the
-  # collision rename a restore does when something already occupies the original path is
-  # exactly the kind of outcome only a state probe catches.
+  # Restoring needs the object to be in the trash, so these delete it first and wait. The
+  # setup runs against each service separately, which is what makes the comparison honest:
+  # each restores from wherever its own delete put things.
   - id: restore-a-deleted-file
     tier: async
+    seed: {filename: restorable.txt, content: "put me back\n"}
+    before:
+      - method: POST
+        path: /deleter
+        query: {user: "{{.User}}"}
+        body: {paths: ["{{.SeedPath}}"]}
+        await: true
     method: POST
     path: /restorer
     query: {user: "{{.User}}"}
-    body: {paths: ["{{.Root}}/doomed.txt"]}
-    skip: >-
-      needs a delete to run first, and a case is one request; the multi-step case model is
-      not built yet
+    body: {paths: ["{{.Root}}/restorable.txt"]}
+
+  # The case the state probe exists for. After the delete, a different file is put back at
+  # the original path, so the restore cannot use it and has to rename. Both services append
+  # .0, so the outcome is comparable rather than merely present -- and a response saying
+  # "restored" while the original was clobbered is exactly what reading only the response
+  # would miss.
+  - id: restore-onto-an-occupied-path
+    tier: async
+    seed: {filename: contested.txt, content: "the original\n"}
+    before:
+      - method: POST
+        path: /deleter
+        query: {user: "{{.User}}"}
+        body: {paths: ["{{.SeedPath}}"]}
+        await: true
+      - seed: {filename: contested.txt, content: "the replacement\n"}
+    method: POST
+    path: /restorer
+    query: {user: "{{.User}}"}
+    body: {paths: ["{{.Root}}/contested.txt"]}
 
   - id: restore-an-empty-selection
     tier: write

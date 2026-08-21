@@ -47,9 +47,46 @@ type Case struct {
 	// exists.
 	Seed *Seed `yaml:"seed"`
 
+	// Before puts the fixture into the state the case needs, one step at a time. Each step
+	// runs against both sides independently, so the state a case starts from is the state
+	// that side's own service produced -- which is the point for a case like restore,
+	// where what is being compared depends on where the preceding delete put things.
+	//
+	// Steps are setup, not subjects: their responses are not compared, and a step that
+	// fails fails the case rather than being reported as a difference.
+	Before []Step `yaml:"before"`
+
 	// Skip records why a case is not run, so that a gap is visible in the report rather
 	// than silently absent.
 	Skip string `yaml:"skip"`
+}
+
+// Step is one action taken before the case's own request.
+//
+// Exactly one of Seed or Method is set: a step either places a file or sends a request.
+type Step struct {
+	// Seed places a file, exactly as a case's own seed does, and rebinds {{.SeedPath}}
+	// and {{.SeedID}} for the steps and the request that follow. Re-seeding a path a
+	// previous step emptied is how a case sets up a collision.
+	Seed *Seed `yaml:"seed"`
+
+	Method string            `yaml:"method"`
+	Path   string            `yaml:"path"`
+	Query  map[string]string `yaml:"query"`
+	Body   any               `yaml:"body"`
+
+	// Await waits for the task the step creates before the next step runs. Without it a
+	// step whose work happens in the background would still be running when the case's
+	// own request arrives, which is the race the async tier exists to remove.
+	Await bool `yaml:"await"`
+}
+
+// describe names a step in an error, since steps have no ids of their own.
+func (s Step) describe() string {
+	if s.Seed != nil {
+		return "seed " + s.Seed.Filename
+	}
+	return s.Method + " " + s.Path
 }
 
 // Upload is the file an upload case sends.
@@ -129,6 +166,21 @@ func LoadCatalog(dir string) (*Catalog, error) {
 			if c.Seed != nil && c.Tier != TierWrite && c.Tier != TierAsync {
 				return nil, fmt.Errorf("%s: case %q seeds a fixture but is not a write case, so it has no fixture to seed", path, c.ID)
 			}
+			if len(c.Before) > 0 && c.Tier != TierWrite && c.Tier != TierAsync {
+				return nil, fmt.Errorf("%s: case %q has setup steps but is not a write case, so it has no fixture to set up", path, c.ID)
+			}
+			for i, step := range c.Before {
+				switch {
+				case step.Seed != nil && step.Method != "":
+					return nil, fmt.Errorf("%s: case %q step %d both seeds and sends a request", path, c.ID, i+1)
+				case step.Seed == nil && step.Method == "":
+					return nil, fmt.Errorf("%s: case %q step %d neither seeds nor sends a request", path, c.ID, i+1)
+				case step.Seed != nil && step.Await:
+					// Seeding is synchronous, so awaiting one would wait for a task
+					// that is never created and fail the case after the timeout.
+					return nil, fmt.Errorf("%s: case %q step %d awaits a seed, which creates no task", path, c.ID, i+1)
+				}
+			}
 		}
 
 		catalog.Groups = append(catalog.Groups, group)
@@ -171,6 +223,22 @@ func (c Case) Expand(vars map[string]string) Case {
 		expanded.Upload = &upload
 	}
 
+	return expanded
+}
+
+// Expand substitutes the run's variables into a step, the same way a case is expanded.
+func (s Step) Expand(vars map[string]string) Step {
+	expanded := s
+	expanded.Path = substitute(s.Path, vars)
+
+	if len(s.Query) > 0 {
+		expanded.Query = make(map[string]string, len(s.Query))
+		for k, v := range s.Query {
+			expanded.Query[k] = substitute(v, vars)
+		}
+	}
+
+	expanded.Body = substituteValue(s.Body, vars)
 	return expanded
 }
 

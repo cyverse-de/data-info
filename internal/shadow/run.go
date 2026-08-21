@@ -230,6 +230,20 @@ func (r *Runner) sendPaired(ctx context.Context, c Case) (*pairedRun, Result) {
 		}
 	}
 
+	for _, side := range []struct {
+		name string
+		base string
+		root string
+		vars map[string]string
+	}{
+		{"reference", r.Reference, referenceRoot, referenceVars},
+		{"candidate", r.Candidate, candidateRoot, candidateVars},
+	} {
+		if err := r.runSteps(ctx, c.Before, side.base, side.root, side.vars); err != nil {
+			return nil, Result{Case: c, Err: fmt.Errorf("%s setup: %w", side.name, err)}
+		}
+	}
+
 	referenceResp, err := r.send(ctx, r.Reference, c.Expand(referenceVars))
 	if err != nil {
 		return nil, Result{Case: c, Err: fmt.Errorf("reference: %w", err)}
@@ -247,6 +261,57 @@ func (r *Runner) sendPaired(ctx context.Context, c Case) (*pairedRun, Result) {
 		candidateResp: candidateResp,
 		diffs:         r.Normalizer.Compare(referenceResp, candidateResp),
 	}, Result{}
+}
+
+// runSteps puts one side's fixture into the state the case needs.
+//
+// A step's response is not compared. It is setup, so the only thing asked of it is that it
+// worked: a step that fails fails the case, rather than being reported as a difference
+// between two services that were never given the same starting point.
+func (r *Runner) runSteps(ctx context.Context, steps []Step, base, root string, vars map[string]string) error {
+	for i, step := range steps {
+		if step.Seed != nil {
+			seeded, err := r.Fixtures.Seed(ctx, step.Seed, r.User, root)
+			if err != nil {
+				return fmt.Errorf("step %d (%s): %w", i+1, step.describe(), err)
+			}
+			for k, v := range seeded {
+				vars[k] = v
+			}
+			continue
+		}
+
+		expanded := step.Expand(vars)
+		resp, err := r.send(ctx, base, Case{
+			Method: expanded.Method,
+			Path:   expanded.Path,
+			Query:  expanded.Query,
+			Body:   expanded.Body,
+		})
+		if err != nil {
+			return fmt.Errorf("step %d (%s): %w", i+1, step.describe(), err)
+		}
+		if resp.Status >= 400 {
+			return fmt.Errorf("step %d (%s): status %d: %s", i+1, step.describe(), resp.Status, resp.Body)
+		}
+
+		if !step.Await {
+			continue
+		}
+		if r.Tasks == nil {
+			return fmt.Errorf("step %d (%s) awaits a task, but no async-tasks URL was configured", i+1, step.describe())
+		}
+		id := taskIDFrom(resp.Body)
+		if id == "" {
+			// The step was expected to start work and did not, so whatever the case
+			// compares next would rest on a fixture that was never changed.
+			return fmt.Errorf("step %d (%s) awaits a task, but the response carried no async-task-id", i+1, step.describe())
+		}
+		if _, err := r.awaitTask(ctx, id); err != nil {
+			return fmt.Errorf("step %d (%s): %w", i+1, step.describe(), err)
+		}
+	}
+	return nil
 }
 
 // withStateDiffs reads back both subtrees and appends what differs.

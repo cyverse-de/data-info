@@ -390,3 +390,80 @@ func TestStatusTrailComparesSequenceNotTiming(t *testing.T) {
 		t.Error("a reordered status trail produced no difference")
 	}
 }
+
+// TestCatalogRejectsMalformedSteps pins the setup-step validation. Each of these would
+// otherwise fail at run time, in the middle of a run, with an error that reads like a
+// service difference rather than a catalog mistake.
+func TestCatalogRejectsMalformedSteps(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		step string
+		want string
+	}{
+		{
+			name: "both seeds and sends",
+			step: "      - {seed: {filename: a.txt, content: \"a\"}, method: POST, path: /deleter}",
+			want: "both seeds and sends a request",
+		},
+		{
+			name: "does neither",
+			step: "      - {await: true}",
+			want: "neither seeds nor sends a request",
+		},
+		{
+			name: "awaits a seed",
+			step: "      - {seed: {filename: a.txt, content: \"a\"}, await: true}",
+			want: "awaits a seed",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			doc := "group: g\ncases:\n  - id: c\n    tier: async\n    method: POST\n    path: /restorer\n    before:\n" + tc.step + "\n"
+			if err := os.WriteFile(filepath.Join(dir, "g.yaml"), []byte(doc), 0o600); err != nil {
+				t.Fatalf("writing the case file: %v", err)
+			}
+
+			_, err := LoadCatalog(dir)
+			if err == nil {
+				t.Fatal("LoadCatalog accepted a malformed step")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error = %q, want it to mention %q", err, tc.want)
+			}
+		})
+	}
+}
+
+// TestStepExpandsPerSide is the property the multi-step model rests on: a step is expanded
+// with the vars of the side it runs against, so each service's setup touches its own copy of
+// the fixture and never the other's.
+func TestStepExpandsPerSide(t *testing.T) {
+	step := Step{
+		Method: "POST",
+		Path:   "/deleter",
+		Query:  map[string]string{"user": "{{.User}}"},
+		Body:   map[string]any{"paths": []any{"{{.Root}}/doomed.txt"}},
+	}
+
+	for _, side := range []string{"A", "B"} {
+		root := "/z/scratch/RUN/" + side
+		got := step.Expand(map[string]string{"User": "someone", "Root": root})
+
+		if got.Query["user"] != "someone" {
+			t.Errorf("side %s: query user = %q", side, got.Query["user"])
+		}
+		paths, ok := got.Body.(map[string]any)["paths"].([]any)
+		if !ok || len(paths) != 1 {
+			t.Fatalf("side %s: body did not survive expansion: %#v", side, got.Body)
+		}
+		if want := root + "/doomed.txt"; paths[0] != want {
+			t.Errorf("side %s: path = %q, want %q", side, paths[0], want)
+		}
+	}
+
+	// The original is untouched, so the second side does not expand an already-expanded
+	// template and quietly point at the first side's tree.
+	if step.Path != "/deleter" || step.Body.(map[string]any)["paths"].([]any)[0] != "{{.Root}}/doomed.txt" {
+		t.Error("Expand mutated the step it was given")
+	}
+}
