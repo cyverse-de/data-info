@@ -36,7 +36,7 @@ var version = "dev"
 // release its paths -- which is the leak the drain exists to prevent.
 //
 // The manifest asks for 120 seconds and spends 5 of them in a preStop sleep, leaving 115.
-// These use 95 of that, so a drain that runs right to its deadline still has room to log
+// These use 90 of that, so a drain that runs right to its deadline still has room to log
 // what it gave up on before the kubelet loses patience.
 const (
 	serverGrace = 30 * time.Second
