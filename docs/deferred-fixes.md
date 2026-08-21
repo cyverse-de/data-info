@@ -33,7 +33,13 @@ escape to `clojure-commons.exception`'s `::ex/default` handler, which answers 50
 unconditionally. Routes wrapped in `svc/trap` use the status table instead. So
 `ERR_NOT_OWNER` is 403 on `POST /deleter` and 500 on `POST /path-info`.
 
-The upload routes are a third case. `POST /data` and `PUT /data/{data-id}` *are* wrapped in
+The group routes are a third case, in the other direction. They document a 403 for
+`ERR_FORBIDDEN` in their response schema, but they are written as `(ok ...)`, so the thrown
+code reaches the default handler and answers 500 -- the documented status is never the one a
+caller sees. Verified against the running QA service. `internal/handlers/groups.go` therefore
+sets no status of its own and lets the route's style decide.
+
+The upload routes are a fourth case. `POST /data` and `PUT /data/{data-id}` *are* wrapped in
 `svc/trap`, but every error they can raise comes from `write/wrap-multipart-create` and
 `write/wrap-multipart-overwrite` — ring middleware that stores the file, and that sits
 outside the trap. So those errors reach the default handler too: a forbidden filename answers
@@ -43,7 +49,8 @@ service.
 Reproduced by `apierror.Style`; `StyleOK` is registered on `/existence-marker`,
 `/creatability-marker`, the `/groups` routes, `GET /navigation/root`,
 `GET /navigation/path/{zone}/*`, `/stat-gatherer`, `/path-info`, `/stat-lister`,
-`/tickets`, `/ticket-lister`, `/ticket-deleter`, `POST /data` and `PUT /data/{data-id}`.
+`/tickets`, `/ticket-lister`, `/ticket-deleter`, the `/groups` routes, `POST /data` and
+`PUT /data/{data-id}`.
 
 **Blocked on:** the same `apps` work as entry 1. Once statuses are corrected this
 distinction should collapse — every route should answer from one table.
@@ -219,12 +226,16 @@ a hundred times, and `Runner.Shutdown` cancels each running job, waits for it, a
 record itself as failed — which sets the end date and releases its paths. That turns a
 rollout from a source of permanent locks into a non-event.
 
-**Still open, and it is not this service's call alone:** adding `"complete": true` to the
-behaviour data would make the ten-minute timeout actually release the lock, covering the case
-this service cannot — SIGKILL, OOM, a node dying. The risk is a genuinely slow job that goes
-ten minutes without posting a status having its paths released while it is still working. A
-move posts per path per step, so that window is unlikely, but it is a real trade and wants a
-decision rather than a default.
+**Decided, and done:** every task this service creates registers the behaviour with
+`"complete": true` (`asynctasks.StallBehavior`), so the ten-minute timeout completes the task
+and releases its paths. That covers what the drain cannot — SIGKILL, OOM, a node dying. The
+trade, accepted knowingly: a job that genuinely goes ten minutes without posting a status has
+its paths released while it is still working. Jobs here report per path per step, so that
+window belongs to a process that is gone rather than one that is busy.
+
+The Clojure service still omits the flag, so until cutover a task it creates behaves the old
+way. That is a one-line change in `services/rename.clj` and `services/write.clj` if the
+benefit is wanted before then; it is not required for the port.
 
 **Consequence for the cutover:** the drain gate in stage 3 is a hard requirement, not a
 nicety. Any in-flight move, rename, delete or restore at the swap will lock its paths

@@ -93,7 +93,7 @@ func (h *Writes) CreateDirectories(c echo.Context) error {
 		if err != nil {
 			return err
 		}
-		if !permits(stat.Permission, rods.PermissionWrite) {
+		if !rods.Permits(stat.Permission, rods.PermissionWrite) {
 			// The path alone, with no user: that is what the jargon validator this route
 			// uses attaches, unlike the clj-irods one used elsewhere.
 			return apierror.New(apierror.ErrNotWriteable).With("path", plan.existingAncestor)

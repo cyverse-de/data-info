@@ -240,7 +240,7 @@ func (h *Stats) filterVisible(
 		if !base.Exists {
 			continue
 		}
-		if !permits(base.Permission, behavior) {
+		if !rods.Permits(base.Permission, behavior) {
 			inaccessible = append(inaccessible, p)
 			continue
 		}
@@ -284,17 +284,6 @@ func validationBehavior(raw string) rods.Permission {
 	default:
 		return rods.PermissionRead
 	}
-}
-
-// permits reports whether a held permission satisfies a required one.
-func permits(held, required rods.Permission) bool {
-	rank := map[rods.Permission]int{
-		rods.PermissionNone:  0,
-		rods.PermissionRead:  1,
-		rods.PermissionWrite: 2,
-		rods.PermissionOwn:   3,
-	}
-	return rank[held] >= rank[required] && held != rods.PermissionNone
 }
 
 // boolParam reads a boolean query parameter.

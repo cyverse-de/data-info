@@ -12,7 +12,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/cyverse-de/data-info/internal/amqp"
 	"github.com/cyverse-de/data-info/internal/clients/asynctasks"
+	"github.com/cyverse-de/data-info/internal/clients/notifications"
 	"github.com/cyverse-de/data-info/internal/config"
 	"github.com/cyverse-de/data-info/internal/handlers"
 	"github.com/cyverse-de/data-info/internal/icat"
@@ -52,6 +54,11 @@ const (
 // inside drainGrace, so an attempt that could outlast that window would waste it rather than
 // use it: several quick tries beat one long one that never returns.
 const asyncTasksTimeout = 5 * time.Second
+
+// notificationsTimeout bounds one call to the notification agent. A notification is the last
+// thing a job does and the work is already committed by then, so waiting long for one would
+// only hold a job's goroutine open.
+const notificationsTimeout = 10 * time.Second
 
 func main() {
 	if err := run(); err != nil {
@@ -135,9 +142,22 @@ func run() error {
 
 	runner := worker.NewRunner(tasks, log, worker.InstanceID())
 
+	notifier, err := notifications.New(cfg.Services.NotificationAgent, notificationsTimeout)
+	if err != nil {
+		return fmt.Errorf("building the notifications client: %w", err)
+	}
+
+	publisher, err := amqp.New(amqpConfig(cfg), log)
+	if err != nil {
+		return fmt.Errorf("building the AMQP publisher: %w", err)
+	}
+	defer publisher.Close()
+
 	deps := networkDeps(pool, store)
 	deps.Tasks = tasks
 	deps.Worker = runner
+	deps.Notifier = notifier
+	deps.Publisher = publisher
 
 	srv := newHTTPServer(cfg, buildServer(cfg, version, log, deps))
 

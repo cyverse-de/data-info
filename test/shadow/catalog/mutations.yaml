@@ -1,0 +1,201 @@
+group: mutations
+cases:
+  # Each of these gets its own copy of the fixture, and both the response and what the write
+  # left behind are compared. Task ids and the random suffix a trashed name gets are
+  # canonicalised out, so what is compared is where things ended up rather than what they were
+  # called on the way.
+  #
+  # The async cases -- move, rename, delete, restore -- return before the work is done, so the
+  # state comparison races the job. They are marked write rather than async until the harness
+  # can poll a task to completion; what that costs is recorded in the skip below.
+
+  - id: move-a-file
+    tier: write
+    method: POST
+    path: /mover
+    query: {user: "{{.User}}"}
+    seed: {filename: movable.txt, content: "move me\n"}
+    body: {sources: ["{{.SeedPath}}"], dest: "{{.Root}}"}
+    skip: >-
+      the move runs asynchronously, so reading the tree straight afterwards races the job;
+      needs the async tier, which polls the task to a terminal status first
+
+  - id: move-to-a-missing-destination
+    tier: write
+    method: POST
+    path: /mover
+    query: {user: "{{.User}}"}
+    seed: {filename: movable.txt, content: "move me\n"}
+    body: {sources: ["{{.SeedPath}}"], dest: "{{.Root}}/nowhere"}
+
+  - id: move-something-that-is-not-there
+    tier: write
+    method: POST
+    path: /mover
+    query: {user: "{{.User}}"}
+    body: {sources: ["{{.Root}}/missing"], dest: "{{.Root}}"}
+
+  - id: move-with-no-sources
+    tier: write
+    method: POST
+    path: /mover
+    query: {user: "{{.User}}"}
+    body: {sources: [], dest: "{{.Root}}"}
+
+  - id: move-unknown-user
+    tier: write
+    method: POST
+    path: /mover
+    query: {user: nosuchuser}
+    body: {sources: ["{{.Root}}/x"], dest: "{{.Root}}"}
+
+  - id: rename-to-the-same-name
+    tier: write
+    method: PUT
+    path: /data/{{.SeedID}}/name
+    query: {user: "{{.User}}"}
+    seed: {filename: unchanged.txt, content: "same name\n"}
+    body: {filename: unchanged.txt}
+
+  - id: rename-an-unknown-id
+    tier: write
+    method: PUT
+    path: /data/00000000-0000-0000-0000-000000000000/name
+    query: {user: "{{.User}}"}
+    body: {filename: whatever.txt}
+
+  - id: rename-with-a-blank-name
+    tier: write
+    method: PUT
+    path: /data/{{.SeedID}}/name
+    query: {user: "{{.User}}"}
+    seed: {filename: named.txt, content: "named\n"}
+    body: {filename: ""}
+
+  - id: delete-something-that-is-not-there
+    tier: write
+    method: POST
+    path: /deleter
+    query: {user: "{{.User}}"}
+    body: {paths: ["{{.Root}}/missing"]}
+
+  - id: delete-with-no-paths
+    tier: write
+    method: POST
+    path: /deleter
+    query: {user: "{{.User}}"}
+    body: {paths: []}
+
+  # The one path a user may never delete: everything they have lives under it, including the
+  # trash the deletion would try to use.
+  - id: delete-a-home-directory
+    tier: write
+    method: POST
+    path: /deleter
+    query: {user: "{{.User}}"}
+    body: {paths: ["/{{.Zone}}/home/{{.User}}"]}
+
+  - id: restore-an-empty-selection
+    tier: write
+    method: POST
+    path: /restorer
+    query: {user: "{{.User}}"}
+    body: {paths: ["{{.Root}}/not-in-the-trash"]}
+
+  - id: share-with-yourself
+    tier: write
+    method: POST
+    path: /sharer
+    query: {user: "{{.User}}"}
+    seed: {filename: shared.txt, content: "shared\n"}
+    body:
+      sharing:
+        - user: "{{.User}}"
+          paths:
+            - {path: "{{.SeedPath}}", permission: read}
+
+  - id: share-with-an-unknown-user
+    tier: write
+    method: POST
+    path: /sharer
+    query: {user: "{{.User}}"}
+    seed: {filename: shared.txt, content: "shared\n"}
+    body:
+      sharing:
+        - user: nosuchuser
+          paths:
+            - {path: "{{.SeedPath}}", permission: read}
+
+  - id: share-something-that-is-not-there
+    tier: write
+    method: POST
+    path: /sharer
+    query: {user: "{{.User}}"}
+    body:
+      sharing:
+        - user: "{{.User}}"
+          paths:
+            - {path: "{{.Root}}/missing", permission: read}
+
+  - id: unshare-from-yourself
+    tier: write
+    method: POST
+    path: /unsharer
+    query: {user: "{{.User}}"}
+    seed: {filename: shared.txt, content: "shared\n"}
+    body:
+      unshare:
+        - user: "{{.User}}"
+          paths: ["{{.SeedPath}}"]
+
+  - id: unshare-from-an-unknown-user
+    tier: write
+    method: POST
+    path: /unsharer
+    query: {user: "{{.User}}"}
+    seed: {filename: shared.txt, content: "shared\n"}
+    body:
+      unshare:
+        - user: nosuchuser
+          paths: ["{{.SeedPath}}"]
+
+  - id: list-tickets-for-a-path-with-none
+    tier: write
+    method: POST
+    path: /ticket-lister
+    query: {user: "{{.User}}"}
+    seed: {filename: unticketed.txt, content: "no tickets\n"}
+    body: {paths: ["{{.SeedPath}}"]}
+
+  - id: list-tickets-for-something-that-is-not-there
+    tier: write
+    method: POST
+    path: /ticket-lister
+    query: {user: "{{.User}}"}
+    body: {paths: ["{{.Root}}/missing"]}
+
+  - id: delete-a-ticket-that-does-not-exist
+    tier: write
+    method: POST
+    path: /ticket-deleter
+    query: {user: "{{.User}}"}
+    body: {tickets: ["NOSUCHTICKET"]}
+
+  - id: get-a-group-that-does-not-exist
+    tier: read
+    method: GET
+    path: /groups/definitely-not-a-group
+    query: {user: "{{.User}}"}
+
+  - id: create-a-group-as-an-ordinary-user
+    tier: write
+    method: POST
+    path: /groups
+    query: {user: "{{.User}}"}
+    body: {name: shadow-harness-group, members: []}
+
+  - id: delete-a-group-as-an-ordinary-user
+    tier: write
+    method: DELETE
+    path: /groups/definitely-not-a-group
+    query: {user: "{{.User}}"}

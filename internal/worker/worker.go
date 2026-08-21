@@ -2,9 +2,13 @@
 //
 // Everything here exists to keep one invariant: a task that starts must reach a terminal
 // status. An absent end date is what holds the lock on a task's paths, so a job that dies
-// without reporting leaves those paths unusable -- and the async-tasks stall timeout does
-// not rescue it, because the behaviour this service registers does not ask for the task to
-// be completed. See docs/deferred-fixes.md.
+// without reporting leaves those paths unusable.
+//
+// The async-tasks stall timeout is the other half of that, and only since this service began
+// registering it with "complete" set (asynctasks.StallBehavior): it releases the paths of a
+// task that stops reporting, which covers what a graceful shutdown cannot -- SIGKILL, an OOM,
+// a node disappearing. This still matters because it is the difference between releasing
+// those paths immediately and releasing them ten minutes later.
 package worker
 
 import (

@@ -250,3 +250,54 @@ func TestNewRejectsAnUnusableBaseURL(t *testing.T) {
 		}
 	}
 }
+
+// The "complete" flag is what makes the stall timeout release a dead task's paths. Without
+// it the timeout records the stall and stops, leaving the end date null -- which is exactly
+// what holds the lock. The reference omits it; this asserts that we do not.
+func TestStallBehaviorCompletesTheTask(t *testing.T) {
+	behavior := StallBehavior()
+
+	if behavior.Type != BehaviorStatusChangeTimeout {
+		t.Errorf("type = %q, want %q", behavior.Type, BehaviorStatusChangeTimeout)
+	}
+
+	// Round-tripped through JSON, because that is how async-tasks reads it: the processor
+	// decodes the data into its own struct, so what matters is the wire shape.
+	encoded, err := json.Marshal(behavior)
+	if err != nil {
+		t.Fatalf("encoding the behavior: %v", err)
+	}
+
+	var decoded struct {
+		Type string `json:"type"`
+		Data struct {
+			Statuses []struct {
+				StartStatus string `json:"start_status"`
+				EndStatus   string `json:"end_status"`
+				Timeout     string `json:"timeout"`
+				Complete    bool   `json:"complete"`
+			} `json:"statuses"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatalf("decoding the behavior: %v", err)
+	}
+
+	if len(decoded.Data.Statuses) != 1 {
+		t.Fatalf("statuses = %d, want exactly one", len(decoded.Data.Statuses))
+	}
+
+	got := decoded.Data.Statuses[0]
+	if !got.Complete {
+		t.Error("complete is not set, so the timeout would leave the task's paths locked")
+	}
+	if got.StartStatus != StatusRunning {
+		t.Errorf("start_status = %q, want %q", got.StartStatus, StatusRunning)
+	}
+	if got.EndStatus != StatusStalled {
+		t.Errorf("end_status = %q, want %q", got.EndStatus, StatusStalled)
+	}
+	if got.Timeout != StallTimeout {
+		t.Errorf("timeout = %q, want %q", got.Timeout, StallTimeout)
+	}
+}

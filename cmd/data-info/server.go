@@ -7,8 +7,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cyverse-de/data-info/internal/amqp"
 	"github.com/cyverse-de/data-info/internal/apierror"
 	"github.com/cyverse-de/data-info/internal/clients/asynctasks"
+	"github.com/cyverse-de/data-info/internal/clients/notifications"
 	"github.com/cyverse-de/data-info/internal/config"
 	"github.com/cyverse-de/data-info/internal/handlers"
 	"github.com/cyverse-de/data-info/internal/icat"
@@ -51,10 +53,12 @@ type Deps struct {
 	IRODS *irodsclient.Pool
 	ICAT  icat.Store
 
-	// Tasks records long-running work, and Worker runs it. Both are nil until an endpoint
-	// that starts a task is registered.
-	Tasks  *asynctasks.Client
-	Worker *worker.Runner
+	// Tasks and Worker record long-running work and run it, and Notifier and Publisher
+	// report it. All are nil in tests that do not exercise a mutating endpoint.
+	Tasks     *asynctasks.Client
+	Worker    *worker.Runner
+	Notifier  *notifications.Client
+	Publisher *amqp.Publisher
 }
 
 // buildServer assembles the HTTP server. It is separate from main so tests can exercise
@@ -111,11 +115,24 @@ func registerDataRoutes(e *echo.Echo, cfg *config.Config, log *logrus.Entry, dep
 		BadChars:          cfg.BadChars,
 		Log:               log,
 		Worker:            deps.Worker,
+		AdminUsers:        adminUsersOf(cfg),
+		AnonUser:          cfg.AnonUser,
+		AnonBaseURL:       cfg.AnonFiles.BaseURL,
+		AnonMappings:      cfg.AnonFiles.Mappings,
+		KifshareURL:       cfg.Kifshare.ExternalURL,
+		KifshareTemplate:  cfg.Kifshare.DownloadTemplate,
 	}
-	// Left nil rather than assigned unconditionally: Deps.Tasks is an interface, and a nil
-	// *asynctasks.Client stored in one is not nil, so the guard on it would never fire.
+	// Assigned only when present. These fields are interfaces, and a nil concrete pointer
+	// stored in one is not itself nil, so a guard on the field would never fire.
 	if deps.Tasks != nil {
 		hd.Tasks = deps.Tasks
+		hd.Creator = deps.Tasks
+	}
+	if deps.Notifier != nil {
+		hd.Notifier = deps.Notifier
+	}
+	if deps.Publisher != nil {
+		hd.Publisher = deps.Publisher
 	}
 
 	stats := handlers.NewStats(hd)
@@ -158,6 +175,55 @@ func registerDataRoutes(e *echo.Echo, cfg *config.Config, log *logrus.Entry, dep
 	e.POST("/data", writes.Upload, ok)
 	e.POST("/data/", writes.Upload, ok)
 	e.PUT("/data/:data-id", writes.Overwrite, ok)
+
+	// Moves and renames. Each records a task before doing anything, which is what locks the
+	// paths it will touch.
+	e.POST("/mover", writes.Move)
+	e.PUT("/data/:data-id/name", writes.RenameByID)
+	e.PUT("/data/:data-id/dir", writes.MoveByID)
+	e.PUT("/data/:data-id/children/dir", writes.MoveChildrenByID)
+
+	// Trash and restore. A delete moves to the trash unless the thing is already there, in
+	// which case there is nowhere further to move it.
+	e.POST("/deleter", writes.Delete)
+	e.DELETE("/data/:data-id", writes.DeleteByID)
+	e.DELETE("/data/:data-id/children", writes.DeleteChildrenByID)
+	e.DELETE("/trash", writes.EmptyTrash)
+	e.POST("/restorer", writes.Restore)
+
+	// Sharing. These report a failure per path inside a successful response, because the DE
+	// runs them over a selection and one item nobody owns must not fail the rest.
+	e.POST("/sharer", writes.Share)
+	e.POST("/unsharer", writes.Unshare)
+	e.POST("/anonymizer", writes.Anonymize)
+	e.PUT("/data/:data-id/permissions/:share-with/:permission", writes.AddPermission)
+	e.DELETE("/data/:data-id/permissions/:unshare-with", writes.RemovePermission)
+
+	// Tickets. These are (ok ...) routes in the reference, so every error code answers 500.
+	tickets := handlers.NewTickets(hd)
+	e.POST("/tickets", tickets.Add, ok)
+	e.POST("/ticket-lister", tickets.List, ok)
+	e.POST("/ticket-deleter", tickets.Delete, ok)
+
+	// Groups. These are (ok ...) routes too, except that the forbidden response pins its own
+	// status because the route documents a 403 explicitly.
+	groups := handlers.NewGroups(hd)
+	e.POST("/groups", groups.Create, ok)
+	e.GET("/groups/:group-name", groups.Get, ok)
+	e.PUT("/groups/:group-name", groups.Update, ok)
+	e.DELETE("/groups/:group-name", groups.Delete, ok)
+}
+
+// adminUsersOf names the accounts whose access to a path is structural.
+//
+// A permission repair after a move leaves these alone: their access is how the DE operates,
+// not something a user shared.
+func adminUsersOf(cfg *config.Config) map[string]bool {
+	out := make(map[string]bool, len(cfg.IRODS.AdminUsers))
+	for _, user := range cfg.IRODS.AdminUsers {
+		out[user] = true
+	}
+	return out
 }
 
 // layoutOf describes the zone's namespace from the service configuration.
@@ -239,6 +305,16 @@ func cachedProber(ttl time.Duration, probe func(context.Context) error) handlers
 		last = time.Now()
 		return result
 	})
+}
+
+// amqpConfig describes the broker and exchange from the service configuration.
+func amqpConfig(cfg *config.Config) amqp.Config {
+	return amqp.Config{
+		URI:        cfg.AMQP.URI,
+		Exchange:   cfg.AMQP.Exchange.Name,
+		Durable:    cfg.AMQP.Exchange.Durable,
+		AutoDelete: cfg.AMQP.Exchange.AutoDelete,
+	}
 }
 
 // icatConfig derives the catalog connection from the service configuration.

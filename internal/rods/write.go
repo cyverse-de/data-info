@@ -37,6 +37,25 @@ type Ops interface {
 
 	// Checksum records a data object's checksum in the catalog, returning it.
 	Checksum(ctx context.Context, path string) (string, error)
+
+	// Move renames a path, whatever kind of thing is at it.
+	Move(ctx context.Context, from, to string) error
+
+	// Delete removes a path, taking a collection's contents with it.
+	Delete(ctx context.Context, path string, force bool) error
+
+	// SetPermission grants a user an access level, or removes their access when the level
+	// is PermissionNone.
+	SetPermission(ctx context.Context, path, user string, level Permission, recurse bool) error
+
+	// SetInherit turns a collection's inheritance flag on or off.
+	SetInherit(ctx context.Context, path string, inherit, recurse bool) error
+
+	// Inherits reports whether a collection passes its access list down to new children.
+	Inherits(ctx context.Context, path string) (bool, error)
+
+	// Children lists what a collection directly holds.
+	Children(ctx context.Context, path string) ([]string, error)
 }
 
 var _ Ops = (*Scope)(nil)
@@ -173,6 +192,165 @@ func (s *Scope) Checksum(ctx context.Context, path string) (string, error) {
 
 	s.invalidate(path)
 	return sum, nil
+}
+
+// Move renames a path.
+//
+// Nothing is done here about permissions. Across collections they need repair, and what that
+// repair is depends on both collections' inheritance flags, so it belongs to the caller that
+// knows why the move is happening -- see service.RepairPermissions.
+func (s *Scope) Move(ctx context.Context, from, to string) error {
+	from, to = normalizePath(from), normalizePath(to)
+
+	sess, err := s.session(ctx)
+	if err != nil {
+		return err
+	}
+
+	if err := irodsclient.Move(ctx, sess, from, to); err != nil {
+		return err
+	}
+
+	s.invalidate(from)
+	s.invalidate(to)
+	return nil
+}
+
+// Delete removes a path.
+//
+// A collection is removed with everything under it: the endpoints that reach here have
+// already told the user that is what will happen, and iRODS refuses a non-recursive removal
+// of anything that is not empty.
+func (s *Scope) Delete(ctx context.Context, path string, force bool) error {
+	path = normalizePath(path)
+
+	sess, err := s.session(ctx)
+	if err != nil {
+		return err
+	}
+
+	stat, err := s.Stat(ctx, path).Get(ctx)
+	if err != nil {
+		return err
+	}
+
+	if stat.Type == ObjectTypeDir {
+		err = irodsclient.RemoveDir(ctx, sess, path, true, force)
+	} else {
+		err = irodsclient.RemoveFile(ctx, sess, path, force)
+	}
+	if err != nil {
+		return err
+	}
+
+	s.invalidate(path)
+	return nil
+}
+
+// SetPermission grants or removes a user's access to a path.
+//
+// PermissionNone removes it. iRODS spells that as its own access level rather than as the
+// absence of one, so a caller wanting to unshare passes it here rather than calling
+// something else.
+func (s *Scope) SetPermission(ctx context.Context, path, user string, level Permission, recurse bool) error {
+	path = normalizePath(path)
+
+	sess, err := s.session(ctx)
+	if err != nil {
+		return err
+	}
+
+	perm := irodsclient.Permission(level)
+	if err := irodsclient.SetACL(ctx, sess, path, perm, user, s.deps.Zone, recurse, false); err != nil {
+		return err
+	}
+
+	s.invalidate(path)
+	return nil
+}
+
+// SetInherit turns a collection's inheritance flag on or off.
+func (s *Scope) SetInherit(ctx context.Context, path string, inherit, recurse bool) error {
+	path = normalizePath(path)
+
+	sess, err := s.session(ctx)
+	if err != nil {
+		return err
+	}
+
+	if err := irodsclient.SetInherit(ctx, sess, path, inherit, recurse, false); err != nil {
+		return err
+	}
+
+	s.invalidate(path)
+	return nil
+}
+
+// Inherits reports whether a collection passes its access list down to new children.
+func (s *Scope) Inherits(ctx context.Context, path string) (bool, error) {
+	sess, err := s.session(ctx)
+	if err != nil {
+		return false, err
+	}
+	return irodsclient.Inherits(ctx, sess, normalizePath(path))
+}
+
+// Children lists what a collection directly holds, as full paths.
+//
+// This asks iRODS rather than the catalog, and is not paged: its callers are repairing
+// permissions after a write and need to know what is there now, not what a listing query
+// would show a particular user.
+func (s *Scope) Children(ctx context.Context, path string) ([]string, error) {
+	sess, err := s.session(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	entries, err := irodsclient.List(ctx, sess, normalizePath(path))
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		out = append(out, entry.Path)
+	}
+	return out, nil
+}
+
+// SetAVU records a metadata triple, replacing any the path already carries under the same
+// attribute.
+//
+// iRODS allows several values under one attribute, so adding without removing would leave
+// both -- and a path with two different recorded origins is a path that cannot be restored.
+func (s *Scope) SetAVU(ctx context.Context, path string, avu AVU) error {
+	path = normalizePath(path)
+
+	sess, err := s.session(ctx)
+	if err != nil {
+		return err
+	}
+
+	existing, err := irodsclient.ListAVUs(ctx, sess, path)
+	if err != nil {
+		return err
+	}
+
+	for _, current := range existing {
+		if current.Attribute != avu.Attribute {
+			continue
+		}
+		if err := irodsclient.DeleteAVU(ctx, sess, path, current); err != nil {
+			return err
+		}
+	}
+
+	if err := irodsclient.AddAVU(ctx, sess, path, avu); err != nil {
+		return err
+	}
+
+	s.invalidate(path)
+	return nil
 }
 
 // invalidate forgets what the scope remembered about a path, so a read after a write sees

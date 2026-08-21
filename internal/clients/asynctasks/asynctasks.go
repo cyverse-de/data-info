@@ -43,6 +43,41 @@ const (
 // changes.
 const BehaviorStatusChangeTimeout = "statuschangetimeout"
 
+// StallTimeout is how long a task may go without reporting before it is treated as dead.
+//
+// A move reports once per path per step, so a job that is alive has no trouble staying well
+// inside this. Reaching it means the process running the job is gone.
+const StallTimeout = "10m"
+
+// StatusStalled is the status a task is moved to when it stops reporting.
+const StatusStalled = "detected-stalled"
+
+// StallBehavior is the rule every task that holds a lock is created with.
+//
+// The "complete" flag is the whole point of it, and the reference omits it. Without the flag
+// the timeout records that a task has stalled and stops there, leaving its end date null --
+// and since an absent end date is exactly what holds the lock, a task whose process died
+// locks its paths for good rather than for ten minutes. With the flag the same timeout
+// completes the task, which releases them.
+//
+// The trade is real but small: a job that genuinely goes ten minutes without reporting has
+// its paths released while it is still working. Jobs here report per path per step, so that
+// window belongs to a process that is gone, not one that is busy. Recorded in
+// docs/deferred-fixes.md.
+func StallBehavior() Behavior {
+	return Behavior{
+		Type: BehaviorStatusChangeTimeout,
+		Data: map[string]any{
+			"statuses": []map[string]any{{
+				"start_status": StatusRunning,
+				"end_status":   StatusStalled,
+				"timeout":      StallTimeout,
+				"complete":     true,
+			}},
+		},
+	}
+}
+
 // Task is one unit of long-running work.
 //
 // An absent EndDate is what makes a task count as still running, and therefore what holds

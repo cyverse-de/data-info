@@ -102,6 +102,20 @@ type ListingQuery = icat.ListingQuery
 // ChildCounts is how many files and subfolders a collection holds.
 type ChildCounts = icat.ChildCounts
 
+// Permits reports whether a held access level satisfies a required one.
+//
+// iRODS access is a ladder rather than a set of flags -- own implies write implies read --
+// so a check is a comparison and not a membership test.
+func Permits(held, required Permission) bool {
+	rank := map[Permission]int{
+		PermissionNone:  0,
+		PermissionRead:  1,
+		PermissionWrite: 2,
+		PermissionOwn:   3,
+	}
+	return rank[held] >= rank[required] && held != PermissionNone
+}
+
 var _ View = (*Scope)(nil)
 
 // item resolves one path's catalog row, answering from a published row when one is already
@@ -340,6 +354,19 @@ func (s *Scope) UserExists(_ context.Context, user string) *lazy.Value[bool] {
 			// A group is not a user. Sharing with a group is a different operation, and
 			// treating one as the other would let a group name satisfy a user check.
 			return kind != icat.UserKindNone && kind != icat.UserKindGroup, nil
+		})
+	})
+}
+
+// UserKind reports what an account name refers to, which is what decides whether its holder
+// may administer groups.
+//
+// From the catalog, for the same reason UserExists is: this is asked on every group request
+// and the connections the zone grants this service are the scarce resource.
+func (s *Scope) UserKind(_ context.Context, user string) *lazy.Value[icat.UserKind] {
+	return memoize(s, memoKey{kindUserKind, user}, func() *lazy.Value[icat.UserKind] {
+		return lazy.Go(s.ctx, s.catalogSem, func(ctx context.Context) (icat.UserKind, error) {
+			return s.deps.ICAT.LookupUser(ctx, user, s.deps.Zone)
 		})
 	})
 }

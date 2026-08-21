@@ -47,6 +47,10 @@ const (
 	UserKindUser  UserKind = "rodsuser"
 	UserKindAdmin UserKind = "rodsadmin"
 	UserKindGroup UserKind = "rodsgroup"
+
+	// UserKindGroupAdmin is an account allowed to administer groups without being a full
+	// iRODS administrator. The group endpoints treat it as equivalent to one.
+	UserKindGroupAdmin UserKind = "groupadmin"
 )
 
 // PathChildCounts is one collection's child counts.

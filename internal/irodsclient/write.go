@@ -7,6 +7,7 @@ import (
 
 	irodsfs "github.com/cyverse/go-irodsclient/fs"
 	irods_fs "github.com/cyverse/go-irodsclient/irods/fs"
+	"github.com/cyverse/go-irodsclient/irods/types"
 )
 
 // uploadBufferSize is the chunk the reader is drained in. It is a compromise: iRODS pays a
@@ -54,6 +55,52 @@ func RenameFile(ctx context.Context, s *Session, from, to string) error {
 		return struct{}{}, fsys.RenameFileToFile(from, to)
 	})
 	return err
+}
+
+// Move renames a path, choosing the right call for what is there.
+//
+// iRODS has separate operations for collections and data objects and they are not
+// interchangeable, so the type has to be known first. Within one collection this is a
+// catalog-only operation; across collections the object's access list travels with it
+// unchanged, which is why the caller has to repair permissions afterwards.
+func Move(ctx context.Context, s *Session, from, to string) error {
+	_, err := DoPath(ctx, s, from, func(fsys *irodsfs.FileSystem) (struct{}, error) {
+		entry, err := fsys.Stat(from)
+		if err != nil {
+			return struct{}{}, err
+		}
+
+		if entry.IsDir() {
+			return struct{}{}, fsys.RenameDirToDir(from, to)
+		}
+		return struct{}{}, fsys.RenameFileToFile(from, to)
+	})
+	return err
+}
+
+// RemoveDir deletes a collection. With recurse it takes everything under it.
+func RemoveDir(ctx context.Context, s *Session, path string, recurse, force bool) error {
+	_, err := DoPath(ctx, s, path, func(fsys *irodsfs.FileSystem) (struct{}, error) {
+		return struct{}{}, fsys.RemoveDir(path, recurse, force)
+	})
+	return err
+}
+
+// Inherits reports whether a collection passes its access list down to what is created
+// inside it.
+//
+// This is what decides how permissions have to be repaired after a move: a collection that
+// inherits gives new children its own access list, so an object moved into one has to be
+// stripped and re-granted, while one moved into a collection that does not inherit keeps
+// what it arrived with.
+func Inherits(ctx context.Context, s *Session, path string) (bool, error) {
+	inheritance, err := DoPath(ctx, s, path, func(fsys *irodsfs.FileSystem) (*types.IRODSAccessInheritance, error) {
+		return fsys.GetDirACLInheritance(path)
+	})
+	if err != nil {
+		return false, err
+	}
+	return inheritance != nil && inheritance.Inheritance, nil
 }
 
 // RemoveFile deletes a data object. With force it is removed outright rather than moved to

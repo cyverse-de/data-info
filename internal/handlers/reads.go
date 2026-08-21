@@ -56,7 +56,7 @@ func (h *Reads) Existence(c echo.Context) error {
 		// Present *and* readable. The reference asks both questions, and they can differ:
 		// iRODS has access levels between none and read, and a user holding one of those
 		// can see the object in the catalog without being able to read it.
-		out[p] = stat.Exists && permits(stat.Permission, rods.PermissionRead)
+		out[p] = stat.Exists && rods.Permits(stat.Permission, rods.PermissionRead)
 	}
 
 	return writeJSONOK(c, map[string]any{"paths": out})
@@ -142,28 +142,11 @@ func (h *Reads) Permissions(c echo.Context) error {
 		}
 		out = append(out, pathPermissions{
 			Path:            p,
-			UserPermissions: h.visiblePermissions(acls[stat.Path], user),
+			UserPermissions: h.deps.visiblePermissions(acls[stat.Path], user),
 		})
 	}
 
 	return writeJSONOK(c, map[string]any{"paths": out})
-}
-
-// visiblePermissions drops the entries the service does not report: the requesting user's
-// own, and the service and administrative accounts a deployment filters out. Reporting
-// those would expose the proxy account's access on every path.
-func (h *Reads) visiblePermissions(acl []rods.ACLEntry, user string) []userPermission {
-	out := make([]userPermission, 0, len(acl))
-	for _, entry := range acl {
-		if entry.User == user || h.deps.PermsFilter[entry.User] {
-			continue
-		}
-		if entry.Permission == rods.PermissionNone {
-			continue
-		}
-		out = append(out, userPermission{User: entry.User, Permission: string(entry.Permission)})
-	}
-	return out
 }
 
 // UserGroups handles GET /users/{username}/groups.

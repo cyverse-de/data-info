@@ -66,7 +66,7 @@ func (h *Listings) Navigation(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	if !stat.Exists || !permits(stat.Permission, rods.PermissionRead) {
+	if !stat.Exists || !rods.Permits(stat.Permission, rods.PermissionRead) {
 		return apierror.New(apierror.ErrNotReadable).With("paths", []string{path}).With("user", user)
 	}
 	if stat.Type != rods.ObjectTypeDir {
@@ -406,7 +406,7 @@ func (h *Listings) UUIDForPath(c echo.Context) error {
 	if !stat.Exists {
 		return apierror.New(apierror.ErrDoesNotExist).With("paths", []string{path})
 	}
-	if !permits(stat.Permission, rods.PermissionRead) {
+	if !rods.Permits(stat.Permission, rods.PermissionRead) {
 		return apierror.New(apierror.ErrNotReadable).With("paths", []string{path}).With("user", user)
 	}
 
@@ -465,7 +465,7 @@ func (h *Listings) Head(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	if !stat.Exists || !permits(stat.Permission, rods.PermissionRead) {
+	if !stat.Exists || !rods.Permits(stat.Permission, rods.PermissionRead) {
 		return apierror.New(apierror.ErrNotReadable).WithStatus(http.StatusForbidden).With("id", id)
 	}
 

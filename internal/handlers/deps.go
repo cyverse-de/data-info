@@ -10,6 +10,7 @@ import (
 	"github.com/cyverse-de/data-info/internal/apierror"
 	"github.com/cyverse-de/data-info/internal/icat"
 	"github.com/cyverse-de/data-info/internal/irodsclient"
+	"github.com/cyverse-de/data-info/internal/jobs"
 	"github.com/cyverse-de/data-info/internal/locks"
 	"github.com/cyverse-de/data-info/internal/paths"
 	"github.com/cyverse-de/data-info/internal/rods"
@@ -47,8 +48,29 @@ type Deps struct {
 	// Tasks records work that outlives the request which asked for it, and Worker runs it.
 	// The lock every mutating endpoint consults is derived from what Tasks holds, so an
 	// endpoint that changes a path needs both.
-	Tasks  locks.Reader
-	Worker *worker.Runner
+	Tasks   locks.Reader
+	Creator jobs.TaskCreator
+	Worker  *worker.Runner
+
+	// Notifier tells a user their operation finished, and Publisher tells other services
+	// that something changed.
+	Notifier  jobs.Notifier
+	Publisher jobs.Publisher
+
+	// AdminUsers are accounts whose access to a path is structural rather than shared, so
+	// a permission repair leaves them alone.
+	AdminUsers map[string]bool
+
+	// AnonUser is the account anonymous access is granted to, and AnonBaseURL and
+	// AnonMappings say where the service that serves it can be reached.
+	AnonUser     string
+	AnonBaseURL  string
+	AnonMappings map[string]string
+
+	// KifshareURL and KifshareTemplate say where a ticket can be redeemed. The template is
+	// a deployment's to decide, because it addresses a service this one does not own.
+	KifshareURL      string
+	KifshareTemplate string
 
 	// Log is where work that outlives a request reports itself. A request's own failures
 	// travel back to the caller and are logged by the error handler; this is for the
@@ -177,4 +199,21 @@ func bindBody(c echo.Context, into any) error {
 		return schemaError("the request body could not be parsed")
 	}
 	return nil
+}
+
+// visiblePermissions drops the entries the service does not report: the requesting user's
+// own, and the service and administrative accounts a deployment filters out. Reporting
+// those would expose the proxy account's access on every path.
+func (d Deps) visiblePermissions(acl []rods.ACLEntry, user string) []userPermission {
+	out := make([]userPermission, 0, len(acl))
+	for _, entry := range acl {
+		if entry.User == user || d.PermsFilter[entry.User] {
+			continue
+		}
+		if entry.Permission == rods.PermissionNone {
+			continue
+		}
+		out = append(out, userPermission{User: entry.User, Permission: string(entry.Permission)})
+	}
+	return out
 }
