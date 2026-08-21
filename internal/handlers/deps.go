@@ -10,6 +10,7 @@ import (
 	"github.com/cyverse-de/data-info/internal/apierror"
 	"github.com/cyverse-de/data-info/internal/icat"
 	"github.com/cyverse-de/data-info/internal/irodsclient"
+	"github.com/cyverse-de/data-info/internal/jobs"
 	"github.com/cyverse-de/data-info/internal/locks"
 	"github.com/cyverse-de/data-info/internal/paths"
 	"github.com/cyverse-de/data-info/internal/rods"
@@ -47,8 +48,18 @@ type Deps struct {
 	// Tasks records work that outlives the request which asked for it, and Worker runs it.
 	// The lock every mutating endpoint consults is derived from what Tasks holds, so an
 	// endpoint that changes a path needs both.
-	Tasks  locks.Reader
-	Worker *worker.Runner
+	Tasks   locks.Reader
+	Creator jobs.TaskCreator
+	Worker  *worker.Runner
+
+	// Notifier tells a user their operation finished, and Publisher tells other services
+	// that something changed.
+	Notifier  jobs.Notifier
+	Publisher jobs.Publisher
+
+	// AdminUsers are accounts whose access to a path is structural rather than shared, so
+	// a permission repair leaves them alone.
+	AdminUsers map[string]bool
 
 	// Log is where work that outlives a request reports itself. A request's own failures
 	// travel back to the caller and are logged by the error handler; this is for the
