@@ -38,9 +38,42 @@ type Case struct {
 	Query  map[string]string `yaml:"query"`
 	Body   any               `yaml:"body"`
 
+	// Upload makes the case a multipart file upload rather than a JSON request. The two
+	// are mutually exclusive.
+	Upload *Upload `yaml:"upload"`
+
+	// Seed puts a file in each side's fixture before the case runs, and exposes it as
+	// {{.SeedPath}} and {{.SeedID}}. It is what lets a by-id case name something that
+	// exists.
+	Seed *Seed `yaml:"seed"`
+
 	// Skip records why a case is not run, so that a gap is visible in the report rather
 	// than silently absent.
 	Skip string `yaml:"skip"`
+}
+
+// Upload is the file an upload case sends.
+type Upload struct {
+	// Field is the multipart field name, which the endpoints declare as "file".
+	Field string `yaml:"field"`
+
+	// Filename names the object the upload creates, so it is what the destination is
+	// named after on POST /data.
+	Filename string `yaml:"filename"`
+
+	// Content is the body. It is written literally, so a case can pin a media type or a
+	// checksum by choosing bytes rather than by asserting on them.
+	Content string `yaml:"content"`
+}
+
+// Seed is a file placed in a write case's fixture before the case runs.
+type Seed struct {
+	// Filename names the object inside the side's fixture root.
+	Filename string `yaml:"filename"`
+
+	// Content is what the object holds, so a case that replaces it can tell the old
+	// contents from the new.
+	Content string `yaml:"content"`
 }
 
 // Group is a file of cases.
@@ -89,6 +122,13 @@ func LoadCatalog(dir string) (*Catalog, error) {
 				return nil, fmt.Errorf("%s: case %q is already defined in %s", path, c.ID, where)
 			}
 			seen[c.ID] = path
+
+			if c.Body != nil && c.Upload != nil {
+				return nil, fmt.Errorf("%s: case %q has both a body and an upload, so its request shape is ambiguous", path, c.ID)
+			}
+			if c.Seed != nil && c.Tier != TierWrite && c.Tier != TierAsync {
+				return nil, fmt.Errorf("%s: case %q seeds a fixture but is not a write case, so it has no fixture to seed", path, c.ID)
+			}
 		}
 
 		catalog.Groups = append(catalog.Groups, group)
@@ -123,6 +163,14 @@ func (c Case) Expand(vars map[string]string) Case {
 	}
 
 	expanded.Body = substituteValue(c.Body, vars)
+
+	if c.Upload != nil {
+		upload := *c.Upload
+		upload.Filename = substitute(upload.Filename, vars)
+		upload.Content = substitute(upload.Content, vars)
+		expanded.Upload = &upload
+	}
+
 	return expanded
 }
 

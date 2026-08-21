@@ -73,7 +73,7 @@ func buildServer(cfg *config.Config, version string, log *logrus.Entry, deps Dep
 	e.GET("/readyz", status.Readyz)
 	e.GET("/admin/config", status.AdminConfig)
 
-	registerDataRoutes(e, cfg, deps)
+	registerDataRoutes(e, cfg, log, deps)
 
 	return e
 }
@@ -86,7 +86,7 @@ func buildServer(cfg *config.Config, version string, log *logrus.Entry, deps Dep
 // exception handler, which answers 500 whatever the code. So ERR_NOT_OWNER is 403 on
 // /permissions-gatherer and 500 on /path-info. Marking the routes wrongly would change
 // statuses that the port is meant to preserve exactly.
-func registerDataRoutes(e *echo.Echo, cfg *config.Config, deps Deps) {
+func registerDataRoutes(e *echo.Echo, cfg *config.Config, log *logrus.Entry, deps Deps) {
 	if deps.ICAT == nil || deps.IRODS == nil {
 		// Nothing to serve them with. The status endpoints still work, which is what a
 		// readiness probe needs in order to report why.
@@ -102,11 +102,13 @@ func registerDataRoutes(e *echo.Echo, cfg *config.Config, deps Deps) {
 		PermsFilter:       permsFilterOf(cfg),
 		ProxyUser:         cfg.IRODS.User,
 		BadChars:          cfg.BadChars,
+		Log:               log,
 	}
 
 	stats := handlers.NewStats(hd)
 	reads := handlers.NewReads(hd)
 	listings := handlers.NewListings(hd)
+	writes := handlers.NewWrites(hd)
 
 	// (ok ...) routes in the Clojure service: every error_code answers 500.
 	ok := apierror.WithStyle(apierror.StyleOK)
@@ -116,6 +118,7 @@ func registerDataRoutes(e *echo.Echo, cfg *config.Config, deps Deps) {
 
 	// svc/trap routes: the status table applies.
 	e.POST("/permissions-gatherer", reads.Permissions)
+	e.POST("/data/directories", writes.CreateDirectories)
 	e.GET("/users/:username/groups", reads.UserGroups)
 	e.GET("/navigation/base-paths", reads.BasePaths)
 	e.GET("/data/uuid", listings.UUIDForPath)
@@ -130,6 +133,18 @@ func registerDataRoutes(e *echo.Echo, cfg *config.Config, deps Deps) {
 	// answering 500. Verified against the running service, which answers a missing limit
 	// with a 400.
 	e.GET("/data/path/:zone/*", listings.FolderListing)
+
+	// The upload routes are trap-wrapped in the reference, but every error they can raise
+	// comes from the multipart middleware that stores the file, which sits outside the
+	// trap -- so those errors reach the default handler and answer 500 whatever their code.
+	// Verified against the running service, which answers a forbidden filename with a 500
+	// where the status table says 400.
+	//
+	// Both spellings of the create route, because the Clojure route is a "/" inside a /data
+	// context and compojure matches it with and without the trailing slash.
+	e.POST("/data", writes.Upload, ok)
+	e.POST("/data/", writes.Upload, ok)
+	e.PUT("/data/:data-id", writes.Overwrite, ok)
 }
 
 // layoutOf describes the zone's namespace from the service configuration.

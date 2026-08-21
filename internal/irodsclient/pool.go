@@ -236,6 +236,16 @@ func (p *Pool) ForUser(ctx context.Context, user string) (*Session, error) {
 	if user == "" {
 		return nil, fmt.Errorf("a client user is required; use Admin for the proxy account")
 	}
+
+	// Proxying as the proxy account itself is the same as acting as it directly, so reuse
+	// the one session rather than opening a second identical one. That is not a
+	// micro-optimisation here: a zone may grant this service very few concurrent
+	// connections, and the service account is the one most likely to be making requests
+	// while other work is in flight.
+	if user == p.cfg.ProxyUser {
+		return p.session(ctx, adminKey, "")
+	}
+
 	return p.session(ctx, user, user)
 }
 
@@ -317,7 +327,7 @@ func (p *Pool) newFileSystem(clientUser string) (*irodsfs.FileSystem, error) {
 	// AVUs out of band -- so a cached listing or stat can be wrong by the time it is
 	// read. The Clojure service had no such cache; introducing one silently would be a
 	// correctness regression rather than an optimisation.
-	fsc.Cache.NoCache = true
+	fsc.Cache.Backend = &irodsfs.CacheBackendConfig{Type: irodsfs.CacheBackendTypeNone}
 
 	// Connect lazily so a pool built while iRODS is down still returns.
 	fsc.MetadataConnection.InitNumber = 0

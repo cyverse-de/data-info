@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/cyverse-de/data-info/internal/apierror"
@@ -387,5 +388,77 @@ func TestZoneSharingARouteName(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Errorf("status = %d, want 200 (%s); the zone was resolved against the route prefix",
 			rec.Code, rec.Body.String())
+	}
+}
+
+// "unknown" is both a request for objects with no info type and a value to match, because
+// info-typer records that literal string on a file it cannot identify. Dropping it from the
+// match list made a folder of untyped files list as empty.
+func TestInfoTypeFilter(t *testing.T) {
+	cases := []struct {
+		name        string
+		query       string
+		wantTypes   []string
+		wantUnknown bool
+	}{
+		{
+			name:  "no parameter filters nothing",
+			query: "/x",
+		},
+		{
+			name:      "a single type",
+			query:     "/x?info-type=csv",
+			wantTypes: []string{"csv"},
+		},
+		{
+			name:      "a comma-separated list",
+			query:     "/x?info-type=csv,tsv",
+			wantTypes: []string{"csv", "tsv"},
+		},
+		{
+			name:      "repeated parameters accumulate",
+			query:     "/x?info-type=csv&info-type=tsv",
+			wantTypes: []string{"csv", "tsv"},
+		},
+		{
+			name:        "unknown asks for untyped objects and matches the literal value",
+			query:       "/x?info-type=unknown",
+			wantTypes:   []string{"unknown"},
+			wantUnknown: true,
+		},
+		{
+			name:        "unknown alongside a real type",
+			query:       "/x?info-type=csv,unknown",
+			wantTypes:   []string{"csv", "unknown"},
+			wantUnknown: true,
+		},
+		{
+			name:        "the spelling of unknown does not matter",
+			query:       "/x?info-type=UNKNOWN",
+			wantTypes:   []string{"UNKNOWN"},
+			wantUnknown: true,
+		},
+		{
+			name:      "blank entries are ignored",
+			query:     "/x?info-type=,csv,",
+			wantTypes: []string{"csv"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			e := echo.New()
+			req := httptest.NewRequest(http.MethodGet, tc.query, nil)
+			c := e.NewContext(req, httptest.NewRecorder())
+
+			types, unknown := infoTypeFilter(c)
+
+			if strings.Join(types, ",") != strings.Join(tc.wantTypes, ",") {
+				t.Errorf("types = %q, want %q", types, tc.wantTypes)
+			}
+			if unknown != tc.wantUnknown {
+				t.Errorf("includeUnknown = %v, want %v", unknown, tc.wantUnknown)
+			}
+		})
 	}
 }

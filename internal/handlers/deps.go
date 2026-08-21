@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/cyverse-de/data-info/internal/paths"
 	"github.com/cyverse-de/data-info/internal/rods"
 	"github.com/labstack/echo/v4"
+	"github.com/sirupsen/logrus"
 )
 
 // Deps are what the handlers need to serve a request.
@@ -39,6 +41,11 @@ type Deps struct {
 	// used where the reference implementation asks whether something exists at all,
 	// independently of whether the caller can see it.
 	ProxyUser string
+
+	// Log is where work that outlives a request reports itself. A request's own failures
+	// travel back to the caller and are logged by the error handler; this is for the
+	// background cleanup that has no caller left to tell.
+	Log *logrus.Entry
 }
 
 // OpenProxyScope returns a view acting as the service's own account.
@@ -63,6 +70,19 @@ func (d Deps) OpenScope(ctx context.Context, user string) (*rods.Scope, error) {
 		return nil, fmt.Errorf("opening a data store view for %q: %w", user, err)
 	}
 	return scope, nil
+}
+
+// Logger returns where background work should report itself, never nil.
+//
+// Tests that only exercise request handling leave it unset, and a cleanup goroutine must
+// not be the thing that panics because nobody was listening.
+func (d Deps) Logger() *logrus.Entry {
+	if d.Log != nil {
+		return d.Log
+	}
+	discard := logrus.New()
+	discard.SetOutput(io.Discard)
+	return logrus.NewEntry(discard)
 }
 
 // CheckPathCount rejects a bulk request carrying more paths than the service allows.
