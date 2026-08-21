@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -244,6 +246,31 @@ func schemaError(reason string) error {
 // on the routes marked StyleOK, which is most of the bulk endpoints.
 func bindBody(c echo.Context, into any) error {
 	if err := c.Bind(into); err != nil {
+		return schemaError("the request body could not be parsed")
+	}
+	return nil
+}
+
+// decodeBody reads a request body as JSON and nothing else.
+//
+// Use this rather than bindBody wherever the destination is a map. echo's binder folds the
+// route's path and query parameters into a map destination alongside the body, so a request
+// to /data/{data-id}/metadata arrives carrying a data-id key that the caller never sent --
+// and this service forwards what it does not recognise to the metadata service, which
+// rejects it.
+func decodeBody(c echo.Context, into any) error {
+	body, err := io.ReadAll(c.Request().Body)
+	if err != nil {
+		return schemaError("the request body could not be read")
+	}
+
+	// An absent body is not a malformed one. Several of these endpoints accept a request
+	// that changes nothing.
+	if len(bytes.TrimSpace(body)) == 0 {
+		return nil
+	}
+
+	if err := json.Unmarshal(body, into); err != nil {
 		return schemaError("the request body could not be parsed")
 	}
 	return nil

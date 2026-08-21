@@ -70,8 +70,10 @@ func (a *AVUs) Save(c echo.Context) error {
 		return err
 	}
 
+	// The singular validators throughout: that is the family the reference uses on this
+	// route.
 	destDir := paths.Dir(dest)
-	if err := requireAllExist(ctx, scope, []string{destDir}); err != nil {
+	if err := requirePathExists(ctx, scope, destDir); err != nil {
 		return err
 	}
 	if err := requireWriteable(ctx, scope, destDir); err != nil {

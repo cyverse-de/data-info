@@ -338,7 +338,7 @@ func (a *AVUs) proxyUser(echo.Context) (string, error) { return a.deps.ProxyUser
 // from what belongs to iRODS.
 func bindAVUChange(c echo.Context) (avuChangeRequest, error) {
 	var raw map[string]any
-	if err := bindBody(c, &raw); err != nil {
+	if err := decodeBody(c, &raw); err != nil {
 		return avuChangeRequest{}, err
 	}
 
