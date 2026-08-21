@@ -33,10 +33,17 @@ escape to `clojure-commons.exception`'s `::ex/default` handler, which answers 50
 unconditionally. Routes wrapped in `svc/trap` use the status table instead. So
 `ERR_NOT_OWNER` is 403 on `POST /deleter` and 500 on `POST /path-info`.
 
+The upload routes are a third case. `POST /data` and `PUT /data/{data-id}` *are* wrapped in
+`svc/trap`, but every error they can raise comes from `write/wrap-multipart-create` and
+`write/wrap-multipart-overwrite` — ring middleware that stores the file, and that sits
+outside the trap. So those errors reach the default handler too: a forbidden filename answers
+500 where the table says `ERR_BAD_OR_MISSING_FIELD` is 400. Verified against the running QA
+service.
+
 Reproduced by `apierror.Style`; `StyleOK` is registered on `/existence-marker`,
 `/creatability-marker`, the `/groups` routes, `GET /navigation/root`,
 `GET /navigation/path/{zone}/*`, `/stat-gatherer`, `/path-info`, `/stat-lister`,
-`/tickets`, `/ticket-lister` and `/ticket-deleter`.
+`/tickets`, `/ticket-lister`, `/ticket-deleter`, `POST /data` and `PUT /data/{data-id}`.
 
 **Blocked on:** the same `apps` work as entry 1. Once statuses are corrected this
 distinction should collapse — every route should answer from one table.
@@ -68,3 +75,55 @@ broker password — is returned in the clear.
 its own; it is listed here only so the port reproduces today's output while
 `GET /admin/config` is being diffed against the Clojure service as a config-translation
 check (all 52 keys at once). Fix immediately after that check passes.
+
+## 6. `PUT /data/{data-id}` validates read access, not write
+
+`overwrite-path` in `services/write.clj` runs `[:path-readable path user zone]` where its own
+docstring says "the user can write to it". A user with read-only access therefore gets past
+the check and is refused by iRODS instead, which surfaces as `ERR_UNAVAILABLE` rather than
+`ERR_NOT_WRITEABLE`.
+
+Reproduced in `internal/handlers/upload.go` `Overwrite`.
+
+**Blocked on:** nothing structural, but it changes which error a read-only caller sees, so it
+wants its own change. Nothing is unsafe in the meantime — iRODS enforces the permission
+whatever this check says.
+
+## 7. The upload routes report a missing path as `null`
+
+`POST /data` without a `dest`, and `PUT /data/{data-id}` with an id that resolves to nothing,
+both end at a `:path-exists` check on a nil path. The result is
+`{"error_code":"ERR_DOES_NOT_EXIST","paths":[null]}` with a 500 — an error that names no
+path, because there is none. The same happens to the caller: no `user` parameter gives
+`{"error_code":"ERR_NOT_A_USER","users":[null]}`.
+
+The cause is ordering. The multipart middleware that does the work reads `user` and `dest`
+straight off the raw request and runs before compojure-api coerces the route's parameters, so
+the required-parameter check never gets to reject anything.
+
+Reproduced in `internal/handlers/upload.go`; verified against the running QA service.
+
+**Blocked on:** nothing structural. Reporting the id, or rejecting the missing parameter with
+a 400, are both improvements — but they change bodies terrain parses, so they want their own
+change.
+
+## 8. A zero-byte upload fails
+
+`POST /data` with an empty file answers `ERR_UNCHECKED_EXCEPTION` with a 500: `get-info-type`
+runs heuristomancer over the stream before anything is written, and it does not survive an
+empty one.
+
+**Not reproduced.** The Go service has no file-type detection on this path at all — that work
+belongs to info-typer now — so an empty upload simply succeeds. Nothing would be gained by
+reproducing a crash, and callers cannot be relying on one.
+
+## 9. A non-ASCII filename is rejected
+
+`POST /data` with a UTF-8 filename answers `ERR_ILLEGAL_ARGUMENT` with a 400, from
+compojure-api's coercion of the multipart parameters rather than from any deliberate check.
+
+**Not reproduced.** Go's multipart reader decodes the name and the upload succeeds. This is
+the one difference on this list that *widens* what the service accepts, so it needs a
+decision rather than a default: either the Go service should reject the same names, or the
+rest of the DE has to be checked for handling them. Raised with the shadow case
+`upload-a-utf8-name`, which pins the current behavior either way.

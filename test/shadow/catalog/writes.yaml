@@ -1,0 +1,73 @@
+group: writes
+cases:
+  # Each of these gets its own copy of the fixture per service, so the two never contend for
+  # the same object. Both the response and what the write left behind are compared.
+  - id: create-one-directory
+    tier: write
+    method: POST
+    path: /data/directories
+    query: {user: "{{.User}}"}
+    body: {paths: ["{{.Root}}/one"]}
+
+  - id: create-nested-directories
+    tier: write
+    method: POST
+    path: /data/directories
+    query: {user: "{{.User}}"}
+    body: {paths: ["{{.Root}}/a/b/c"]}
+
+  - id: create-several-directories
+    tier: write
+    method: POST
+    path: /data/directories
+    query: {user: "{{.User}}"}
+    body: {paths: ["{{.Root}}/x", "{{.Root}}/y", "{{.Root}}/z"]}
+
+  - id: create-overlapping-directories
+    tier: write
+    method: POST
+    path: /data/directories
+    query: {user: "{{.User}}"}
+    body: {paths: ["{{.Root}}/p/q", "{{.Root}}/p/q/r"]}
+
+  - id: create-duplicate-paths
+    tier: write
+    method: POST
+    path: /data/directories
+    query: {user: "{{.User}}"}
+    body: {paths: ["{{.Root}}/dup", "{{.Root}}/dup"]}
+
+  - id: create-directory-that-exists
+    tier: write
+    method: POST
+    path: /data/directories
+    query: {user: "{{.User}}"}
+    body: {paths: ["{{.Root}}"]}
+
+  - id: create-directory-with-a-bad-name
+    tier: write
+    method: POST
+    path: /data/directories
+    query: {user: "{{.User}}"}
+    body: {paths: ["{{.Root}}/has'quote"]}
+
+  - id: create-directory-unknown-user
+    tier: write
+    method: POST
+    path: /data/directories
+    query: {user: nosuchuser}
+    body: {paths: ["{{.Root}}/nope"]}
+
+  - id: create-directory-no-paths
+    tier: write
+    method: POST
+    path: /data/directories
+    query: {user: "{{.User}}"}
+    body: {paths: []}
+
+  - id: create-directory-under-a-missing-parent
+    tier: write
+    method: POST
+    path: /data/directories
+    query: {user: "{{.User}}"}
+    body: {paths: ["/definitely/not/a/zone/x"]}

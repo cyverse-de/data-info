@@ -265,3 +265,41 @@ func TestConfigDefaults(t *testing.T) {
 		})
 	}
 }
+
+// TestProxyUserReusesTheAdminSession covers a connection the service would otherwise open
+// for no reason. Acting as the proxy account through client-user proxying is the same as
+// acting as it directly, and on a zone that grants few connections the second one may simply
+// be refused.
+func TestProxyUserReusesTheAdminSession(t *testing.T) {
+	pool := testPool(t, nil)
+
+	// Seed the admin entry so neither call has to reach the network.
+	admin := checkout(pool, adminKey)
+	defer admin.Close()
+
+	asProxy, err := pool.ForUser(context.Background(), pool.cfg.ProxyUser)
+	if err != nil {
+		t.Fatalf("ForUser: %v", err)
+	}
+	defer asProxy.Close()
+
+	if asProxy.entry != admin.entry {
+		t.Error("acting as the proxy account opened a second session")
+	}
+}
+
+// TestOtherUsersGetTheirOwnSession is the other half: the client user is fixed for a
+// connection's lifetime, so two different users must not share one.
+func TestOtherUsersGetTheirOwnSession(t *testing.T) {
+	pool := testPool(t, nil)
+
+	admin := checkout(pool, adminKey)
+	defer admin.Close()
+
+	other := checkout(pool, "someone-else")
+	defer other.Close()
+
+	if other.entry == admin.entry {
+		t.Error("a different user shared the admin session")
+	}
+}

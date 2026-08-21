@@ -79,12 +79,14 @@ func DoPath[T any](ctx context.Context, s *Session, path string, fn func(*irodsf
 			err := Translate(r.err, path, s.clientUser)
 
 			// A connection or authentication failure is recorded on the underlying
-			// session and makes every later acquisition on it fail. Worse, in
-			// go-irodsclient v0.20.1 and v0.21.0 AcquireConnection takes the session
-			// mutex and returns without unlocking it when that pending error is set, so
-			// the next caller blocks on the mutex forever -- with no socket involved, so
-			// no deadline unwinds it, and Release deadlocks too. Discarding the session
-			// keeps a failed connection from ever being reused.
+			// session and makes every later acquisition on it fail. Discarding the
+			// session keeps a failed connection from ever being reused.
+			//
+			// It also sidesteps the mutex leak that upstream v0.20.1 and v0.21.0 have on
+			// that path, where AcquireConnection returns while still holding the session
+			// mutex and wedges every later caller with no socket to time out. go.mod
+			// points at a fork carrying the fix; this stays because a connection that has
+			// already failed is not worth handing to the next request either way.
 			if IsUnavailable(err) {
 				s.poisoned.Store(true)
 			}

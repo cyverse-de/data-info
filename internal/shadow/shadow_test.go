@@ -1,6 +1,7 @@
 package shadow
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -185,5 +186,115 @@ func TestSchemaReasonWithEscapedQuotes(t *testing.T) {
 	}
 	if len(diffs) != 0 {
 		t.Errorf("the reason should be normalised away, leaving no difference: %+v", diffs)
+	}
+}
+
+// TestScratchGuardRejectsDangerousRoots covers the check that stands between a mistyped flag
+// and other people's data. The harness creates and deletes in a shared zone, so a root it
+// should not accept must be refused before anything is created, not after.
+func TestScratchGuardRejectsDangerousRoots(t *testing.T) {
+	tests := []struct {
+		name string
+		root string
+	}{
+		{"empty", ""},
+		{"relative", "cyverse/home/x/shadow"},
+		{"the zone root", "/cyverse"},
+		{"the home collection", "/cyverse/home"},
+		{"someone's home", "/cyverse/home/wregglej"},
+		{"deep but not named as scratch", "/cyverse/home/wregglej/important-data"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := NewScratchGuard(tt.root); err == nil {
+				t.Errorf("NewScratchGuard accepted %q", tt.root)
+			}
+		})
+	}
+}
+
+func TestScratchGuardAcceptsAScratchRoot(t *testing.T) {
+	guard, err := NewScratchGuard("/cyverse/home/de-irods/shadow-scratch")
+	if err != nil {
+		t.Fatalf("NewScratchGuard: %v", err)
+	}
+	if guard.Root != "/cyverse/home/de-irods/shadow-scratch" {
+		t.Errorf("root = %q", guard.Root)
+	}
+}
+
+// TestScratchGuardConfinesPaths is the second check: every path derived from the root is
+// tested again before it is used, so a bug in path construction cannot reach outside.
+func TestScratchGuardConfinesPaths(t *testing.T) {
+	guard, err := NewScratchGuard("/cyverse/home/de-irods/shadow-scratch")
+	if err != nil {
+		t.Fatalf("NewScratchGuard: %v", err)
+	}
+
+	allowed := []string{
+		"/cyverse/home/de-irods/shadow-scratch",
+		"/cyverse/home/de-irods/shadow-scratch/run/A/case",
+		"/cyverse/home/de-irods/shadow-scratch/",
+	}
+	for _, path := range allowed {
+		if err := guard.Check(path); err != nil {
+			t.Errorf("Check(%q) refused a path inside the root: %v", path, err)
+		}
+	}
+
+	refused := []string{
+		"/cyverse/home/de-irods",
+		"/cyverse/home/someone-else",
+		"/cyverse/home/de-irods/shadow-scratch-other",
+		"/cyverse/home/de-irods/shadow-scratch/../../elsewhere",
+		"/",
+	}
+	for _, path := range refused {
+		if err := guard.Check(path); err == nil {
+			t.Errorf("Check(%q) allowed a path outside the root", path)
+		}
+	}
+}
+
+// TestSidePathsDiffer is what keeps the two services from contending: each gets its own copy
+// of a case's fixture.
+func TestSidePathsDiffer(t *testing.T) {
+	guard, err := NewScratchGuard("/cyverse/home/de-irods/shadow-scratch")
+	if err != nil {
+		t.Fatalf("NewScratchGuard: %v", err)
+	}
+
+	reference := guard.SidePath("run1", "case1", SideReference)
+	candidate := guard.SidePath("run1", "case1", SideCandidate)
+
+	if reference == candidate {
+		t.Fatal("both services were given the same fixture path")
+	}
+	for _, path := range []string{reference, candidate} {
+		if err := guard.Check(path); err != nil {
+			t.Errorf("a generated fixture path is outside the root: %v", err)
+		}
+	}
+
+	// The side is canonicalised out of responses, so the two compare equal.
+	n := NewNormalizer("run1")
+	diffs := n.Compare(
+		Response{Status: 200, Body: []byte(`{"path":"` + reference + `"}`)},
+		Response{Status: 200, Body: []byte(`{"path":"` + candidate + `"}`)},
+	)
+	if len(diffs) != 0 {
+		t.Errorf("the two sides did not compare equal after canonicalisation: %+v", diffs)
+	}
+}
+
+// TestWriteCasesAreSkippedWithoutScratch keeps the harness honest: without a scratch
+// collection it must refuse write cases and say so, not run them against a shared tree.
+func TestWriteCasesAreSkippedWithoutScratch(t *testing.T) {
+	runner := NewRunner("http://reference", "http://candidate", "run")
+
+	result := runner.runOne(context.Background(), Case{ID: "x", Tier: TierWrite, Method: "POST", Path: "/data/directories"})
+	if result.Skipped == "" {
+		t.Error("a write case ran without a scratch collection")
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"sort"
@@ -26,6 +27,17 @@ type Runner struct {
 
 	// Vars are substituted into each case.
 	Vars map[string]string
+
+	// Fixtures builds the paired trees write cases need. When nil, write cases are
+	// reported as skipped rather than run against a shared tree.
+	Fixtures *Fixtures
+
+	// Reader performs the harness's own requests: building fixtures and reading back what
+	// a write left behind.
+	Reader *ServiceClient
+
+	// User is who the harness acts as when building and inspecting fixtures.
+	User string
 }
 
 // Result is one case's outcome.
@@ -71,14 +83,22 @@ func (r *Runner) runOne(ctx context.Context, c Case) Result {
 		return Result{Case: c, Skipped: c.Skip}
 	}
 
-	// Only read-only cases are supported so far. A write case needs paired fixtures so
-	// each service touches its own copy; running one against a shared tree would have the
-	// two services fighting over the same objects and would report differences that are
-	// artefacts of the harness. Refusing is better than pretending.
-	if c.Tier != TierRead {
+	switch c.Tier {
+	case TierRead:
+		return r.runRead(ctx, c)
+	case TierWrite:
+		return r.runWrite(ctx, c)
+	default:
+		// Async cases need the task to be polled to completion before the outcome can be
+		// read, which the async machinery has not landed yet. Refusing is better than
+		// comparing a result that may not have happened.
 		return Result{Case: c, Skipped: fmt.Sprintf("tier %q is not supported yet", c.Tier)}
 	}
+}
 
+// runRead sends the same request to both services. Nothing changes, so they can share a
+// fixture.
+func (r *Runner) runRead(ctx context.Context, c Case) Result {
 	expanded := c.Expand(r.Vars)
 
 	reference, err := r.send(ctx, r.Reference, expanded)
@@ -92,6 +112,85 @@ func (r *Runner) runOne(ctx context.Context, c Case) Result {
 	}
 
 	return Result{Case: c, Diffs: r.Normalizer.Compare(reference, candidate)}
+}
+
+// runWrite gives each service its own copy of the fixture and compares two things: what each
+// answered, and what each left behind.
+//
+// The state comparison is the one that matters. A write can return an identical response
+// while having created the wrong thing, granted the wrong access, or created nothing at all,
+// and only reading the tree afterwards catches that.
+func (r *Runner) runWrite(ctx context.Context, c Case) Result {
+	if r.Fixtures == nil || r.Reader == nil {
+		return Result{Case: c, Skipped: "no scratch collection was configured, so write cases cannot be paired"}
+	}
+
+	referenceRoot, candidateRoot, err := r.Fixtures.Prepare(ctx, c, r.User)
+	if err != nil {
+		return Result{Case: c, Err: fmt.Errorf("preparing fixtures: %w", err)}
+	}
+
+	referenceVars := r.varsWithRoot(referenceRoot)
+	candidateVars := r.varsWithRoot(candidateRoot)
+
+	if c.Seed != nil {
+		for root, vars := range map[string]map[string]string{
+			referenceRoot: referenceVars,
+			candidateRoot: candidateVars,
+		} {
+			seeded, err := r.Fixtures.Seed(ctx, c.Seed, r.User, root)
+			if err != nil {
+				return Result{Case: c, Err: fmt.Errorf("seeding fixtures: %w", err)}
+			}
+			for k, v := range seeded {
+				vars[k] = v
+			}
+		}
+	}
+
+	referenceCase := c.Expand(referenceVars)
+	candidateCase := c.Expand(candidateVars)
+
+	referenceResp, err := r.send(ctx, r.Reference, referenceCase)
+	if err != nil {
+		return Result{Case: c, Err: fmt.Errorf("reference: %w", err)}
+	}
+
+	candidateResp, err := r.send(ctx, r.Candidate, candidateCase)
+	if err != nil {
+		return Result{Case: c, Err: fmt.Errorf("candidate: %w", err)}
+	}
+
+	diffs := r.Normalizer.Compare(referenceResp, candidateResp)
+
+	referenceState, err := r.Reader.StateOf(ctx, r.User, referenceRoot)
+	if err != nil {
+		return Result{Case: c, Err: fmt.Errorf("reading the reference's result: %w", err)}
+	}
+	candidateState, err := r.Reader.StateOf(ctx, r.User, candidateRoot)
+	if err != nil {
+		return Result{Case: c, Err: fmt.Errorf("reading the candidate's result: %w", err)}
+	}
+
+	stateDiffs := r.Normalizer.Compare(
+		Response{Status: 200, Body: referenceState},
+		Response{Status: 200, Body: candidateState},
+	)
+	for _, d := range stateDiffs {
+		diffs = append(diffs, Diff{Kind: "state:" + d.Kind, Detail: d.Detail})
+	}
+
+	return Result{Case: c, Diffs: diffs}
+}
+
+// varsWithRoot points a case at one side's copy of the fixture.
+func (r *Runner) varsWithRoot(root string) map[string]string {
+	vars := make(map[string]string, len(r.Vars)+1)
+	for k, v := range r.Vars {
+		vars[k] = v
+	}
+	vars["Root"] = root
+	return vars
 }
 
 // send issues one request.
@@ -111,21 +210,31 @@ func (r *Runner) send(ctx context.Context, base string, c Case) (Response, error
 		target += "?" + values.Encode()
 	}
 
-	var body io.Reader
-	if c.Body != nil {
+	var (
+		body        io.Reader
+		contentType string
+	)
+	switch {
+	case c.Upload != nil:
+		encoded, boundary, err := multipartBody(c.Upload)
+		if err != nil {
+			return Response{}, err
+		}
+		body, contentType = bytes.NewReader(encoded), boundary
+	case c.Body != nil:
 		encoded, err := json.Marshal(c.Body)
 		if err != nil {
 			return Response{}, fmt.Errorf("encoding the body: %w", err)
 		}
-		body = bytes.NewReader(encoded)
+		body, contentType = bytes.NewReader(encoded), "application/json"
 	}
 
 	req, err := http.NewRequestWithContext(ctx, c.Method, target, body)
 	if err != nil {
 		return Response{}, err
 	}
-	if c.Body != nil {
-		req.Header.Set("Content-Type", "application/json")
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
 	}
 
 	resp, err := r.Client.Do(req)
@@ -142,6 +251,31 @@ func (r *Runner) send(ctx context.Context, base string, c Case) (Response, error
 	}
 
 	return Response{Status: resp.StatusCode, Body: raw}, nil
+}
+
+// multipartBody encodes an upload case, returning the body and the content type that
+// carries its boundary.
+func multipartBody(u *Upload) ([]byte, string, error) {
+	field := u.Field
+	if field == "" {
+		field = "file"
+	}
+
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+
+	part, err := w.CreateFormFile(field, u.Filename)
+	if err != nil {
+		return nil, "", fmt.Errorf("building the upload body: %w", err)
+	}
+	if _, err := io.WriteString(part, u.Content); err != nil {
+		return nil, "", fmt.Errorf("writing the upload body: %w", err)
+	}
+	if err := w.Close(); err != nil {
+		return nil, "", fmt.Errorf("closing the upload body: %w", err)
+	}
+
+	return buf.Bytes(), w.FormDataContentType(), nil
 }
 
 // Report renders results, and reports whether everything that ran matched.
