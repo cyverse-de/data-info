@@ -1,28 +1,7 @@
-/pom.xml
-*jar
-/bin
-/lib
-/classes
-/native
-/.lein-failures
-/checkouts
-.idea/
-.lein-repl-history
-.lein-deps-sum
-.lein-plugins
-.nrepl-port
-/.classpath
-/.project
-/.dir-locals.el
-/*.eld
-/target
-*~
-\#*
-.DS_Store
-.env
-.vagrant/
-*.swp
-build.xml
-test2junit
-Jenkinsfile
-service.properties
+# Nothing here reaches the final image -- only the built binary is copied into it -- so this
+# exists to keep the build context small and to stop unrelated edits from busting the cache.
+.git
+.github
+docs
+k8s
+skaffold.yaml
