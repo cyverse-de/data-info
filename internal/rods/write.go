@@ -417,6 +417,22 @@ func (s *Scope) DeleteAVU(ctx context.Context, path string, avu AVU) error {
 	return nil
 }
 
+// MaxReadableFileSize bounds what ReadFile will return.
+//
+// These files are configuration a person wrote -- a CSV of metadata, a path list -- so this
+// is generous for that and small enough that pointing the endpoint at a data file fails
+// rather than filling memory.
+const MaxReadableFileSize = 32 << 20
+
+// ReadFile returns a data object's contents, up to MaxReadableFileSize.
+func (s *Scope) ReadFile(ctx context.Context, path string) ([]byte, error) {
+	sess, err := s.session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return irodsclient.ReadFile(ctx, sess, normalizePath(path), MaxReadableFileSize)
+}
+
 // invalidate forgets what the scope remembered about a path, so a read after a write sees
 // the change rather than the answer from before it.
 func (s *Scope) invalidate(path string) {

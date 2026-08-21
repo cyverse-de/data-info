@@ -123,6 +123,13 @@ func registerDataRoutes(e *echo.Echo, cfg *config.Config, log *logrus.Entry, dep
 		AnonMappings:      cfg.AnonFiles.Mappings,
 		KifshareURL:       cfg.Kifshare.ExternalURL,
 		KifshareTemplate:  cfg.Kifshare.DownloadTemplate,
+		DataONE: handlers.DataONESettings{
+			MemberNodeBase:       cfg.DataONE.MemberNodeBase,
+			OREAttribute:         cfg.DataONE.OREAttribute,
+			FormatIDAttribute:    cfg.DataONE.FormatIDAttribute,
+			MetadataDirname:      cfg.DataONE.MetadataDirname,
+			MetadataDirAttribute: cfg.DataONE.MetadataDirpathAttribute,
+		},
 		PathLists: handlers.PathListSettings{
 			HTIdentifier:         cfg.PathLists.HT.FileIdentifier,
 			HTInfoType:           cfg.PathLists.HT.InfoType,
@@ -238,6 +245,12 @@ func registerDataRoutes(e *echo.Echo, cfg *config.Config, log *logrus.Entry, dep
 	// Path lists: a file listing what a selection contains, which an analysis then runs
 	// over.
 	e.POST("/path-list-creator", handlers.NewPathLists(hd).Create)
+
+	// The two endpoints that write metadata files into the data store. The ORE pair leaves
+	// the DE entirely: DataONE harvests it.
+	e.POST("/data/:data-id/metadata/save", avus.Save)
+	e.POST("/data/:data-id/metadata/csv-parser", avus.ParseCSV)
+	e.POST("/data/:data-id/ore/save", avus.SaveORE)
 }
 
 // adminUsersOf names the accounts whose access to a path is structural.

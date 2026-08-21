@@ -75,6 +75,10 @@ type Deps struct {
 	// PathLists names the file identifiers and info types generated path lists carry.
 	PathLists PathListSettings
 
+	// DataONE describes where harvested objects are served and how the files describing
+	// them are marked.
+	DataONE DataONESettings
+
 	// KifshareURL and KifshareTemplate say where a ticket can be redeemed. The template is
 	// a deployment's to decide, because it addresses a service this one does not own.
 	KifshareURL      string
@@ -119,6 +123,23 @@ type PathListSettings struct {
 
 	MultiInputIdentifier string
 	MultiInputInfoType   string
+}
+
+// DataONESettings describe the repository the exported metadata files are written for.
+type DataONESettings struct {
+	// MemberNodeBase is where the member node serves objects, which the resource map's
+	// identifiers are built from.
+	MemberNodeBase string
+
+	// OREAttribute marks a file as a resource map, and FormatIDAttribute records its
+	// format, both of which the harvester reads.
+	OREAttribute      string
+	FormatIDAttribute string
+
+	// MetadataDirname is the directory metadata files go in, and MetadataDirAttribute
+	// records where that directory is on the data set itself.
+	MetadataDirname      string
+	MetadataDirAttribute string
 }
 
 // MetadataClient is the part of the metadata service this service uses.
