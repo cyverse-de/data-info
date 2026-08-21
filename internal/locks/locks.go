@@ -54,7 +54,12 @@ func Validate(ctx context.Context, reader Reader, paths []string) error {
 		EndDateSince:   &farFuture,
 	})
 	if err != nil {
-		return err
+		// The detail names an internal service, its URL and whatever it said, none of
+		// which belongs in a response. It is wrapped as the cause so the error handler
+		// still logs it.
+		return apierror.New(apierror.ErrUnavailable).
+			With("reason", "could not determine whether these paths are in use").
+			WithCause(err)
 	}
 
 	locked := LockedPaths(tasks)
@@ -64,6 +69,12 @@ func Validate(ctx context.Context, reader Reader, paths []string) error {
 
 	var conflicting []string
 	for _, path := range paths {
+		// An empty path is not a path. Left in, it would match every absolute path in the
+		// system, because "" is a prefix of all of them -- turning one bad entry in a
+		// request into a conflict against everything.
+		if strings.TrimRight(path, "/") == "" {
+			continue
+		}
 		if conflictsAny(path, locked) {
 			conflicting = append(conflicting, path)
 		}
@@ -159,6 +170,12 @@ func conflictsAny(path string, locked []string) bool {
 // change and is recorded as one in docs/deferred-fixes.md.
 func Conflicts(a, b string) bool {
 	a, b = strings.TrimRight(a, "/"), strings.TrimRight(b, "/")
+
+	// Neither is a path, so neither can hold or be held. Without this the prefix tests
+	// below would call an empty string a conflict with everything.
+	if a == "" || b == "" {
+		return false
+	}
 
 	return a == b ||
 		strings.HasPrefix(a, b+"/") ||

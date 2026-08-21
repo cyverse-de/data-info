@@ -230,6 +230,14 @@ decision rather than a default.
 nicety. Any in-flight move, rename, delete or restore at the swap will lock its paths
 permanently if its pod goes away.
 
+**Also needed, and it belongs to the deployments repo:** nothing sets
+`terminationGracePeriodSeconds` for this service, so it is Kubernetes' default of 30 seconds.
+The drain has to fit inside that alongside the listener's own shutdown, which is why
+`serverGrace` and `drainGrace` in `cmd/data-info/main.go` are 10s and 15s rather than
+anything comfortable. Raising the grace period to 120s — which the plan already calls for at
+stage 0, along with a `preStop` sleep — lets both grow, and gives a job under way a real
+chance to report rather than a hurried one.
+
 ## 15. The lock's prefix test does not respect component boundaries
 
 `validate-unlocked` decides that two paths collide with

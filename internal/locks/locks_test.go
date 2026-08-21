@@ -34,6 +34,11 @@ func TestConflicts(t *testing.T) {
 		{"an ancestor of a locked path", "/z/home/u", "/z/home/u/a/b", true},
 		{"unrelated siblings", "/z/home/u/a", "/z/home/u/b", false},
 
+		// An empty string is not a path. Treated as one it is a prefix of everything, so a
+		// single blank entry in a request would collide with the whole zone.
+		{"an empty path against a real one", "", "/z/home/u/a", false},
+		{"two empty paths", "", "", false},
+
 		// The reference compares against a path plus a slash without requiring the match
 		// to end on a component boundary, so it calls these conflicts. They are not: /ab
 		// is not inside /a, in either direction.
@@ -267,11 +272,45 @@ func TestValidateAsksForUnfinishedWork(t *testing.T) {
 }
 
 func TestValidateReportsAReadFailure(t *testing.T) {
-	reader := &fakeReader{err: errors.New("async-tasks is down")}
+	cause := errors.New("async-tasks: GET /tasks returned 500: database is down")
+	reader := &fakeReader{err: cause}
 
 	// A lock check that cannot see the task list must refuse rather than assume nothing is
 	// running: assuming would let two moves onto the same tree.
-	if err := Validate(context.Background(), reader, []string{"/z/home/u/a"}); err == nil {
+	err := Validate(context.Background(), reader, []string{"/z/home/u/a"})
+	if err == nil {
 		t.Fatal("Validate succeeded although the task list could not be read")
+	}
+
+	var apiErr *apierror.Error
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("Validate returned %v, want an *apierror.Error", err)
+	}
+	if apiErr.Code != apierror.ErrUnavailable {
+		t.Errorf("code = %q, want %q", apiErr.Code, apierror.ErrUnavailable)
+	}
+
+	// What the backend said names an internal service and its URL; that belongs in the log,
+	// not in a response body.
+	reason, _ := apiErr.Extra["reason"].(string)
+	if strings.Contains(reason, "async-tasks") || strings.Contains(reason, "database is down") {
+		t.Errorf("reason = %q, which leaks what the backend reported", reason)
+	}
+	// It still has to be reachable for logging.
+	if !errors.Is(err, cause) {
+		t.Error("the underlying failure was not kept as the cause")
+	}
+}
+
+// A blank entry among the requested paths must not be treated as a path. Left in, it matches
+// every absolute path in the system.
+func TestValidateIgnoresBlankPaths(t *testing.T) {
+	reader := &fakeReader{tasks: []asynctasks.Task{{
+		Type: asynctasks.TypeRename,
+		Data: map[string]any{"source": "/z/home/u/a", "destination": "/z/home/u/b"},
+	}}}
+
+	if err := Validate(context.Background(), reader, []string{"", "/z/home/u/elsewhere"}); err != nil {
+		t.Fatalf("Validate: %v", err)
 	}
 }

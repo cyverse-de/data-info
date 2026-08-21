@@ -27,6 +27,19 @@ const (
 	retryPause      = 2 * time.Second
 )
 
+// fetchTimeout bounds reading a task before running it. It is short because the work has not
+// started yet: failing quickly and recording the task as failed releases its paths, where
+// waiting only delays that.
+const fetchTimeout = 10 * time.Second
+
+// terminalDeadline bounds the whole retry sequence for a terminal status.
+//
+// The retry budget alone does not: a hundred attempts against an unreachable service, each
+// waiting out its own HTTP timeout, would hold the job's goroutine for the best part of an
+// hour and block any shutdown for just as long. The budget decides how hard to try; this
+// decides when trying has stopped being useful.
+const terminalDeadline = 2 * time.Minute
+
 // progressBuffer is how many progress updates may be waiting to be sent before new ones are
 // dropped. Progress is reported per path, so a job over a large tree can produce them far
 // faster than they can be posted; dropping is the intended behaviour, because a status the
@@ -131,13 +144,25 @@ func (r *Runner) Start(taskID, name string, job Job) error {
 func (r *Runner) run(taskID, name string, job Job) {
 	log := r.log.WithFields(logrus.Fields{"task": asynctasks.NormalizeID(taskID), "job": name})
 
-	task, err := r.tasks.GetByID(r.ctx, taskID)
+	// Not r.ctx. Shutdown cancels that, and a job started by a request that was still in
+	// flight when the listener closed would then fail to read its own task -- leaving the
+	// record with no end date and its paths locked by the very shutdown meant to release
+	// them.
+	fetchCtx, cancelFetch := context.WithTimeout(context.WithoutCancel(r.ctx), fetchTimeout)
+	task, err := r.tasks.GetByID(fetchCtx, taskID)
+	cancelFetch()
+
 	if err != nil {
-		// Without the task there is no username and no data, so there is nothing to run.
-		// The record still exists with no end date and its paths stay locked, which is why
-		// this is reported loudly: it needs a person.
+		// The job cannot run without the task's username and data, and nothing else will
+		// pick it up. Recording it as failed is therefore the honest outcome and the safe
+		// one: it releases paths that nothing is touching. Leaving it alone would lock
+		// them for good.
 		log.WithError(err).Error("could not read the task to run; " +
-			"its paths stay locked until it is completed by hand")
+			"recording it as failed so that its paths are released")
+		r.post(log, taskID, asynctasks.Status{
+			Status: asynctasks.StatusFailed,
+			Detail: fmt.Sprintf("[%s] could not read the task: %v", r.instance, err),
+		}, true, terminalRetries)
 		return
 	}
 
@@ -148,7 +173,9 @@ func (r *Runner) run(taskID, name string, job Job) {
 	runErr := job.Run(r.ctx, task, progress)
 
 	// Stop accepting progress before the terminal status, so the history cannot end with a
-	// "running" line posted after the job finished.
+	// "running" line posted after the job finished. Whatever is still buffered is thrown
+	// away rather than sent: progress is telemetry, and the terminal status is what
+	// releases the job's paths, so nothing may delay it.
 	done()
 
 	if runErr != nil {
@@ -168,27 +195,49 @@ func (r *Runner) run(taskID, name string, job Job) {
 }
 
 // progressReporter returns a Progress that posts in the background, and a function that
-// drains and stops it.
+// stops it.
+//
+// Stopping discards whatever is still buffered. Flushing it would put the terminal status --
+// the only thing that releases the job's paths -- behind however long a degraded
+// async-tasks takes to accept sixty-odd updates nobody is waiting for.
 func (r *Runner) progressReporter(log *logrus.Entry, taskID string) (Progress, func()) {
 	updates := make(chan asynctasks.Status, progressBuffer)
+
+	// stopped is read by the sender to decide whether to post or discard, and guarded by
+	// mu on the writer side so that no send can race the close below.
+	var (
+		mu      sync.RWMutex
+		stopped bool
+	)
 
 	var sending sync.WaitGroup
 	sending.Add(1)
 	go func() {
 		defer sending.Done()
+
 		for status := range updates {
+			mu.RLock()
+			done := stopped
+			mu.RUnlock()
+
+			if done {
+				// Drain without posting, so the range ends promptly.
+				continue
+			}
 			r.post(log, taskID, status, false, progressRetries)
 		}
 	}()
 
-	var once sync.Once
-	closed := make(chan struct{})
-
 	progress := func(path, action string) {
-		select {
-		case <-closed:
+		// The read lock is held across the send. Without it a job reporting from a helper
+		// goroutine could send on the channel between stop closing it and this returning,
+		// which panics the process -- and reporting from more than one goroutine is exactly
+		// what a tree walk does.
+		mu.RLock()
+		defer mu.RUnlock()
+
+		if stopped {
 			return
-		default:
 		}
 
 		status := asynctasks.Status{
@@ -205,10 +254,14 @@ func (r *Runner) progressReporter(log *logrus.Entry, taskID string) (Progress, f
 		}
 	}
 
+	var once sync.Once
 	stop := func() {
 		once.Do(func() {
-			close(closed)
+			mu.Lock()
+			stopped = true
 			close(updates)
+			mu.Unlock()
+
 			sending.Wait()
 		})
 	}
@@ -224,7 +277,9 @@ func (r *Runner) progressReporter(log *logrus.Entry, taskID string) (Progress, f
 func (r *Runner) post(log *logrus.Entry, taskID string, status asynctasks.Status, terminal bool, attempts int) {
 	ctx := r.ctx
 	if terminal {
-		ctx = context.WithoutCancel(r.ctx)
+		var release context.CancelFunc
+		ctx, release = context.WithTimeout(context.WithoutCancel(r.ctx), terminalDeadline)
+		defer release()
 	}
 
 	var err error

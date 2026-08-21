@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -258,10 +259,10 @@ func TestStartIsRefusedDuringShutdown(t *testing.T) {
 	}
 }
 
-// A task that cannot be read has no username and no data, so there is nothing to run. It must
-// not be reported as completed: doing so would release paths that were never touched, and
-// hide a record that needs a person.
-func TestAnUnreadableTaskIsNotCompleted(t *testing.T) {
+// A task that cannot be read has no username and no data, so the job cannot run and nothing
+// else will pick it up. Recording it as failed is what releases its paths; leaving it alone
+// would lock them for good.
+func TestAnUnreadableTaskIsStillReleased(t *testing.T) {
 	tasks := &fakeTasks{get: errors.New("no such task")}
 	runner := testRunner(tasks)
 
@@ -279,7 +280,68 @@ func TestAnUnreadableTaskIsNotCompleted(t *testing.T) {
 	if ran {
 		t.Error("the job ran although its task could not be read")
 	}
-	if terminal := tasks.terminal(); len(terminal) != 0 {
-		t.Errorf("terminal statuses = %+v, want none", terminal)
+
+	terminal := tasks.terminal()
+	if len(terminal) != 1 {
+		t.Fatalf("terminal statuses = %+v, want exactly one so the paths are released", terminal)
 	}
+	if terminal[0].Status != asynctasks.StatusFailed {
+		t.Errorf("status = %q, want %q", terminal[0].Status, asynctasks.StatusFailed)
+	}
+}
+
+// Reading the task must not use the context Shutdown cancels. A job started by a request that
+// was still in flight when the listener closed would otherwise fail to read its own task and
+// leave it locked -- caused by the shutdown meant to release it.
+func TestATaskStartedDuringShutdownIsStillRead(t *testing.T) {
+	tasks := &fakeTasks{}
+	runner := testRunner(tasks)
+
+	if err := runner.Start("/tasks/abc", "move", JobFunc(
+		func(context.Context, *asynctasks.Task, Progress) error { return nil },
+	)); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	// Cancel immediately, racing the fetch the goroutine is about to make.
+	shutdown(t, runner)
+
+	terminal := tasks.terminal()
+	if len(terminal) != 1 {
+		t.Fatalf("terminal statuses = %+v, want exactly one", terminal)
+	}
+	if terminal[0].Status == asynctasks.StatusFailed &&
+		strings.Contains(terminal[0].Detail, "could not read the task") {
+		t.Error("the task could not be read because shutdown had cancelled the fetch context")
+	}
+}
+
+// A job may report progress from more than one goroutine -- a tree walk is the obvious case --
+// and the reporter must not panic when one of them races the job returning.
+func TestProgressIsSafeFromSeveralGoroutines(t *testing.T) {
+	tasks := &fakeTasks{}
+	runner := testRunner(tasks)
+
+	if err := runner.Start("/tasks/abc", "move", JobFunc(
+		func(_ context.Context, _ *asynctasks.Task, progress Progress) error {
+			var reporting sync.WaitGroup
+			for range 8 {
+				reporting.Add(1)
+				go func() {
+					defer reporting.Done()
+					for range 200 {
+						progress("/z/home/u/a", "moved")
+					}
+				}()
+			}
+
+			// Return without waiting, so the helpers are still reporting when the reporter
+			// is stopped. A send racing the close would panic the process.
+			go reporting.Wait()
+			return nil
+		},
+	)); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	shutdown(t, runner)
 }
