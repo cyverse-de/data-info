@@ -128,3 +128,65 @@ was signed off as an improvement rather than a regression to reproduce: the refe
 is an accident of its coercion layer, not a rule anybody wrote. The shadow case
 `upload-a-utf8-name` will keep reporting the difference until the Clojure service is gone,
 which is the intended outcome, not a defect to chase.
+
+## 10. Tika names some file types wrongly, and the port keeps those names
+
+`internal/mediatype`'s table was measured against the running QA service rather than
+guessed — every entry was checked by uploading a sample and reading back the `content-type`.
+Several of the answers are wrong on their face and are reproduced anyway:
+
+| extension | reported as | what it actually is |
+|---|---|---|
+| `.vcf` | `text/x-vcard` | a variant call file, not a contact card |
+| `.r` | `text/x-rsrc` | fine, but not a type anything else uses |
+| `.log` | `text/x-log` | non-standard |
+| `.yml`, `.yaml` | `text/x-yaml` | superseded by `application/yaml` |
+| `.ipynb` | `text/plain` | JSON |
+
+**Blocked on:** nothing structural, but these are values callers can switch on, so correcting
+them is a change to the API rather than to this service's internals. Do it with the consumers
+in view, not during the port.
+
+## 11. Content type is read from the name only
+
+The reference detects from the name and then, whenever the name gives
+`application/octet-stream` or `text/plain`, **opens the data object and reads its contents**
+(`util/irods.clj` `detect-media-type`). `services/stat.clj` calls that for every non-directory
+path whenever `content-type` is among the requested fields, which is the default — so a
+`/path-info` over the thousand-path limit opens up to a thousand objects.
+
+**Not reproduced,** deliberately: that is the round-trip-per-path cost the whole hybrid split
+exists to avoid (plan risk 12). The table closes the gap for every type whose name Tika finds
+decisive. What is left is a file whose name says nothing — most visibly one with no extension
+at all, which the reference reads and reports as `text/plain` where this reports
+`application/octet-stream`. Pinned by the shadow case `upload-with-no-extension`.
+
+The one place sniffing is free is the download path, where the stream is already open and the
+reference sniffs from it too (`services/entry.clj` `file-entry`). When that endpoint lands,
+detect there from the open stream rather than reaching back into the catalog.
+
+## 12. `POST /data/directories` with `"/"` crashes
+
+A path of `/` passes the non-blank check and then fails inside `ft/dirname`, giving
+`ERR_UNCHECKED_EXCEPTION` with a 500 and the message "both parent and child names are empty".
+
+**Not reproduced.** `internal/handlers/create.go` refuses it as a schema failure with a 400
+alongside blank entries, because the alternative is either a 200 for a request that created
+nothing or matching a JVM exception message. Pinned by the shadow case
+`create-the-zone-root`, which is expected to differ.
+
+## 13. `POST /data/directories` acts on uncleaned paths
+
+The reference passes a requested path to iRODS exactly as written, so
+`/zone/home/me/a/../b` is checked and created as that literal string; in practice iRODS
+refuses it and the caller gets `ERR_NOT_WRITEABLE` with a 500.
+
+**Not reproduced.** `internal/handlers/create.go` canonicalises first, so the request creates
+`/zone/home/me/b` and answers 200. This is a correctness fix rather than a liberty:
+go-irodsclient cleans a path before acting on it, so validating the uncleaned form would
+check writability on one collection and create under another — the permission check would
+pass against the caller's own home while the collection appeared elsewhere. Cleaning makes
+the path that is validated the path that is created.
+
+Pinned by the shadow case `create-through-a-parent-reference`, which is expected to differ.
+

@@ -34,6 +34,9 @@ type Ops interface {
 
 	// FileExists reports whether a data object is at path, bypassing any cache.
 	FileExists(ctx context.Context, path string) (bool, error)
+
+	// Checksum records a data object's checksum in the catalog, returning it.
+	Checksum(ctx context.Context, path string) (string, error)
 }
 
 var _ Ops = (*Scope)(nil)
@@ -148,6 +151,28 @@ func (s *Scope) FileExists(ctx context.Context, path string) (bool, error) {
 		return false, err
 	}
 	return irodsclient.ExistsFile(ctx, sess, normalizePath(path))
+}
+
+// Checksum records a data object's checksum in the catalog.
+//
+// Every upload has to do this. The reference's client checksummed as it wrote, and the stat
+// endpoints report that catalog column verbatim, so an object created without one answers
+// with an empty md5 until something else computes it.
+func (s *Scope) Checksum(ctx context.Context, path string) (string, error) {
+	path = normalizePath(path)
+
+	sess, err := s.session(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	sum, err := irodsclient.Checksum(ctx, sess, path, "")
+	if err != nil {
+		return "", err
+	}
+
+	s.invalidate(path)
+	return sum, nil
 }
 
 // invalidate forgets what the scope remembered about a path, so a read after a write sees

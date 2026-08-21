@@ -79,6 +79,13 @@ require (
 )
 
 // The upstream v0.20.1 leaks the session mutex when AcquireConnection returns on the
-// pending-error path, wedging the FileSystem permanently. Fork carries the fix
-// (irods/session/session.go). Drop this once a fixed upstream release lands.
+// pending-error path, wedging the FileSystem permanently -- no socket is involved, so no
+// timeout unwinds it, and Release deadlocks on the same mutex.
+//
+// The fix, plus a regression test that deadlocks without it, is on
+// github.com/johnworth/go-irodsclient branch fix-acquireconnection-mutex-leak
+// (irods/session/session.go). It has not been sent upstream yet; doing so, and dropping this
+// replace for the release that carries it, is the exit from this arrangement. Until then the
+// build depends on a personal fork staying reachable -- go.sum pins the content, but not its
+// availability.
 replace github.com/cyverse/go-irodsclient => github.com/johnworth/go-irodsclient v0.21.1-0.20260820215636-0093e8d1d906

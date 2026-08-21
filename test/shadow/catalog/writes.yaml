@@ -71,3 +71,48 @@ cases:
     path: /data/directories
     query: {user: "{{.User}}"}
     body: {paths: ["/definitely/not/a/zone/x"]}
+
+  - id: create-a-blank-path
+    tier: write
+    method: POST
+    path: /data/directories
+    query: {user: "{{.User}}"}
+    body: {paths: [""]}
+
+  - id: create-a-blank-path-beside-a-real-one
+    tier: write
+    method: POST
+    path: /data/directories
+    query: {user: "{{.User}}"}
+    body: {paths: ["{{.Root}}/real", ""]}
+
+  # The reference dies inside ft/dirname here and answers ERR_UNCHECKED_EXCEPTION with a 500.
+  # This service refuses it as a schema failure instead, so the case is expected to differ.
+  # See deferred-fixes entry 12.
+  - id: create-the-zone-root
+    tier: write
+    method: POST
+    path: /data/directories
+    query: {user: "{{.User}}"}
+    body: {paths: ["/"]}
+
+  - id: create-a-directory-with-too-long-a-name
+    tier: write
+    method: POST
+    path: /data/directories
+    query: {user: "{{.User}}"}
+    body:
+      paths:
+        - "{{.Root}}/nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn"
+
+  # The reference hands the literal path to iRODS, which refuses it; this service cleans it
+  # first and creates the collection, because the client cleans before acting and validating
+  # the uncleaned form would check one collection and create another. Expected to differ; see
+  # deferred-fixes entry 13.
+  - id: create-through-a-parent-reference
+    tier: write
+    method: POST
+    path: /data/directories
+    query: {user: "{{.User}}"}
+    body: {paths: ["{{.Root}}/a/../b"]}
+

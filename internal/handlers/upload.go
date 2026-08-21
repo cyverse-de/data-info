@@ -5,7 +5,6 @@ import (
 	"errors"
 	"io"
 	"mime/multipart"
-	"net/http"
 	"strings"
 	"time"
 
@@ -163,6 +162,12 @@ func (h *Writes) Overwrite(c echo.Context) error {
 		return err
 	}
 
+	// The old contents' checksum is not the new contents', and iRODS clears it on write, so
+	// this is what puts a correct one back rather than leaving the object with none.
+	if _, err := scope.Checksum(ctx, path); err != nil {
+		return err
+	}
+
 	return h.respondWithStat(c, ctx, scope, user, path)
 }
 
@@ -181,9 +186,17 @@ func (h *Writes) writeAtomically(
 		return err
 	}
 
-	// Ownership is granted on the temporary object rather than after the rename. The
-	// access list travels with the object, and doing it here means the file is never
-	// visible under its real name without its owner already set.
+	// Recorded before the rename, on the temporary object, so a failure leaves nothing at
+	// the destination and the cleanup below still has something to remove. The value
+	// travels with the object when it is renamed.
+	if _, err := scope.Checksum(ctx, temp); err != nil {
+		h.scheduleTempCleanup(user, temp)
+		return err
+	}
+
+	// Ownership is granted on the temporary object for the same reason. The access list
+	// travels with it, and doing it here means the file is never visible under its real
+	// name without its owner already set.
 	if err := scope.SetOwner(ctx, temp, user, false); err != nil {
 		h.scheduleTempCleanup(user, temp)
 		return err
@@ -297,15 +310,24 @@ func (h *Writes) scheduleTempCleanup(user, path string) {
 			case <-time.After(wait):
 			}
 
-			gone, err := h.removeTempObject(ctx, user, path)
+			outcome, err := h.removeTempObject(ctx, user, path)
 			if err != nil {
 				log.WithError(err).Debug("could not remove a partial upload yet; " +
 					"iRODS usually still holds a lock on the replica this soon after an aborted transfer")
 				continue
 			}
-			if gone {
+
+			switch outcome {
+			case cleanupRemoved:
 				log.Info("removed a partial upload left by a failed transfer")
 				return
+			case cleanupAbsent:
+				// The upload failed before it created anything -- a refused connection,
+				// or a permission iRODS checked at open time. Saying it was removed would
+				// invent an object that never existed.
+				log.Debug("nothing to remove for a failed upload: no partial object was created")
+				return
+			case cleanupPending:
 			}
 		}
 
@@ -314,20 +336,32 @@ func (h *Writes) scheduleTempCleanup(user, path string) {
 	}()
 }
 
-// removeTempObject deletes one orphaned upload object, reporting whether it is gone.
-func (h *Writes) removeTempObject(ctx context.Context, user, path string) (bool, error) {
+// cleanupOutcome is what one attempt at removing an orphaned upload achieved.
+type cleanupOutcome int
+
+const (
+	// cleanupPending means the object is still there and the attempt should be repeated.
+	cleanupPending cleanupOutcome = iota
+	// cleanupRemoved means this attempt deleted it.
+	cleanupRemoved
+	// cleanupAbsent means there was nothing to delete.
+	cleanupAbsent
+)
+
+// removeTempObject makes one attempt at deleting an orphaned upload object.
+func (h *Writes) removeTempObject(ctx context.Context, user, path string) (cleanupOutcome, error) {
 	scope, err := h.deps.OpenScope(ctx, user)
 	if err != nil {
-		return false, err
+		return cleanupPending, err
 	}
 	defer scope.Close()
 
 	present, err := scope.FileExists(ctx, path)
 	if err != nil {
-		return false, err
+		return cleanupPending, err
 	}
 	if !present {
-		return true, nil
+		return cleanupAbsent, nil
 	}
 
 	// A hard delete first: a partial upload has no value to recover, and leaving it in the
@@ -335,11 +369,20 @@ func (h *Writes) removeTempObject(ctx context.Context, user, path string) (bool,
 	// the way when the replica cannot be removed outright.
 	if err := scope.DeleteFile(ctx, path, true); err != nil {
 		if err := scope.DeleteFile(ctx, path, false); err != nil {
-			return false, err
+			return cleanupPending, err
 		}
 	}
 
-	return scope.FileExists(ctx, path)
+	// Confirmed against the server rather than inferred from the delete returning nil: a
+	// locked replica can accept the call and keep the object.
+	stillThere, err := scope.FileExists(ctx, path)
+	if err != nil {
+		return cleanupPending, err
+	}
+	if stillThere {
+		return cleanupPending, nil
+	}
+	return cleanupRemoved, nil
 }
 
 // uploadUser reads the caller identity on the upload routes.
@@ -423,20 +466,21 @@ func requirePermission(
 // The reference checks this inside the write, so an over-long name is reported only after
 // the bytes have been streamed. Checking first reaches the same answer without moving the
 // data, and the codes and their fields are unchanged.
+//
+// No status is set: none of these codes is defined in clojure-commons, so the table answers
+// 500 for them on every route, which is what the reference does. Pinning a status here would
+// only make the two routes that use this disagree with the table if it were ever corrected.
 func checkPathLength(path string) error {
 	switch paths.CheckLength(path) {
 	case paths.LengthPath:
 		return apierror.New(apierror.ErrBadPathLength).
-			WithStatus(http.StatusInternalServerError).
 			With("full-path", path)
 	case paths.LengthDir:
 		return apierror.New(apierror.ErrBadDirnameLength).
-			WithStatus(http.StatusInternalServerError).
 			With("dir-path", paths.Dir(path)).
 			With("full-path", path)
 	case paths.LengthBasename:
 		return apierror.New(apierror.ErrBadBasenameLength).
-			WithStatus(http.StatusInternalServerError).
 			With("file-path", paths.Base(path)).
 			With("full-path", path)
 	}

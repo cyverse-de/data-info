@@ -320,19 +320,22 @@ func pathBase(p string) string { return paths.Base(p) }
 
 // infoTypeFilter reads the info-type parameters.
 //
-// "unknown" in the list is not an info type but an instruction to keep objects that have
-// none, which is how the reference spells it.
+// "unknown" means two things at once, and both are needed. It asks for objects that carry no
+// info type at all, and it stays in the list of values to match, because info-typer records
+// the literal string "unknown" on a file it could not identify. The reference does the same:
+// its condition is "the attribute is null OR it is one of these", with "unknown" left among
+// the values. Dropping it here made a folder of untyped files come back empty.
 func infoTypeFilter(c echo.Context) (types []string, includeUnknown bool) {
 	for _, value := range c.QueryParams()["info-type"] {
 		for _, part := range strings.Split(value, ",") {
 			part = strings.TrimSpace(part)
-			switch {
-			case part == "":
-			case strings.EqualFold(part, "unknown"):
-				includeUnknown = true
-			default:
-				types = append(types, part)
+			if part == "" {
+				continue
 			}
+			if strings.EqualFold(part, "unknown") {
+				includeUnknown = true
+			}
+			types = append(types, part)
 		}
 	}
 	return types, includeUnknown

@@ -84,6 +84,10 @@ func Base(p string) string { return path.Base(strings.TrimRight(p, "/")) }
 // Dir is everything but the last element of an iRODS path.
 func Dir(p string) string { return path.Dir(strings.TrimRight(p, "/")) }
 
+// Clean canonicalises a path the way the iRODS client does before acting on one, so that the
+// path this service validates is the path the server is asked about.
+func Clean(p string) string { return path.Clean(p) }
+
 // Join builds an iRODS path from its elements.
 func Join(elements ...string) string { return join(elements...) }
 

@@ -6,6 +6,7 @@ import (
 	"io"
 
 	irodsfs "github.com/cyverse/go-irodsclient/fs"
+	irods_fs "github.com/cyverse/go-irodsclient/irods/fs"
 )
 
 // uploadBufferSize is the chunk the reader is drained in. It is a compromise: iRODS pays a
@@ -62,6 +63,31 @@ func RemoveFile(ctx context.Context, s *Session, path string, force bool) error 
 		return struct{}{}, fsys.RemoveFile(path, force)
 	})
 	return err
+}
+
+// Checksum asks iRODS for a data object's checksum, computing and recording it in the
+// catalog when there is not one already.
+//
+// This has to be asked for. The reference's client computed a checksum as part of every
+// upload, and the stat endpoints read that value straight out of the catalog column, so an
+// object written without one reports an empty md5 for the rest of its life. The hashing
+// happens on the resource server, so the file's bytes do not cross the wire again.
+//
+// The value is returned for the caller's benefit; the reason to call this is the recording.
+func Checksum(ctx context.Context, s *Session, path, resource string) (string, error) {
+	return DoPath(ctx, s, path, func(fsys *irodsfs.FileSystem) (string, error) {
+		conn, err := fsys.GetMetadataConnection(true)
+		if err != nil {
+			return "", err
+		}
+		defer func() { _ = fsys.ReturnMetadataConnection(conn) }() //nolint:errcheck // the value is already in hand
+
+		sum, err := irods_fs.GetDataObjectChecksum(conn, path, resource)
+		if err != nil {
+			return "", err
+		}
+		return sum.IRODSChecksumString, nil
+	})
 }
 
 // ExistsFile reports whether a data object is at path, asking the server rather than any

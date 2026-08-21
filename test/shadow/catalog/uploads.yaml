@@ -7,6 +7,8 @@ cases:
   # Every case here writes, so each side gets its own fixture and both the response and what
   # the write left behind are compared. The upload's contents are chosen so that the size and
   # the checksum in the response are pinned by the case rather than asserted separately.
+  # md5 is part of what these compare: the reference checksums as it writes, so an upload
+  # that does not record one reports an empty md5 for the rest of the object's life.
   - id: upload-a-text-file
     tier: write
     method: POST

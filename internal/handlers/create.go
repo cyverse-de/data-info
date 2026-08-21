@@ -56,12 +56,21 @@ func (h *Writes) CreateDirectories(c echo.Context) error {
 
 	// Duplicates in the request collapse, as they do in the reference, which works from a
 	// set of paths.
-	requested := uniquePaths(body.Paths)
+	requested, err := uniquePaths(body.Paths)
+	if err != nil {
+		return err
+	}
 
 	plans := make([]createPlan, 0, len(requested))
 	for _, path := range requested {
 		if !goodPathname(path, h.deps.BadChars) {
 			return apierror.New(apierror.ErrBadOrMissingField).With("path", path)
+		}
+		// Before the existence walk, matching the reference: its first look at the path
+		// goes through a jargon call that validates the name lengths, so an over-long one
+		// is refused before anything is created.
+		if err := checkPathLength(path); err != nil {
+			return err
 		}
 
 		plan, err := h.planCreate(ctx, scope, path)
@@ -187,20 +196,41 @@ func (h *Writes) planCreate(ctx context.Context, scope *rods.Scope, path string)
 	return plan, nil
 }
 
-// uniquePaths removes duplicates and trailing slashes, preserving the order first seen.
-func uniquePaths(in []string) []string {
+// uniquePaths canonicalises the requested paths and removes duplicates, preserving the order
+// first seen.
+//
+// Cleaning matters for more than tidiness. go-irodsclient cleans a path before acting on it,
+// so a request naming "/zone/home/me/../other/new" would be checked for writability against
+// one collection and created under another -- the permission check would pass on the
+// caller's own home while the collection appeared somewhere else. Cleaning first makes the
+// path that is validated the path that is created.
+//
+// A blank entry is rejected rather than skipped. The reference declares these as non-blank
+// strings and answers 400, and dropping one silently would report success for a request that
+// created nothing.
+func uniquePaths(in []string) ([]string, error) {
 	seen := make(map[string]bool, len(in))
 	out := make([]string, 0, len(in))
 
 	for _, p := range in {
-		trimmed := strings.TrimRight(p, "/")
-		if trimmed == "" || seen[trimmed] {
+		if strings.TrimSpace(p) == "" {
+			return nil, schemaError("paths must not contain blank strings")
+		}
+
+		cleaned := strings.TrimRight(paths.Clean(p), "/")
+		if cleaned == "" {
+			// The zone root, reached as "/" or as something that climbs out to it. There
+			// is no collection to create and no parent to check.
+			return nil, schemaError("paths must name a collection, not the root")
+		}
+		if seen[cleaned] {
 			continue
 		}
-		seen[trimmed] = true
-		out = append(out, trimmed)
+
+		seen[cleaned] = true
+		out = append(out, cleaned)
 	}
-	return out
+	return out, nil
 }
 
 // goodPathname reports whether a path avoids the characters the service refuses in new

@@ -118,8 +118,11 @@ func (r *Runner) runRead(ctx context.Context, c Case) Result {
 // answered, and what each left behind.
 //
 // The state comparison is the one that matters. A write can return an identical response
-// while having created the wrong thing, granted the wrong access, or created nothing at all,
-// and only reading the tree afterwards catches that.
+// while having created the wrong thing, put it in the wrong place, or created nothing at
+// all, and only reading the tree afterwards catches that. It covers what StateOf can see --
+// every path below the fixture root, with its type, size, checksum, timestamps and the
+// requesting user's own permission. Access granted to somebody else is not covered; see the
+// note on StateOf.
 func (r *Runner) runWrite(ctx context.Context, c Case) Result {
 	if r.Fixtures == nil || r.Reader == nil {
 		return Result{Case: c, Skipped: "no scratch collection was configured, so write cases cannot be paired"}

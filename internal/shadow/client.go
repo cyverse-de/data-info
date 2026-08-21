@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -93,13 +95,130 @@ func (c *ServiceClient) UUIDForPath(ctx context.Context, user, path string) (str
 	return resp.ID, nil
 }
 
+// stateWalkDepth bounds how far below a fixture root the state probe descends. Fixtures are
+// shallow by construction; the bound is here so that a case which accidentally creates a deep
+// tree cannot turn the probe into an unbounded crawl.
+const stateWalkDepth = 6
+
+// stateListingLimit bounds one page of the walk. A fixture with more entries than this would
+// be compared incompletely, which is why write cases keep their trees small.
+const stateListingLimit = 500
+
 // StateOf reads a subtree's observable state, for comparing what a write left behind.
+//
+// It walks the tree rather than statting the root alone: a write that created the right
+// number of things in the wrong place, or nothing at all below the top, looks identical from
+// the root. Everything found is then statted in one request, so the comparison covers each
+// path's type, size, checksum, timestamps and the requesting user's permission at every
+// level.
+//
+// What it still does not cover is other users' access. `/path-info` reports the caller's own
+// permission and a share count, not the access list, so a grant made to the wrong account is
+// only visible here if it changes that count. Sharing cases need a probe that reads
+// permissions directly.
 //
 // It reads through the reference service on both sides. The point is to compare the two
 // services' effects, and reading each through itself would compare their reads as well,
 // which the read cases already cover -- a difference here would then be ambiguous.
 func (c *ServiceClient) StateOf(ctx context.Context, user, root string) ([]byte, error) {
-	return c.request(ctx, http.MethodPost, "/path-info", user, map[string]any{"paths": []string{root}})
+	found, err := c.walk(ctx, user, root, stateWalkDepth)
+	if err != nil {
+		return nil, err
+	}
+
+	all := append([]string{root}, found...)
+	return c.request(ctx, http.MethodPost, "/path-info", user, map[string]any{"paths": all})
+}
+
+// walk lists everything below a collection, depth first.
+//
+// A path that cannot be listed is not an error: a fixture may hold a data object, or a
+// collection the user cannot see, and the stat of the parent is still worth comparing. What
+// matters is that both sides are walked the same way.
+func (c *ServiceClient) walk(ctx context.Context, user, root string, depth int) ([]string, error) {
+	if depth <= 0 {
+		return nil, nil
+	}
+
+	children, err := c.childrenOf(ctx, user, root)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]string, 0, len(children.files)+len(children.folders))
+	out = append(out, children.files...)
+
+	for _, folder := range children.folders {
+		out = append(out, folder)
+
+		below, err := c.walk(ctx, user, folder, depth-1)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, below...)
+	}
+
+	sort.Strings(out)
+	return out, nil
+}
+
+// entryPath is the one field of a listing entry the state probe needs; the rest is compared
+// by the stat request that follows.
+type entryPath struct {
+	Path string `json:"path"`
+}
+
+// listing is what one collection directly holds.
+type listing struct {
+	files   []string
+	folders []string
+}
+
+// childrenOf lists a collection, returning nothing when the path cannot be listed.
+func (c *ServiceClient) childrenOf(ctx context.Context, user, root string) (listing, error) {
+	zone, rest, ok := splitZone(root)
+	if !ok {
+		return listing{}, fmt.Errorf("shadow: %q is not a path under a zone", root)
+	}
+
+	query := url.Values{"user": {user}, "limit": {strconv.Itoa(stateListingLimit)}}
+	target := "/data/path/" + zone + "/" + rest + "?" + query.Encode()
+
+	body, err := c.send(ctx, http.MethodGet, target, "", nil)
+	if err != nil {
+		// A data object, or something the user cannot list. Either way there is nothing
+		// below it to compare.
+		return listing{}, nil
+	}
+
+	var resp struct {
+		Files   []entryPath `json:"files"`
+		Folders []entryPath `json:"folders"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return listing{}, fmt.Errorf("decoding the listing of %q: %w", root, err)
+	}
+
+	out := listing{
+		files:   make([]string, 0, len(resp.Files)),
+		folders: make([]string, 0, len(resp.Folders)),
+	}
+	for _, f := range resp.Files {
+		out.files = append(out.files, f.Path)
+	}
+	for _, f := range resp.Folders {
+		out.folders = append(out.folders, f.Path)
+	}
+	return out, nil
+}
+
+// splitZone separates a path's zone from the rest, which is how the listing route takes it.
+func splitZone(p string) (zone, rest string, ok bool) {
+	zone, rest, _ = strings.Cut(strings.TrimLeft(p, "/"), "/")
+	if zone == "" || rest == "" {
+		return "", "", false
+	}
+	return zone, rest, true
 }
 
 func (c *ServiceClient) post(ctx context.Context, path, user string, body any) error {
