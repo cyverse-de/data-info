@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"net/http"
 	"strings"
 
 	"github.com/cyverse-de/data-info/internal/apierror"
@@ -246,7 +245,10 @@ func (g *Groups) requireGroupAdmin(ctx context.Context, scope *rods.Scope, user 
 	if kind == icat.UserKindAdmin || kind == icat.UserKindGroupAdmin {
 		return nil
 	}
-	return apierror.New(apierror.ErrForbidden).WithStatus(http.StatusForbidden)
+	// No status of its own. The routes document a 403, but they are written as (ok ...) in
+	// the reference, so the thrown code reaches the default handler and answers 500 -- which
+	// is what callers actually see. See docs/deferred-fixes.md.
+	return apierror.New(apierror.ErrForbidden)
 }
 
 // requireGroupExists rejects a group that is not there.

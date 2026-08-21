@@ -109,12 +109,6 @@ func TestMoveRejectsBadRequests(t *testing.T) {
 		wantErr  string
 	}{
 		{
-			name:     "no sources",
-			body:     `{"sources":[],"dest":"` + testHome + `/dest"}`,
-			wantCode: http.StatusBadRequest,
-			wantErr:  string(apierror.ErrIllegalArgument),
-		},
-		{
 			name:     "no destination",
 			body:     `{"sources":["` + testHome + `/a.txt"]}`,
 			wantCode: http.StatusBadRequest,
@@ -233,6 +227,24 @@ func TestAMoveLocksItsSourcesAndDestinations(t *testing.T) {
 	}
 	if response.TaskID == "" {
 		t.Error("no task id was returned, so the caller cannot follow the move")
+	}
+}
+
+// An empty list of sources is accepted rather than refused. The reference's schema allows it,
+// and a caller that built its list by filtering should get a no-op rather than an error.
+func TestMovingNothingIsANoOpRatherThanAnError(t *testing.T) {
+	deps, fake, creator := moveDeps(t)
+	fake.AddCollection(testHome+"/dest", icat.AccessOwn)
+	writes := NewWrites(deps)
+
+	body := `{"sources":[],"dest":"` + testHome + `/dest"}`
+	rec := serve(t, apierror.StyleTrap, http.MethodPost, "/mover?user="+testUser, body, writes.Move)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
+	}
+	if len(creator.created) != 1 {
+		t.Errorf("recorded %d tasks, want one that moves nothing", len(creator.created))
 	}
 }
 

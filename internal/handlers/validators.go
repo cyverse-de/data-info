@@ -169,6 +169,10 @@ func requireDoesNotExist(ctx context.Context, scope *rods.Scope, path string) er
 
 // resolveID turns a data id into a path, reporting the id rather than the path when it names
 // nothing -- echoing a path the caller cannot see would disclose it.
+//
+// The key is the singular "uuid", which is what uuids/path-for-uuid attaches. The bulk stat
+// endpoints report the same condition under "ids", because they reach it through a different
+// validator. Both are live and callers read the keys.
 func resolveID(ctx context.Context, scope *rods.Scope, id string) (string, error) {
 	found, err := scope.PathsForUUIDs(ctx, []string{id}).Get(ctx)
 	if err != nil {
@@ -177,7 +181,7 @@ func resolveID(ctx context.Context, scope *rods.Scope, id string) (string, error
 
 	path, ok := found[id]
 	if !ok {
-		return "", apierror.New(apierror.ErrDoesNotExist).With("ids", []string{id})
+		return "", apierror.New(apierror.ErrDoesNotExist).With("uuid", id)
 	}
 	return path, nil
 }

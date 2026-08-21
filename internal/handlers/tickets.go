@@ -239,15 +239,19 @@ func (t *Tickets) Delete(c echo.Context) error {
 
 	// Which paths the tickets are on decides whether they may be deleted, so they are
 	// resolved first and a ticket that names nothing fails the request.
-	var covered []string
+	var covered, missing []string
 	for _, name := range body.Tickets {
 		ticket, err := scope.GetTicket(ctx, name)
 		if err != nil || ticket == nil {
-			return apierror.New(apierror.ErrTicketDoesNotExist).
-				With("user", user).
-				With("ticket-id", name)
+			missing = append(missing, name)
+			continue
 		}
 		covered = append(covered, ticket.Path)
+	}
+	if len(missing) > 0 {
+		// The plural key, and every missing ticket rather than the first: that is what the
+		// validator this route uses attaches.
+		return apierror.New(apierror.ErrTicketDoesNotExist).With("ticket-ids", missing)
 	}
 
 	if forJob {

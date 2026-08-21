@@ -33,7 +33,13 @@ escape to `clojure-commons.exception`'s `::ex/default` handler, which answers 50
 unconditionally. Routes wrapped in `svc/trap` use the status table instead. So
 `ERR_NOT_OWNER` is 403 on `POST /deleter` and 500 on `POST /path-info`.
 
-The upload routes are a third case. `POST /data` and `PUT /data/{data-id}` *are* wrapped in
+The group routes are a third case, in the other direction. They document a 403 for
+`ERR_FORBIDDEN` in their response schema, but they are written as `(ok ...)`, so the thrown
+code reaches the default handler and answers 500 -- the documented status is never the one a
+caller sees. Verified against the running QA service. `internal/handlers/groups.go` therefore
+sets no status of its own and lets the route's style decide.
+
+The upload routes are a fourth case. `POST /data` and `PUT /data/{data-id}` *are* wrapped in
 `svc/trap`, but every error they can raise comes from `write/wrap-multipart-create` and
 `write/wrap-multipart-overwrite` — ring middleware that stores the file, and that sits
 outside the trap. So those errors reach the default handler too: a forbidden filename answers
@@ -43,7 +49,8 @@ service.
 Reproduced by `apierror.Style`; `StyleOK` is registered on `/existence-marker`,
 `/creatability-marker`, the `/groups` routes, `GET /navigation/root`,
 `GET /navigation/path/{zone}/*`, `/stat-gatherer`, `/path-info`, `/stat-lister`,
-`/tickets`, `/ticket-lister`, `/ticket-deleter`, `POST /data` and `PUT /data/{data-id}`.
+`/tickets`, `/ticket-lister`, `/ticket-deleter`, the `/groups` routes, `POST /data` and
+`PUT /data/{data-id}`.
 
 **Blocked on:** the same `apps` work as entry 1. Once statuses are corrected this
 distinction should collapse — every route should answer from one table.
