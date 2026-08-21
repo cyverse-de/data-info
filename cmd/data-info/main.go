@@ -30,22 +30,17 @@ import (
 // GET / and by --version.
 var version = "dev"
 
-// shutdownGrace bounds how long in-flight requests have to finish after SIGTERM. It has to
-// stay under the deployment's terminationGracePeriodSeconds, which is Kubernetes' default
-// of 30s unless a manifest says otherwise, or the kubelet sends SIGKILL at the same moment
-// this deadline expires and shutdown never completes.
 // serverGrace bounds how long in-flight requests have to finish, and drainGrace how long the
 // background jobs then have to stop and report. Their sum has to stay under the deployment's
 // terminationGracePeriodSeconds, or the kubelet sends SIGKILL while a job is still trying to
 // release its paths -- which is the leak the drain exists to prevent.
 //
-// No manifest sets that field for this service, so it is Kubernetes' default of 30 seconds
-// and these are sized to fit inside it with a little room. They are deliberately tight: the
-// drain wants longer than this, and it can have it as soon as the manifest asks for a longer
-// grace period.
+// The manifest asks for 120 seconds and spends 5 of them in a preStop sleep, leaving 115.
+// These use 95 of that, so a drain that runs right to its deadline still has room to log
+// what it gave up on before the kubelet loses patience.
 const (
-	serverGrace = 10 * time.Second
-	drainGrace  = 15 * time.Second
+	serverGrace = 30 * time.Second
+	drainGrace  = 60 * time.Second
 )
 
 // asyncTasksTimeout bounds one call to the async-tasks service.
