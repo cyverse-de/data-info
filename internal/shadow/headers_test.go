@@ -171,3 +171,50 @@ func TestTrashSuffixDoesNotEatOrdinaryNames(t *testing.T) {
 		t.Error("two different filenames outside the trash compared equal")
 	}
 }
+
+// TestValidateRunID guards the substitution from damaging what it runs over.
+//
+// A run called "c1" rewrote the uuid cc1b6e6c-... into cc{RUN}b6e6c-..., which then no
+// longer matched the uuid pattern and came back as a difference on every case that returned
+// one. Nine cases in a group of thirty-three, all of them spurious.
+func TestValidateRunID(t *testing.T) {
+	tests := []struct {
+		name    string
+		runID   string
+		wantErr bool
+	}{
+		{"the default shape", "20260824T183000", false},
+		{"a word and a number", "run1", false},
+		{"all hex, short", "c1", true},
+		{"all hex, longer", "abcdef", true},
+		{"all decimal", "12345", true},
+		{"too short to be distinctive", "xy", true},
+		{"hex with one letter outside the range", "abcdz", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateRunID(tt.runID)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateRunID(%q) = %v, wantErr %v", tt.runID, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestRunIDDoesNotCorruptAUUID is the same guard from the other side: even a run id that
+// passes validation must not be substituted into a uuid, which is why the structured values
+// are canonicalised first.
+func TestRunIDDoesNotCorruptAUUID(t *testing.T) {
+	// "ab1" is not all hex -- it has no character outside the range, so validation would
+	// reject it; use one that passes but still appears inside the uuid below.
+	n := NewNormalizer("run1")
+
+	diffs := n.Compare(
+		Response{Status: 200, Body: []byte(`{"id":"run1ce8-9fec-11f1-8a8b-28924acd7818","p":"/x/run1/a"}`)},
+		Response{Status: 200, Body: []byte(`{"id":"run1ce8-9fec-11f1-8a8b-28924acd7818","p":"/x/run1/a"}`)},
+	)
+	if len(diffs) != 0 {
+		t.Errorf("diffs = %v, want none", diffs)
+	}
+}

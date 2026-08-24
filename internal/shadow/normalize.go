@@ -98,35 +98,44 @@ func NewNormalizer(runID string) *Normalizer {
 	// body would come back interleaved with the placeholder and fail to parse -- turning
 	// every case into "not JSON" rather than a real comparison.
 	if runID != "" {
+		// Last, not first. The run id is a free-form string that may be a run of hex
+		// digits, and a short one lands inside a uuid or a timestamp by chance: a run
+		// called "c1" rewrote the uuid cc1b6e6c-... into cc{RUN}b6e6c-..., which then no
+		// longer matched the uuid pattern and was reported as a difference on every case
+		// that returned one. Canonicalising the structured values first puts them beyond
+		// its reach. ValidateRunID refuses the ids that would still collide.
 		replacements = append(replacements, Replacement{regexp.MustCompile(regexp.QuoteMeta(runID)), "{RUN}"})
 	}
 
 	return &Normalizer{
-		Replacements: append(replacements,
-			Replacement{regexp.MustCompile(`/(A|B)/`), "/{SIDE}/"},
-			Replacement{uuidPattern, "{UUID}"},
-			Replacement{millisPattern, canonicalMillis},
+		Replacements: append([]Replacement{
+			{regexp.MustCompile(`/(A|B)/`), "/{SIDE}/"},
+			{uuidPattern, "{UUID}"},
+			{millisPattern, canonicalMillis},
+		},
+			append(replacements,
 
-			// The two services necessarily answer on different ports, and the status
-			// endpoint reports its own address. Comparing that would only ever measure
-			// how the harness was wired.
-			Replacement{hostPortPattern, "http://{HOST}"},
+				// The two services necessarily answer on different ports, and the status
+				// endpoint reports its own address. Comparing that would only ever
+				// measure how the harness was wired.
+				Replacement{hostPortPattern, "http://{HOST}"},
 
-			// A schema-validation failure renders prismatic/schema's internal
-			// explanation on the reference side, which has no Go equivalent and is
-			// diagnostic text rather than contract. The error_code and the status are
-			// still compared exactly, and those are what callers branch on.
-			Replacement{schemaReasonPattern, `"reason":"{SCHEMA}"`},
+				// A schema-validation failure renders prismatic/schema's internal
+				// explanation on the reference side, which has no Go equivalent and is
+				// diagnostic text rather than contract. The error_code and the status are
+				// still compared exactly, and those are what callers branch on.
+				Replacement{schemaReasonPattern, `"reason":"{SCHEMA}"`},
 
-			// An async task's detail names the pod that ran it. Each service correctly
-			// reports its own, so comparing them would only ever measure that the two are
-			// different deployments -- which is the premise of the run, not a finding.
-			Replacement{instancePattern, "[{INSTANCE}]"},
+				// An async task's detail names the pod that ran it. Each service correctly
+				// reports its own, so comparing them would only ever measure that the two
+				// are different deployments -- the premise of the run, not a finding.
+				Replacement{instancePattern, "[{INSTANCE}]"},
 
-			// Moving something to the trash appends a random suffix so that two deletes
-			// of the same name do not collide. It differs per call by design, on one
-			// service as much as between two.
-			Replacement{trashSuffixPattern, `${1}.{TRASHSUFFIX}"`},
+				// Moving something to the trash appends a random suffix so that two
+				// deletes of the same name do not collide. It differs per call by design,
+				// on one service as much as between two.
+				Replacement{trashSuffixPattern, `${1}.{TRASHSUFFIX}"`},
+			)...,
 		),
 		// Arrays whose order is the answer rather than incidental. A listing's order is
 		// exactly what a sort-field request asks for, so sorting it here would hide the
@@ -385,4 +394,25 @@ func quoteOrAbsent(value string) string {
 		return "absent"
 	}
 	return strconv.Quote(value)
+}
+
+// ValidateRunID refuses a run identifier that would corrupt the values around it.
+//
+// The run id is substituted wherever it appears, which is what lets two runs of the same
+// case compare equal. An id made only of hex digits sits inside a uuid by chance, and one
+// made only of decimal digits sits inside a timestamp -- and the substitution then damages
+// the very values the normaliser exists to canonicalise. Requiring one character that is
+// neither makes both impossible, which is why the default is a timestamp behind the word
+// "run".
+func ValidateRunID(runID string) error {
+	if len(runID) < 3 {
+		return fmt.Errorf("shadow: the run id %q is too short to be distinctive", runID)
+	}
+	for _, r := range runID {
+		if !strings.ContainsRune("0123456789abcdefABCDEF", r) {
+			return nil
+		}
+	}
+	return fmt.Errorf("shadow: the run id %q is all hex digits, so it would be substituted "+
+		"inside uuids and timestamps; use one containing a character outside 0-9a-f", runID)
 }
