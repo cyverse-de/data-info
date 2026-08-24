@@ -181,3 +181,23 @@ cases:
     method: GET
     path: /stat-gatherer
     query: {user: "{{.User}}"}
+
+  # A body that is not JSON at all, on a trap-style route. stats.yaml covers the same shape
+  # on an ok-style one, and the pair is deliberate: a schema failure is rendered by different
+  # middleware from a thrown code, so the two styles are the axis this varies along rather
+  # than the endpoint.
+  - id: permissions-gatherer-malformed-body
+    tier: read
+    method: POST
+    path: /permissions-gatherer
+    query: {user: "{{.User}}"}
+    body: "not an object"
+
+  # A required body omitted entirely, which is what a client sends when it builds a request
+  # from a template and the template is wrong.
+  - id: permissions-gatherer-empty-body
+    tier: read
+    method: POST
+    path: /permissions-gatherer
+    query: {user: "{{.User}}"}
+    body: {}
