@@ -381,3 +381,89 @@ func TestPermissionsToleratesATrailingSlash(t *testing.T) {
 		t.Errorf("a trailing slash lost the access list: %+v", resp.Paths)
 	}
 }
+
+// TestAncestorsOf pins the chain creatability walks. The bare "/" is deliberately absent:
+// the catalog refuses it, and offering it turned every creatability request into a 500.
+func TestAncestorsOf(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		want []string
+	}{
+		{
+			name: "a path several levels deep",
+			path: "/cyverse/home/wregglej/new-thing",
+			want: []string{"/cyverse/home/wregglej/new-thing", "/cyverse/home/wregglej", "/cyverse/home", "/cyverse"},
+		},
+		{"the zone root itself", "/cyverse", []string{"/cyverse"}},
+		{"a trailing slash is not a level", "/cyverse/home/", []string{"/cyverse/home", "/cyverse"}},
+		{"the bare root has no chain", "/", nil},
+		{"an empty path has no chain", "", nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ancestorsOf(tt.path)
+			if len(got) != len(tt.want) {
+				t.Fatalf("ancestorsOf(%q) = %v, want %v", tt.path, got, tt.want)
+			}
+			for i := range tt.want {
+				if got[i] != tt.want[i] {
+					t.Errorf("ancestorsOf(%q)[%d] = %q, want %q", tt.path, i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
+
+// TestCreatabilityMarker covers the walk up the ancestor chain, which is the whole of what
+// this endpoint does. The deep-path case is the one that matters: it is the shape that
+// reaches the top of the tree, and offering the bare "/" to the catalog there turned every
+// request into a 500 in QA while every unit test passed.
+func TestCreatabilityMarker(t *testing.T) {
+	deps, fake := testDeps(t)
+	deps.MaxPathsInRequest = 100
+	fake.AddCollection("/iplant", icat.AccessRead)
+	fake.AddCollection("/iplant/home", icat.AccessRead)
+	fake.AddDataObject(testHome+"/a-file.txt", 10, icat.AccessOwn)
+
+	reads := NewReads(deps)
+	body := `{"paths":[
+		"` + testHome + `/new-folder",
+		"` + testHome + `/one/two/three",
+		"/iplant/home/somebody-else/new-folder",
+		"/nonexistent-zone/nowhere/new-folder",
+		"` + testHome + `/a-file.txt/under-a-file"
+	]}`
+
+	rec := serve(t, apierror.StyleOK, http.MethodPost, "/creatability-marker?user="+testUser, body, reads.Creatability)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (%s)", rec.Code, rec.Body.String())
+	}
+
+	var resp struct {
+		Paths map[string]bool `json:"paths"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decoding: %v (%s)", err, rec.Body.String())
+	}
+
+	tests := []struct {
+		name string
+		path string
+		want bool
+	}{
+		{"directly inside a folder the caller owns", testHome + "/new-folder", true},
+		{"several levels below a folder the caller owns", testHome + "/one/two/three", true},
+		{"inside a folder the caller can only read", "/iplant/home/somebody-else/new-folder", false},
+		{"a chain that reaches the top without finding anything", "/nonexistent-zone/nowhere/new-folder", false},
+		{"below a file, which cannot hold anything", testHome + "/a-file.txt/under-a-file", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := resp.Paths[tt.path]; got != tt.want {
+				t.Errorf("%s = %v, want %v", tt.path, got, tt.want)
+			}
+		})
+	}
+}

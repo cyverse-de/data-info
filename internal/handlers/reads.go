@@ -156,18 +156,27 @@ func (h *Reads) Creatability(c echo.Context) error {
 	return writeJSONOK(c, map[string]any{"paths": out})
 }
 
-// ancestorsOf is a path followed by each of its ancestors, ending at the root.
+// ancestorsOf is a path followed by each of its ancestors, stopping at the zone root.
+//
+// It stops one short of the bare "/", which the reference's ancestors-of does reach. That is
+// not a collection -- the zone root below it is the topmost real one -- and the catalog
+// refuses it rather than answering, because a path that trims to nothing would otherwise
+// match the zone root and report it as though it were the thing asked about.
+//
+// The answer is unchanged by stopping early. Reaching "/" means every component including
+// the zone name was wrong, and nobody holds write access there, so both services report such
+// a path as uncreatable either way.
 func ancestorsOf(p string) []string {
 	current := strings.TrimRight(p, "/")
 	if current == "" {
-		return []string{"/"}
+		return nil
 	}
 
 	var out []string
 	for {
 		out = append(out, current)
 		parent := paths.Dir(current)
-		if parent == current {
+		if parent == current || parent == "/" {
 			return out
 		}
 		current = parent

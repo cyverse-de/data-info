@@ -7,6 +7,7 @@ package icattest
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"path"
 	"sort"
 	"strings"
@@ -147,6 +148,11 @@ func (f *Fake) GetItems(ctx context.Context, q icat.ItemQuery) ([]icat.Row, erro
 
 	var out []icat.Row
 	for _, p := range q.Paths {
+		// Refuse exactly what the real store refuses. A fake that is more permissive than
+		// the thing it stands in for cannot catch the bugs it exists to catch.
+		if err := icat.CheckPath(p); err != nil {
+			return nil, fmt.Errorf("icattest: %w", err)
+		}
 		if row, ok := f.Rows[strings.TrimRight(p, "/")]; ok {
 			out = append(out, row)
 		}

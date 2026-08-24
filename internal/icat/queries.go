@@ -397,14 +397,27 @@ func splitPaths(paths []string) (dirnames, basenames []string, err error) {
 	basenames = make([]string, 0, len(paths))
 
 	for i, p := range paths {
-		trimmed := strings.TrimRight(p, "/")
-		if !strings.HasPrefix(p, "/") || trimmed == "" {
-			return nil, nil, fmt.Errorf("icat: path %d (%q) is not an absolute iRODS path", i, p)
+		if err := CheckPath(p); err != nil {
+			return nil, nil, fmt.Errorf("icat: path %d: %w", i, err)
 		}
+		trimmed := strings.TrimRight(p, "/")
 
 		dir, base := path.Split(trimmed)
 		dirnames = append(dirnames, strings.TrimRight(dir, "/"))
 		basenames = append(basenames, base)
 	}
 	return dirnames, basenames, nil
+}
+
+// CheckPath rejects a path the catalog cannot describe.
+//
+// Exported so the in-memory catalog used in tests can refuse exactly what this one refuses.
+// A fake that is more permissive than the store it stands in for hides the bugs it exists
+// to catch: this rule is what a creatability request tripped over in QA, having passed every
+// unit test, because the fake happily looked up "/" and found nothing.
+func CheckPath(p string) error {
+	if !strings.HasPrefix(p, "/") || strings.TrimRight(p, "/") == "" {
+		return fmt.Errorf("%q is not an absolute iRODS path", p)
+	}
+	return nil
 }
