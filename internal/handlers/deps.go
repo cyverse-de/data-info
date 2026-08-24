@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/cyverse-de/data-info/internal/apierror"
@@ -274,6 +275,34 @@ func decodeBody(c echo.Context, into any) error {
 		return schemaError("the request body could not be parsed")
 	}
 	return nil
+}
+
+// anonURL builds the address the anonymous file service serves a path at.
+//
+// The longest configured prefix wins, so that a more specific mapping is not shadowed by a
+// more general one that happens to be checked first. A path no mapping covers gets an empty
+// URL rather than a wrong one.
+func (d Deps) anonURL(path string) string {
+	var best string
+	for prefix := range d.AnonMappings {
+		if len(path) > len(prefix) && strings.HasPrefix(path, prefix) && len(prefix) > len(best) {
+			best = prefix
+		}
+	}
+	if best == "" {
+		return ""
+	}
+
+	mapped := d.AnonMappings[best] + path[len(best):]
+
+	// Each segment is escaped on its own so the separators survive, and a space becomes
+	// %20 rather than a plus -- this ends up in a URL a person is given, not in a form.
+	segments := strings.Split(mapped, "/")
+	for i, segment := range segments {
+		segments[i] = strings.ReplaceAll(url.QueryEscape(segment), "+", "%20")
+	}
+
+	return strings.TrimRight(d.AnonBaseURL, "/") + "/" + strings.Join(segments, "/")
 }
 
 // visiblePermissions drops the entries the service does not report: the requesting user's

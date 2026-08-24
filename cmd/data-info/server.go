@@ -181,6 +181,17 @@ func registerDataRoutes(e *echo.Echo, cfg *config.Config, log *logrus.Entry, dep
 	// otherwise treat as structure.
 	e.GET("/navigation/path/:zone/*", listings.Navigation, ok)
 
+	// The manifest and the two chunk readers, which together back file preview in the DE.
+	// Each has a by-id route and a by-path one, and the by-path form carries the whole path
+	// -- zone included -- in its wildcard.
+	chunks := handlers.NewChunks(hd)
+	e.GET("/data/:data-id/manifest", chunks.Manifest)
+	e.GET("/data/:data-id/chunks", chunks.Chunk)
+	e.GET("/data/:data-id/chunks-tabular", chunks.TabularChunk)
+	e.GET("/data/by-path/manifest/*", chunks.ManifestByPath)
+	e.GET("/data/by-path/chunks/*", chunks.ChunkByPath)
+	e.GET("/data/by-path/chunks-tabular/*", chunks.TabularChunkByPath)
+
 	// Trap-style, unlike its neighbour above: the data routes are wrapped in svc/trap in
 	// the reference, so their codes map through the status table rather than all
 	// answering 500. Verified against the running service, which answers a missing limit

@@ -212,10 +212,11 @@ func listingOffset(c echo.Context) (int, error) {
 	return offset, nil
 }
 
-// FolderListing handles the folder half of GET /data/path/{zone}/*.
+// FolderListing handles GET /data/path/{zone}/*.
 //
-// The same route serves a file download; the two are told apart by what is at the path, not
-// by the request, so the dispatch happens here.
+// The route serves a listing for a folder and the file itself for a file. The two are told
+// apart by what is at the path rather than by anything in the request, so the dispatch
+// happens here.
 func (h *Listings) FolderListing(c echo.Context) error {
 	ctx := c.Request().Context()
 
@@ -246,9 +247,7 @@ func (h *Listings) FolderListing(c echo.Context) error {
 		return apierror.New(apierror.ErrDoesNotExist).With("path", path)
 	}
 	if stat.Type != rods.ObjectTypeDir {
-		// Downloading a file through this route arrives with the write path; until then
-		// say so rather than answering a listing for something that is not a folder.
-		return apierror.New(apierror.ErrNotAFolder).With("path", path)
+		return h.download(c, ctx, scope, stat)
 	}
 
 	limit, err := listingLimit(c)

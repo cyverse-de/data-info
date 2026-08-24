@@ -433,6 +433,31 @@ func (s *Scope) ReadFile(ctx context.Context, path string) ([]byte, error) {
 	return irodsclient.ReadFile(ctx, sess, normalizePath(path), MaxReadableFileSize)
 }
 
+// ReadAt returns up to length bytes of a data object starting at offset.
+//
+// The chunking endpoints read this way rather than opening a stream: they want one span of
+// one file, and a positional read is a single round trip where a stream would be an open, a
+// seek and a close.
+func (s *Scope) ReadAt(ctx context.Context, path string, offset, length int64) ([]byte, error) {
+	sess, err := s.session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return irodsclient.ReadAt(ctx, sess, normalizePath(path), offset, length)
+}
+
+// OpenFile opens a data object for streaming.
+//
+// The reader borrows the scope's session, so it must be closed before the scope is. A
+// handler that streams a download therefore closes it before returning, not after.
+func (s *Scope) OpenFile(ctx context.Context, path string) (io.ReadCloser, error) {
+	sess, err := s.session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return irodsclient.OpenReader(ctx, sess, normalizePath(path))
+}
+
 // ChildEntry is one member of a collection, with enough to know what it is.
 type ChildEntry struct {
 	Path  string
