@@ -61,8 +61,11 @@ func HTTPErrorHandler(logErr func(echo.Context, *Error, error)) echo.HTTPErrorHa
 
 		status := apiErr.HTTPStatus()
 
-		// A few routes contract on the status alone. HEAD has no body by definition.
+		// A few routes contract on the status alone. HEAD has no body by definition -- but
+		// it still carries the content type the body would have had, which is what the
+		// reference sends and what a client reading only the headers sees.
 		if c.Request().Method == http.MethodHead {
+			setContentType(c, contentTypeFor(apiErr, raw))
 			report(logErr, c, apiErr, c.NoContent(status))
 			return
 		}
@@ -82,15 +85,16 @@ func HTTPErrorHandler(logErr func(echo.Context, *Error, error)) echo.HTTPErrorHa
 		// Blob rather than JSON or JSONBlob, for two reasons. echo's JSON appends a
 		// trailing newline where cheshire/encode does not, and these bodies are compared
 		// byte for byte; and the content type is not always JSON here, or even present.
-		if contentType := contentTypeFor(apiErr, raw); contentType != "" {
-			c.Response().Header().Set(echo.HeaderContentType, contentType)
+		contentType := contentTypeFor(apiErr, raw)
+		setContentType(c, contentType)
+
+		if contentType != "" {
 			report(logErr, c, apiErr, c.Blob(status, contentType, []byte(raw)))
 			return
 		}
 
-		// No content type at all, which is not an oversight. An error that reaches the
-		// reference's default exception handler is written without one, and a caller
-		// sniffing the body is what that produces today.
+		// No content type at all, which is not an oversight: an error reaching the
+		// reference's default exception handler is written without one.
 		c.Response().WriteHeader(status)
 		_, writeErr := c.Response().Write([]byte(raw))
 		report(logErr, c, apiErr, writeErr)
@@ -212,4 +216,26 @@ func contentTypeFor(apiErr *Error, raw string) string {
 		return ""
 	}
 	return JSONContentType
+}
+
+// setContentType applies a content type, or suppresses the header entirely when it is empty.
+//
+// The suppression is the part that needs saying. net/http sniffs the first bytes written and
+// adds a Content-Type of its own when the header is absent, so simply not setting one
+// produced "text/plain; charset=utf-8" on every response the reference sends bare -- twenty-
+// two of them in a shadow run. Assigning nil to the map key is what net/http documents as
+// the way to mean "no content type", as opposed to not mentioning one.
+//
+// It also removes anything echo put there first. echo's router sets Allow on a
+// method-mismatch, and the reference sends no such header because it does not treat a
+// mismatch as a method problem at all -- see the StatusMethodNotAllowed case above.
+func setContentType(c echo.Context, contentType string) {
+	header := c.Response().Header()
+	header.Del("Allow")
+
+	if contentType == "" {
+		header["Content-Type"] = nil
+		return
+	}
+	header.Set(echo.HeaderContentType, contentType)
 }

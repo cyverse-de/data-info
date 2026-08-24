@@ -340,3 +340,18 @@ retrying in a goroutine and records it only in the log.
 either way. What is lost is the operator's view of it. Registering the task needs no new
 machinery -- `Deps.Creator` is already wired -- so this is a small piece of work rather than
 a blocked one.
+
+## 21. An upload's response reports no infoType
+
+`write.clj` sniffs the uploaded bytes with heuristomancer and writes the resulting
+`ipc-filetype` AVU before it answers, so `POST /data` and `PUT /data/{data-id}` report the
+file's info type in the response. This service does not sniff -- file typing moved to
+info-typer with the rest of the heuristomancer work -- so the AVU is written shortly
+afterwards by info-typer's AMQP consumer, and the upload response carries an empty info type.
+
+**Accepted, and the one item the plan signed off in advance.** A shadow run reports it on
+every upload case, as `"infoType": "csv"` against `"infoType": ""` in the response and
+`"csv"` against `"unknown"` in the state probe. Note that because data-info always won the
+AVU race, that consumer has never actually typed a DE upload, so its behaviour on this path
+is unproven in production -- which is the part to watch during the soak rather than the
+response field itself.

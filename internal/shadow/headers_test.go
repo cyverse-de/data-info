@@ -122,3 +122,52 @@ func TestCompareReportsHeaderAndBodyTogether(t *testing.T) {
 		t.Errorf("kinds = %v, want both a header and a body difference", kindsOf(diffs))
 	}
 }
+
+// TestRunVaryingValuesAreCanonicalised covers the values two services legitimately disagree
+// about because each is reporting something true of itself, or because the value is random
+// by design. Both were reported as differences by the first paired run against QA.
+func TestRunVaryingValuesAreCanonicalised(t *testing.T) {
+	n := NewNormalizer("run1")
+
+	tests := []struct {
+		name                 string
+		reference, candidate string
+	}{
+		{
+			name:      "an async task's detail names the pod that ran it",
+			reference: `{"detail":"[data-info-8485cb7d8b-t6dcz]","status":"running"}`,
+			candidate: `{"detail":"[data-info-next-d66b6b687-c7pf5]","status":"running"}`,
+		},
+		{
+			name:      "the trash suffix is random by design",
+			reference: `{"p":"/cyverse/trash/home/wregglej/doomed.txt.1gRkrCx"}`,
+			candidate: `{"p":"/cyverse/trash/home/wregglej/doomed.txt.m3cPtu2"}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			diffs := n.Compare(
+				Response{Status: 200, Body: []byte(tt.reference)},
+				Response{Status: 200, Body: []byte(tt.candidate)},
+			)
+			if len(diffs) != 0 {
+				t.Errorf("diffs = %v, want none", diffs)
+			}
+		})
+	}
+}
+
+// TestTrashSuffixDoesNotEatOrdinaryNames guards the anchor. A pattern loose enough to rewrite
+// a real filename would hide a genuine difference in what a service named a file.
+func TestTrashSuffixDoesNotEatOrdinaryNames(t *testing.T) {
+	n := NewNormalizer("run1")
+
+	diffs := n.Compare(
+		Response{Status: 200, Body: []byte(`{"p":"/cyverse/home/wregglej/report.abcdefg"}`)},
+		Response{Status: 200, Body: []byte(`{"p":"/cyverse/home/wregglej/report.zyxwvut"}`)},
+	)
+	if len(diffs) == 0 {
+		t.Error("two different filenames outside the trash compared equal")
+	}
+}

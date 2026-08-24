@@ -3,6 +3,7 @@ package apierror
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -225,5 +226,75 @@ func TestWrongMethodIsAnUnrecognizedPath(t *testing.T) {
 	}
 	if got := rec.Header().Get(echo.HeaderContentType); got != unrecognizedPathContentType {
 		t.Errorf("Content-Type = %q, want %q", got, unrecognizedPathContentType)
+	}
+}
+
+// TestNoContentTypeMeansNoHeader covers the difference between not setting a content type and
+// saying there is none.
+//
+// net/http sniffs the bytes written and supplies one when the header is absent, so the
+// obvious implementation sent "text/plain; charset=utf-8" on every response the reference
+// sends bare. A shadow run against QA reported it on twenty-two cases.
+func TestNoContentTypeMeansNoHeader(t *testing.T) {
+	e := newTestEcho()
+	e.GET("/x", func(echo.Context) error { return New(ErrDoesNotExist) }, WithStyle(StyleOK))
+
+	// Served through a real server rather than a recorder. A recorder keeps the map key
+	// with a nil value, which is indistinguishable from an empty one; what matters is
+	// whether net/http writes a header line, and only a real response shows that.
+	srv := httptest.NewServer(e)
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/x")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck // read below
+
+	if values, present := resp.Header[http.CanonicalHeaderKey("Content-Type")]; present {
+		t.Errorf("Content-Type = %q, want no header line at all", values)
+	}
+
+	// The body still has to arrive; suppressing the header must not suppress the write.
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("reading the body: %v", err)
+	}
+	if len(body) == 0 {
+		t.Error("body is empty")
+	}
+}
+
+// TestHeadCarriesTheContentType covers a HEAD, which has no body but still describes the one
+// it would have had.
+func TestHeadCarriesTheContentType(t *testing.T) {
+	e := newTestEcho()
+	e.HEAD("/x", func(echo.Context) error {
+		return New(ErrNotAUser).AsSchemaFailure().WithStatus(http.StatusUnprocessableEntity)
+	})
+
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, httptest.NewRequest(http.MethodHead, "/x", nil))
+
+	if got := rec.Header().Get(echo.HeaderContentType); got != JSONContentType {
+		t.Errorf("Content-Type = %q, want %q", got, JSONContentType)
+	}
+	if rec.Body.Len() != 0 {
+		t.Errorf("body = %q, want empty for a HEAD", rec.Body.String())
+	}
+}
+
+// TestWrongMethodSendsNoAllowHeader completes the method-mismatch port. echo's router sets
+// Allow before the handler runs; the reference sends none, because it does not treat a
+// mismatched method as a method problem at all.
+func TestWrongMethodSendsNoAllowHeader(t *testing.T) {
+	e := newTestEcho()
+	e.GET("/x", func(c echo.Context) error { return c.NoContent(http.StatusOK) })
+
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, httptest.NewRequest(http.MethodDelete, "/x", nil))
+
+	if got := rec.Header().Get("Allow"); got != "" {
+		t.Errorf("Allow = %q, want the header to be absent", got)
 	}
 }

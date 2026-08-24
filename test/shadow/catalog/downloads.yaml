@@ -31,13 +31,20 @@ cases:
     query: {user: "{{.User}}"}
     seed: {filename: download-empty.txt, content: ""}
 
-  # Bytes that are not valid UTF-8, so a download that decodes rather than copies shows up.
-  - id: download-a-file-that-is-not-text
+  # Multi-byte characters, so a download that decodes and re-encodes rather than copying
+  # bytes shows up as a body difference.
+  #
+  # The extension is .txt on purpose. A name the media-type table does not know sends the
+  # reference to Tika's content sniffing, which this service deliberately does not do
+  # (deferred fix 11) -- so such a case would report that accepted divergence on every run
+  # instead of testing what it is here to test. upload-with-no-extension covers the
+  # divergence itself, once.
+  - id: download-multibyte-content
     tier: write
     method: GET
     path: /data/path{{.SeedPath}}
     query: {user: "{{.User}}"}
-    seed: {filename: download.bin, content: "\u00ff\u00fe not text\n"}
+    seed: {filename: download-multibyte.txt, content: "caf\u00e9 \u4e16\u754c \U0001F600\n"}
 
   - id: download-a-file-whose-name-has-spaces
     tier: write

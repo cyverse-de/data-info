@@ -59,6 +59,17 @@ var (
 	// hostPortPattern matches the service's own address in a reported URL.
 	hostPortPattern = regexp.MustCompile(`http://[^/"]+`)
 
+	// instancePattern matches the pod name a service stamps into an async task's detail.
+	// Both spellings of the deployment appear, so the prefix is matched loosely rather than
+	// pinned to either name.
+	instancePattern = regexp.MustCompile(`\[data-info[a-z-]*-[a-z0-9]+-[a-z0-9]+\]`)
+
+	// trashSuffixPattern matches the random suffix appended when something is moved to the
+	// trash, keeping the path in front of it. Anchored to a trash path and to the closing
+	// quote so it cannot rewrite an ordinary filename that happens to end in a short
+	// extension.
+	trashSuffixPattern = regexp.MustCompile(`(/trash/[^"]*)\.[A-Za-z0-9]{7}"`)
+
 	// schemaReasonPattern matches the reason attached to a schema-validation failure,
 	// whether it is rendered as a string or as a nested object.
 	//
@@ -106,6 +117,16 @@ func NewNormalizer(runID string) *Normalizer {
 			// diagnostic text rather than contract. The error_code and the status are
 			// still compared exactly, and those are what callers branch on.
 			Replacement{schemaReasonPattern, `"reason":"{SCHEMA}"`},
+
+			// An async task's detail names the pod that ran it. Each service correctly
+			// reports its own, so comparing them would only ever measure that the two are
+			// different deployments -- which is the premise of the run, not a finding.
+			Replacement{instancePattern, "[{INSTANCE}]"},
+
+			// Moving something to the trash appends a random suffix so that two deletes
+			// of the same name do not collide. It differs per call by design, on one
+			// service as much as between two.
+			Replacement{trashSuffixPattern, `${1}.{TRASHSUFFIX}"`},
 		),
 		// Arrays whose order is the answer rather than incidental. A listing's order is
 		// exactly what a sort-field request asks for, so sorting it here would hide the
