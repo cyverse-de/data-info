@@ -15,6 +15,12 @@ id, and the fixtures are reaped per run.
 scripts/run-group.sh <group> <run-id>     # groups are the basenames in test/shadow/catalog
 ```
 
+The script sets `KUBECONFIG` itself rather than honouring the ambient one, and refuses a
+context whose name looks like production. Neither is paranoia: shells here export
+`KUBECONFIG` pointing at prod, so an inherited value aims a harness that creates and deletes
+real data at whatever the variable happened to hold. `SHADOW_KUBECONFIG` overrides it, and
+has to be set deliberately.
+
 The run id must contain a character outside `0-9a-f`. It is substituted wherever it appears,
 so an id made only of hex digits lands inside a uuid and an id made only of decimal digits
 lands inside a timestamp — `dishadow` refuses those rather than quietly corrupting the values
