@@ -12,6 +12,9 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/cyverse-de/data-info/internal/apierror"
+	"github.com/cyverse-de/data-info/internal/clients/asynctasks"
 )
 
 // Runner sends each case to both services and compares the answers.
@@ -38,6 +41,15 @@ type Runner struct {
 
 	// User is who the harness acts as when building and inspecting fixtures.
 	User string
+
+	// Tasks reads async tasks. When nil, async cases are reported as skipped rather than
+	// run: without it their state probe would race the job it is meant to observe, which
+	// is worse than not running them, because it fails intermittently and in the
+	// direction of passing.
+	Tasks *asynctasks.Client
+
+	// AsyncTimeout bounds the wait for one task. Zero means DefaultAsyncTimeout.
+	AsyncTimeout time.Duration
 }
 
 // Result is one case's outcome.
@@ -46,6 +58,12 @@ type Result struct {
 	Diffs   []Diff
 	Skipped string
 	Err     error
+
+	// Code is the error_code the reference service returned, when it returned one. It is
+	// recorded rather than asserted: the harness compares the two services against each
+	// other, so what a case elicits is an observation about the run, not an expectation
+	// the case declares.
+	Code string
 }
 
 // Passed reports whether the case matched.
@@ -88,11 +106,10 @@ func (r *Runner) runOne(ctx context.Context, c Case) Result {
 		return r.runRead(ctx, c)
 	case TierWrite:
 		return r.runWrite(ctx, c)
+	case TierAsync:
+		return r.runAsync(ctx, c)
 	default:
-		// Async cases need the task to be polled to completion before the outcome can be
-		// read, which the async machinery has not landed yet. Refusing is better than
-		// comparing a result that may not have happened.
-		return Result{Case: c, Skipped: fmt.Sprintf("tier %q is not supported yet", c.Tier)}
+		return Result{Case: c, Skipped: fmt.Sprintf("tier %q is not a tier", c.Tier)}
 	}
 }
 
@@ -111,7 +128,11 @@ func (r *Runner) runRead(ctx context.Context, c Case) Result {
 		return Result{Case: c, Err: fmt.Errorf("candidate: %w", err)}
 	}
 
-	return Result{Case: c, Diffs: r.Normalizer.Compare(reference, candidate)}
+	return Result{
+		Case:  c,
+		Diffs: r.Normalizer.Compare(reference, candidate),
+		Code:  errorCodeFrom(reference.Body),
+	}
 }
 
 // runWrite gives each service its own copy of the fixture and compares two things: what each
@@ -124,13 +145,82 @@ func (r *Runner) runRead(ctx context.Context, c Case) Result {
 // requesting user's own permission. Access granted to somebody else is not covered; see the
 // note on StateOf.
 func (r *Runner) runWrite(ctx context.Context, c Case) Result {
+	paired, result := r.sendPaired(ctx, c)
+	if paired == nil {
+		return result
+	}
+	return r.withStateDiffs(ctx, c, paired, paired.diffs)
+}
+
+// runAsync is runWrite with the job waited on first.
+//
+// The endpoints these cases hit return as soon as the task is created, so reading the tree
+// straight afterwards races the work. Waiting for the task to carry an end date settles
+// that, and the wait is not only bookkeeping: the end date is what releases the paths, so a
+// case that gets one has also observed the lock being freed.
+//
+// The status trail is compared too. terrain's move poller reads that sequence to show
+// progress, which makes it contract rather than diagnostics.
+func (r *Runner) runAsync(ctx context.Context, c Case) Result {
+	if r.Tasks == nil {
+		return Result{Case: c, Skipped: "no async-tasks URL was configured, so async cases would race the job they are meant to observe"}
+	}
+
+	paired, result := r.sendPaired(ctx, c)
+	if paired == nil {
+		return result
+	}
+	diffs := paired.diffs
+
+	referenceID := taskIDFrom(paired.referenceResp.Body)
+	candidateID := taskIDFrom(paired.candidateResp.Body)
+
+	// Neither side started a job -- an error, or a request that turned out to be a no-op.
+	// Whether that agreement is correct is the response diff's business, not ours.
+	if referenceID == "" && candidateID == "" {
+		return r.withStateDiffs(ctx, c, paired, diffs)
+	}
+
+	referenceTask, err := r.awaitTask(ctx, referenceID)
+	if err != nil {
+		return Result{Case: c, Err: fmt.Errorf("waiting for the reference's task: %w", err)}
+	}
+	candidateTask, err := r.awaitTask(ctx, candidateID)
+	if err != nil {
+		return Result{Case: c, Err: fmt.Errorf("waiting for the candidate's task: %w", err)}
+	}
+
+	for _, d := range r.Normalizer.Compare(
+		Response{Status: 200, Body: statusTrail(referenceTask)},
+		Response{Status: 200, Body: statusTrail(candidateTask)},
+	) {
+		diffs = append(diffs, Diff{Kind: "task:" + d.Kind, Detail: d.Detail})
+	}
+
+	return r.withStateDiffs(ctx, c, paired, diffs)
+}
+
+// pairedRun is what a paired case produced: which subtree each service was given, and what
+// each answered.
+type pairedRun struct {
+	referenceRoot string
+	candidateRoot string
+	referenceResp Response
+	candidateResp Response
+	diffs         []Diff
+}
+
+// sendPaired builds a subtree per service, sends the case to each, and diffs the answers.
+// A nil first return means the case is finished -- skipped or failed -- and the Result says
+// why.
+func (r *Runner) sendPaired(ctx context.Context, c Case) (*pairedRun, Result) {
 	if r.Fixtures == nil || r.Reader == nil {
-		return Result{Case: c, Skipped: "no scratch collection was configured, so write cases cannot be paired"}
+		return nil, Result{Case: c, Skipped: "no scratch collection was configured, so paired cases cannot be run"}
 	}
 
 	referenceRoot, candidateRoot, err := r.Fixtures.Prepare(ctx, c, r.User)
 	if err != nil {
-		return Result{Case: c, Err: fmt.Errorf("preparing fixtures: %w", err)}
+		return nil, Result{Case: c, Err: fmt.Errorf("preparing fixtures: %w", err)}
 	}
 
 	referenceVars := r.varsWithRoot(referenceRoot)
@@ -143,7 +233,7 @@ func (r *Runner) runWrite(ctx context.Context, c Case) Result {
 		} {
 			seeded, err := r.Fixtures.Seed(ctx, c.Seed, r.User, root)
 			if err != nil {
-				return Result{Case: c, Err: fmt.Errorf("seeding fixtures: %w", err)}
+				return nil, Result{Case: c, Err: fmt.Errorf("seeding fixtures: %w", err)}
 			}
 			for k, v := range seeded {
 				vars[k] = v
@@ -151,39 +241,120 @@ func (r *Runner) runWrite(ctx context.Context, c Case) Result {
 		}
 	}
 
-	referenceCase := c.Expand(referenceVars)
-	candidateCase := c.Expand(candidateVars)
-
-	referenceResp, err := r.send(ctx, r.Reference, referenceCase)
-	if err != nil {
-		return Result{Case: c, Err: fmt.Errorf("reference: %w", err)}
+	for _, side := range []struct {
+		name string
+		base string
+		root string
+		vars map[string]string
+	}{
+		{"reference", r.Reference, referenceRoot, referenceVars},
+		{"candidate", r.Candidate, candidateRoot, candidateVars},
+	} {
+		if err := r.runSteps(ctx, c.Before, side.base, side.root, side.vars); err != nil {
+			return nil, Result{Case: c, Err: fmt.Errorf("%s setup: %w", side.name, err)}
+		}
 	}
 
-	candidateResp, err := r.send(ctx, r.Candidate, candidateCase)
+	referenceResp, err := r.send(ctx, r.Reference, c.Expand(referenceVars))
 	if err != nil {
-		return Result{Case: c, Err: fmt.Errorf("candidate: %w", err)}
+		return nil, Result{Case: c, Err: fmt.Errorf("reference: %w", err)}
 	}
 
-	diffs := r.Normalizer.Compare(referenceResp, candidateResp)
+	candidateResp, err := r.send(ctx, r.Candidate, c.Expand(candidateVars))
+	if err != nil {
+		return nil, Result{Case: c, Err: fmt.Errorf("candidate: %w", err)}
+	}
 
-	referenceState, err := r.Reader.StateOf(ctx, r.User, referenceRoot)
+	return &pairedRun{
+		referenceRoot: referenceRoot,
+		candidateRoot: candidateRoot,
+		referenceResp: referenceResp,
+		candidateResp: candidateResp,
+		diffs:         r.Normalizer.Compare(referenceResp, candidateResp),
+	}, Result{}
+}
+
+// runSteps puts one side's fixture into the state the case needs.
+//
+// A step's response is not compared. It is setup, so the only thing asked of it is that it
+// worked: a step that fails fails the case, rather than being reported as a difference
+// between two services that were never given the same starting point.
+func (r *Runner) runSteps(ctx context.Context, steps []Step, base, root string, vars map[string]string) error {
+	for i, step := range steps {
+		if step.Seed != nil {
+			seeded, err := r.Fixtures.Seed(ctx, step.Seed, r.User, root)
+			if err != nil {
+				return fmt.Errorf("step %d (%s): %w", i+1, step.describe(), err)
+			}
+			for k, v := range seeded {
+				vars[k] = v
+			}
+			continue
+		}
+
+		expanded := step.Expand(vars)
+		resp, err := r.send(ctx, base, Case{
+			Method: expanded.Method,
+			Path:   expanded.Path,
+			Query:  expanded.Query,
+			Body:   expanded.Body,
+		})
+		if err != nil {
+			return fmt.Errorf("step %d (%s): %w", i+1, step.describe(), err)
+		}
+		if resp.Status >= 400 {
+			return fmt.Errorf("step %d (%s): status %d: %s", i+1, step.describe(), resp.Status, resp.Body)
+		}
+
+		if !step.Await {
+			continue
+		}
+		if r.Tasks == nil {
+			return fmt.Errorf("step %d (%s) awaits a task, but no async-tasks URL was configured", i+1, step.describe())
+		}
+		id := taskIDFrom(resp.Body)
+		if id == "" {
+			// The step was expected to start work and did not, so whatever the case
+			// compares next would rest on a fixture that was never changed.
+			return fmt.Errorf("step %d (%s) awaits a task, but the response carried no async-task-id", i+1, step.describe())
+		}
+		if _, err := r.awaitTask(ctx, id); err != nil {
+			return fmt.Errorf("step %d (%s): %w", i+1, step.describe(), err)
+		}
+	}
+	return nil
+}
+
+// withStateDiffs reads back both subtrees and appends what differs.
+func (r *Runner) withStateDiffs(ctx context.Context, c Case, paired *pairedRun, diffs []Diff) Result {
+	referenceState, err := r.Reader.StateOf(ctx, r.User, paired.referenceRoot)
 	if err != nil {
 		return Result{Case: c, Err: fmt.Errorf("reading the reference's result: %w", err)}
 	}
-	candidateState, err := r.Reader.StateOf(ctx, r.User, candidateRoot)
+	candidateState, err := r.Reader.StateOf(ctx, r.User, paired.candidateRoot)
 	if err != nil {
 		return Result{Case: c, Err: fmt.Errorf("reading the candidate's result: %w", err)}
 	}
 
-	stateDiffs := r.Normalizer.Compare(
+	for _, d := range r.Normalizer.Compare(
 		Response{Status: 200, Body: referenceState},
 		Response{Status: 200, Body: candidateState},
-	)
-	for _, d := range stateDiffs {
+	) {
 		diffs = append(diffs, Diff{Kind: "state:" + d.Kind, Detail: d.Detail})
 	}
 
-	return Result{Case: c, Diffs: diffs}
+	return Result{Case: c, Diffs: diffs, Code: errorCodeFrom(paired.referenceResp.Body)}
+}
+
+// errorCodeFrom pulls the error_code out of a response, if it carries one.
+func errorCodeFrom(body []byte) string {
+	var envelope struct {
+		Code string `json:"error_code"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return ""
+	}
+	return envelope.Code
 }
 
 // varsWithRoot points a case at one side's copy of the fixture.
@@ -314,7 +485,42 @@ func Report(w io.Writer, results []Result) (bool, error) {
 		out.printf("note: skipped cases were not compared; the run is not evidence about them\n")
 	}
 
+	reportCodeCoverage(out, results)
+
 	return failed == 0, out.err
+}
+
+// reportCodeCoverage names the error codes no case elicited.
+//
+// Cutover asks that every code data-info can return be exercised at least once, and the
+// only honest way to know is to look at what a run actually produced -- a case cannot
+// declare the code it expects, because the harness compares the two services against each
+// other rather than against a fixture. A code missing here means either no case reaches it
+// or the case that used to has drifted onto a different failure.
+//
+// Reported, never fatal. Coverage is a property of the catalog, and failing a run over it
+// would confuse "the two services disagree" with "we have not written that case yet".
+func reportCodeCoverage(out *errWriter, results []Result) {
+	seen := map[string]bool{}
+	for _, res := range results {
+		if res.Code != "" {
+			seen[res.Code] = true
+		}
+	}
+
+	var missing []string
+	for _, c := range apierror.EmittedCodes() {
+		if !seen[string(c)] {
+			missing = append(missing, string(c))
+		}
+	}
+	sort.Strings(missing)
+
+	total := len(apierror.EmittedCodes())
+	out.printf("\nerror codes elicited: %d of %d\n", total-len(missing), total)
+	if len(missing) > 0 {
+		out.printf("not elicited by any case: %s\n", strings.Join(missing, ", "))
+	}
 }
 
 // errWriter records the first write failure so a report does not have to check every line.

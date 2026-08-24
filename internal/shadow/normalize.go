@@ -98,8 +98,15 @@ func NewNormalizer(runID string) *Normalizer {
 		),
 		// Arrays whose order is the answer rather than incidental. A listing's order is
 		// exactly what a sort-field request asks for, so sorting it here would hide the
-		// bug the case exists to catch.
-		PreserveOrder: map[string]bool{"files": true, "folders": true, "paths": true},
+		// bug the case exists to catch. A task's status trail is the same: terrain's move
+		// poller reads it in order to show progress, so two services reporting the same
+		// statuses in different orders is a difference, not a tie.
+		PreserveOrder: map[string]bool{
+			"files":    true,
+			"folders":  true,
+			"paths":    true,
+			"statuses": true,
+		},
 	}
 }
 

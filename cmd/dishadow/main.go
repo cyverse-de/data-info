@@ -11,6 +11,12 @@
 // skipped rather than run against a shared tree, because a difference produced by the harness
 // itself is worse than no result.
 //
+// Cases whose work happens in the background -- move, rename, delete, restore -- additionally
+// need --async-tasks. Those endpoints return as soon as the task exists, so without somewhere
+// to watch the task the harness would read the tree while the job was still writing it. That
+// failure is intermittent and lands on the side of passing, which is the worst way for a check
+// to be wrong, so those cases are skipped rather than guessed at.
+//
 // The scratch collection is checked before anything is created: it must be absolute, several
 // levels deep, and name itself as scratch, and every path derived from it is re-checked. This
 // writes to a zone other people share, so a mistyped flag should stop the run rather than
@@ -26,6 +32,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/cyverse-de/data-info/internal/clients/asynctasks"
 	"github.com/cyverse-de/data-info/internal/shadow"
 )
 
@@ -46,7 +53,9 @@ func run() error {
 		root      = flag.String("root", "", "collection the cases operate under")
 		runID     = flag.String("run-id", "", "identifier canonicalised out of responses (defaults to a timestamp)")
 		scratch   = flag.String("scratch", "", "collection write cases may create and delete under; without it they are skipped")
+		tasks     = flag.String("async-tasks", "", "base URL of the async-tasks service; without it async cases are skipped")
 		keep      = flag.Bool("keep", false, "leave the run's fixtures in place instead of removing them")
+		asyncWait = flag.Duration("async-timeout", shadow.DefaultAsyncTimeout, "how long to wait for one async task to finish")
 	)
 	flag.Parse()
 
@@ -85,6 +94,17 @@ func run() error {
 		// on the service under test already being correct.
 		runner.Reader = shadow.NewServiceClient(*reference)
 		runner.Fixtures = shadow.NewFixtures(guard, id, runner.Reader)
+	}
+
+	if *tasks != "" {
+		// The same service both data-info deployments post to, so one client reads both
+		// sides' tasks. The timeout is per request, not per wait.
+		client, err := asynctasks.New(*tasks, 30*time.Second)
+		if err != nil {
+			return fmt.Errorf("async-tasks URL: %w", err)
+		}
+		runner.Tasks = client
+		runner.AsyncTimeout = *asyncWait
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

@@ -2,10 +2,15 @@ package shadow
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/cyverse-de/data-info/internal/apierror"
+	"github.com/cyverse-de/data-info/internal/clients/asynctasks"
 )
 
 func TestCompareIgnoresGeneratedValues(t *testing.T) {
@@ -132,8 +137,13 @@ func TestCatalogLoads(t *testing.T) {
 		if c.Method == "" || c.Path == "" {
 			t.Errorf("case %q has no method or path", c.ID)
 		}
-		if c.Tier == "" {
-			t.Errorf("case %q has no tier", c.ID)
+		switch c.Tier {
+		case TierRead, TierWrite, TierAsync:
+		default:
+			// A misspelled tier would be skipped at run time with a reason that reads
+			// like a limitation rather than a typo, so the case would quietly stop
+			// being checked.
+			t.Errorf("case %q has tier %q, which is not a tier", c.ID, c.Tier)
 		}
 	}
 	t.Logf("%d cases across %d groups", len(cases), len(catalog.Groups))
@@ -296,5 +306,236 @@ func TestWriteCasesAreSkippedWithoutScratch(t *testing.T) {
 	result := runner.runOne(context.Background(), Case{ID: "x", Tier: TierWrite, Method: "POST", Path: "/data/directories"})
 	if result.Skipped == "" {
 		t.Error("a write case ran without a scratch collection")
+	}
+}
+
+// TestTaskIDFrom covers the shapes an async endpoint's response actually takes. An id that
+// is missed means the harness reads the tree while the job is still writing it, and an id
+// invented from a malformed body means it waits for a task that does not exist.
+func TestTaskIDFrom(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body string
+		want string
+	}{
+		{"a move", `{"user":"u","sources":["/a"],"dest":"/b","async-task-id":"abc-123"}`, "abc-123"},
+		{"nothing to do", `{"user":"u","source":"/a","dest":"/a"}`, ""},
+		{"an error envelope", `{"error_code":"ERR_DOES_NOT_EXIST","path":"/a"}`, ""},
+		{"not JSON at all", `<html>502</html>`, ""},
+		{"an empty body", ``, ""},
+		{"a JSON array", `[{"async-task-id":"abc-123"}]`, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := taskIDFrom([]byte(tc.body)); got != tc.want {
+				t.Errorf("taskIDFrom(%s) = %q, want %q", tc.body, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestStatusTrailComparesSequenceNotTiming pins what the async tier actually asserts about a
+// task's history: the order of the statuses and their details, with the paths inside them
+// canonicalised across the paired fixtures, and nothing about when they happened.
+func TestStatusTrailComparesSequenceNotTiming(t *testing.T) {
+	at := func(s string) *time.Time {
+		parsed, err := time.Parse(time.RFC3339, s)
+		if err != nil {
+			t.Fatalf("parsing %q: %v", s, err)
+		}
+		return &parsed
+	}
+	trail := func(root string, when string, statuses ...[2]string) *asynctasks.Task {
+		task := &asynctasks.Task{EndDate: at(when)}
+		for _, s := range statuses {
+			task.Statuses = append(task.Statuses, asynctasks.Status{
+				Status:      s[0],
+				Detail:      strings.ReplaceAll(s[1], "{ROOT}", root),
+				CreatedDate: *at(when),
+			})
+		}
+		return task
+	}
+
+	n := NewNormalizer("RUN")
+	sequence := [][2]string{
+		{"registered", ""},
+		{"running", "moving {ROOT}/movable.txt"},
+		{"completed", ""},
+	}
+
+	// Same sequence, opposite sides of the paired fixture, hours apart.
+	reference := trail("/z/scratch/RUN/A", "2026-08-21T10:00:00Z", sequence...)
+	candidate := trail("/z/scratch/RUN/B", "2026-08-21T13:31:07Z", sequence...)
+
+	if diffs := n.Compare(
+		Response{Status: 200, Body: statusTrail(reference)},
+		Response{Status: 200, Body: statusTrail(candidate)},
+	); len(diffs) != 0 {
+		t.Errorf("identical trails on opposite sides differed: %+v", diffs)
+	}
+
+	// A status the other side never reported has to show up.
+	shortened := trail("/z/scratch/RUN/B", "2026-08-21T10:00:00Z", sequence[:2]...)
+	if diffs := n.Compare(
+		Response{Status: 200, Body: statusTrail(reference)},
+		Response{Status: 200, Body: statusTrail(shortened)},
+	); len(diffs) == 0 {
+		t.Error("a missing terminal status produced no difference")
+	}
+
+	// So does the same sequence in the wrong order: terrain's poller reads it in order.
+	reordered := trail("/z/scratch/RUN/B", "2026-08-21T10:00:00Z", sequence[1], sequence[0], sequence[2])
+	if diffs := n.Compare(
+		Response{Status: 200, Body: statusTrail(reference)},
+		Response{Status: 200, Body: statusTrail(reordered)},
+	); len(diffs) == 0 {
+		t.Error("a reordered status trail produced no difference")
+	}
+}
+
+// TestCatalogRejectsMalformedSteps pins the setup-step validation. Each of these would
+// otherwise fail at run time, in the middle of a run, with an error that reads like a
+// service difference rather than a catalog mistake.
+func TestCatalogRejectsMalformedSteps(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		step string
+		want string
+	}{
+		{
+			name: "both seeds and sends",
+			step: "      - {seed: {filename: a.txt, content: \"a\"}, method: POST, path: /deleter}",
+			want: "both seeds and sends a request",
+		},
+		{
+			name: "does neither",
+			step: "      - {await: true}",
+			want: "neither seeds nor sends a request",
+		},
+		{
+			name: "awaits a seed",
+			step: "      - {seed: {filename: a.txt, content: \"a\"}, await: true}",
+			want: "awaits a seed",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			doc := "group: g\ncases:\n  - id: c\n    tier: async\n    method: POST\n    path: /restorer\n    before:\n" + tc.step + "\n"
+			if err := os.WriteFile(filepath.Join(dir, "g.yaml"), []byte(doc), 0o600); err != nil {
+				t.Fatalf("writing the case file: %v", err)
+			}
+
+			_, err := LoadCatalog(dir)
+			if err == nil {
+				t.Fatal("LoadCatalog accepted a malformed step")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error = %q, want it to mention %q", err, tc.want)
+			}
+		})
+	}
+}
+
+// TestStepExpandsPerSide is the property the multi-step model rests on: a step is expanded
+// with the vars of the side it runs against, so each service's setup touches its own copy of
+// the fixture and never the other's.
+func TestStepExpandsPerSide(t *testing.T) {
+	step := Step{
+		Method: "POST",
+		Path:   "/deleter",
+		Query:  map[string]string{"user": "{{.User}}"},
+		Body:   map[string]any{"paths": []any{"{{.Root}}/doomed.txt"}},
+	}
+
+	for _, side := range []string{"A", "B"} {
+		root := "/z/scratch/RUN/" + side
+		got := step.Expand(map[string]string{"User": "someone", "Root": root})
+
+		if got.Query["user"] != "someone" {
+			t.Errorf("side %s: query user = %q", side, got.Query["user"])
+		}
+		paths, ok := got.Body.(map[string]any)["paths"].([]any)
+		if !ok || len(paths) != 1 {
+			t.Fatalf("side %s: body did not survive expansion: %#v", side, got.Body)
+		}
+		if want := root + "/doomed.txt"; paths[0] != want {
+			t.Errorf("side %s: path = %q, want %q", side, paths[0], want)
+		}
+	}
+
+	// The original is untouched, so the second side does not expand an already-expanded
+	// template and quietly point at the first side's tree.
+	if step.Path != "/deleter" || step.Body.(map[string]any)["paths"].([]any)[0] != "{{.Root}}/doomed.txt" {
+		t.Error("Expand mutated the step it was given")
+	}
+}
+
+// TestReportNamesUnelicitedCodes covers the cutover gate that every error code data-info can
+// return is exercised at least once. The report is where that stops being an assertion and
+// becomes a measurement, so it has to name what is missing rather than only counting.
+func TestReportCodeCoverage(t *testing.T) {
+	all := apierror.EmittedCodes()
+
+	t.Run("nothing elicited", func(t *testing.T) {
+		var out strings.Builder
+		if _, err := Report(&out, []Result{{Case: Case{ID: "a"}}}); err != nil {
+			t.Fatalf("Report: %v", err)
+		}
+		got := out.String()
+		if !strings.Contains(got, fmt.Sprintf("error codes elicited: 0 of %d", len(all))) {
+			t.Errorf("report did not count zero coverage:\n%s", got)
+		}
+		// Naming them is the point: a count alone tells nobody which case to write.
+		for _, c := range all {
+			if !strings.Contains(got, string(c)) {
+				t.Errorf("report did not name the unelicited code %s", c)
+			}
+		}
+	})
+
+	t.Run("one elicited", func(t *testing.T) {
+		var out strings.Builder
+		results := []Result{{Case: Case{ID: "a"}, Code: string(apierror.ErrDoesNotExist)}}
+		if _, err := Report(&out, results); err != nil {
+			t.Fatalf("Report: %v", err)
+		}
+		got := out.String()
+		if !strings.Contains(got, fmt.Sprintf("error codes elicited: 1 of %d", len(all))) {
+			t.Errorf("report did not count the elicited code:\n%s", got)
+		}
+		missing := got[strings.Index(got, "not elicited by any case:"):]
+		if strings.Contains(missing, string(apierror.ErrDoesNotExist)) {
+			t.Error("an elicited code was still listed as missing")
+		}
+	})
+
+	t.Run("coverage does not decide the verdict", func(t *testing.T) {
+		var out strings.Builder
+		// A run with no differences passes even though it elicited nothing: coverage is
+		// a property of the catalog, not a disagreement between the services.
+		matched, err := Report(&out, []Result{{Case: Case{ID: "a"}}})
+		if err != nil {
+			t.Fatalf("Report: %v", err)
+		}
+		if !matched {
+			t.Error("a run with no diffs failed because of missing code coverage")
+		}
+	})
+}
+
+// TestErrorCodeFrom keeps the observation honest: a body that is not an error envelope must
+// not be recorded as covering anything.
+func TestErrorCodeFrom(t *testing.T) {
+	for _, tc := range []struct{ name, body, want string }{
+		{"an error envelope", `{"error_code":"ERR_DOES_NOT_EXIST","path":"/a"}`, "ERR_DOES_NOT_EXIST"},
+		{"a success body", `{"id":"abc","path":"/a"}`, ""},
+		{"not JSON", `<html>502</html>`, ""},
+		{"empty", ``, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := errorCodeFrom([]byte(tc.body)); got != tc.want {
+				t.Errorf("errorCodeFrom(%s) = %q, want %q", tc.body, got, tc.want)
+			}
+		})
 	}
 }
