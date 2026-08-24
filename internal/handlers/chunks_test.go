@@ -148,6 +148,20 @@ func TestChunkingRejectsWhatItCannotRead(t *testing.T) {
 			target:  "/data/id-a/chunks-tabular?user=" + testUser + "&page=1&size=10",
 			handler: chunks.TabularChunk, wantCode: apierror.ErrIllegalArgument,
 		},
+		// The paging checks run before the caller and the path are validated, because the
+		// reference puts them in a pre-hook that fires ahead of the function body. Both of
+		// these would report the validator's code if the order were the other way round.
+		{
+			name: "page zero against a path that is not there", pattern: "/data/by-path/chunks-tabular/*",
+			target: "/data/by-path/chunks-tabular/iplant/home/wregglej/missing.csv?user=" + testUser +
+				"&separator=%2C&page=0&size=10",
+			handler: chunks.TabularChunkByPath, wantCode: apierror.ErrPageNotPos,
+		},
+		{
+			name: "a chunk size of nothing for a caller who does not exist", pattern: "/data/:data-id/chunks-tabular",
+			target:  "/data/id-a/chunks-tabular?user=nobody&separator=%2C&page=1&size=0",
+			handler: chunks.TabularChunk, wantCode: apierror.ErrChunkTooSmall,
+		},
 		{
 			name: "a missing position", pattern: "/data/:data-id/chunks",
 			target:  "/data/id-a/chunks?user=" + testUser + "&size=10",
@@ -165,6 +179,50 @@ func TestChunkingRejectsWhatItCannotRead(t *testing.T) {
 			}
 			if envelope["error_code"] != string(tt.wantCode) {
 				t.Errorf("error_code = %v, want %s (%s)", envelope["error_code"], tt.wantCode, rec.Body.String())
+			}
+		})
+	}
+}
+
+// TestTabularSeparatorMayBeWhitespace is the regression test for a tab-delimited preview.
+//
+// echo percent-decodes a query value before a handler sees it, so ?separator=%09 arrives as
+// a tab. Reading it through a helper that rejects blank strings turned every TSV and every
+// space-delimited file into a 400, where the reference serves them: the parameter is
+// declared s/Str, not NonBlankString, and the endpoint's own documentation names %09 as the
+// value to send for a tab.
+//
+// The assertion is indirect on purpose. Reading the file needs iRODS, so the case asks for
+// page zero as well: reaching ERR_PAGE_NOT_POS proves the separator was accepted, since a
+// rejected one answers ERR_ILLEGAL_ARGUMENT before the paging checks run.
+func TestTabularSeparatorMayBeWhitespace(t *testing.T) {
+	deps, fake := testDeps(t)
+	fake.SetUUID("id-a", testHome+"/a.txt")
+	chunks := NewChunks(deps)
+
+	tests := []struct {
+		name      string
+		separator string
+	}{
+		{"a tab, which is what a TSV preview sends", "%09"},
+		{"a space", "%20"},
+		{"a comma, the ordinary case", "%2C"},
+		{"a doubly-encoded tab, which decodes twice as the reference does", "%2509"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := serveRoute(t, apierror.StyleTrap, http.MethodGet, "/data/:data-id/chunks-tabular",
+				"/data/id-a/chunks-tabular?user="+testUser+"&separator="+tt.separator+"&page=0&size=10",
+				chunks.TabularChunk)
+
+			var envelope map[string]any
+			if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+				t.Fatalf("decoding: %v (%s)", err, rec.Body.String())
+			}
+			if envelope["error_code"] != string(apierror.ErrPageNotPos) {
+				t.Errorf("error_code = %v, want %s -- the separator was rejected (%s)",
+					envelope["error_code"], apierror.ErrPageNotPos, rec.Body.String())
 			}
 		})
 	}

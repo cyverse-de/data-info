@@ -123,32 +123,64 @@ func TestTrimToWholeLines(t *testing.T) {
 
 // TestParseDelimited covers the row shape, which is the wire contract: a map per row keyed
 // by the column number as a string.
+//
+// The blank-line cases are the ones worth keeping. encoding/csv skips an empty line and
+// opencsv reports one as a row of a single empty column, so without counting them back in,
+// every row after a blank line would come back under the wrong index.
 func TestParseDelimited(t *testing.T) {
+	blank := map[string]string{"0": ""}
+
 	tests := []struct {
 		name      string
 		chunk     string
-		separator rune
+		separator string
 		want      []map[string]string
 	}{
 		{
-			name: "blank is one empty row, not none", chunk: "  \n ", separator: ',',
+			name: "blank is one empty row, not none", chunk: "  \n ", separator: ",",
 			want: []map[string]string{{}},
 		},
 		{
-			name: "comma separated", chunk: "a,b\nc,d\n", separator: ',',
+			name: "comma separated", chunk: "a,b\nc,d\n", separator: ",",
 			want: []map[string]string{{"0": "a", "1": "b"}, {"0": "c", "1": "d"}},
 		},
 		{
-			name: "tab separated", chunk: "a\tb\n", separator: '\t',
+			name: "tab separated", chunk: "a\tb\n", separator: "\t",
 			want: []map[string]string{{"0": "a", "1": "b"}},
 		},
 		{
-			name: "ragged rows are kept as they are", chunk: "a,b,c\nd\n", separator: ',',
+			name: "ragged rows are kept as they are", chunk: "a,b,c\nd\n", separator: ",",
 			want: []map[string]string{{"0": "a", "1": "b", "2": "c"}, {"0": "d"}},
 		},
 		{
-			name: "quoted fields keep their separators", chunk: `"a,b",c` + "\n", separator: ',',
+			name: "quoted fields keep their separators", chunk: `"a,b",c` + "\n", separator: ",",
 			want: []map[string]string{{"0": "a,b", "1": "c"}},
+		},
+		{
+			name: "a blank line in the middle keeps its row", chunk: "a,b\n\nc,d\n", separator: ",",
+			want: []map[string]string{{"0": "a", "1": "b"}, blank, {"0": "c", "1": "d"}},
+		},
+		{
+			name: "a blank line at the start keeps its row", chunk: "\na,b\n", separator: ",",
+			want: []map[string]string{blank, {"0": "a", "1": "b"}},
+		},
+		{
+			name: "a blank line at the end keeps its row", chunk: "a,b\n\n", separator: ",",
+			want: []map[string]string{{"0": "a", "1": "b"}, blank},
+		},
+		{
+			name: "consecutive blank lines each keep a row", chunk: "a,b\n\n\nc,d\n", separator: ",",
+			want: []map[string]string{{"0": "a", "1": "b"}, blank, blank, {"0": "c", "1": "d"}},
+		},
+		{
+			name: "carriage returns do not hide a blank line", chunk: "a,b\r\n\r\nc,d\r\n", separator: ",",
+			want: []map[string]string{{"0": "a", "1": "b"}, blank, {"0": "c", "1": "d"}},
+		},
+		{
+			// The newlines are inside a field, not between rows, so they are not lines.
+			name:  "a newline inside a quoted field is not a blank line",
+			chunk: "\"a\n\nb\",c\n", separator: ",",
+			want: []map[string]string{{"0": "a\n\nb", "1": "c"}},
 		},
 	}
 
@@ -162,6 +194,18 @@ func TestParseDelimited(t *testing.T) {
 				t.Errorf("ParseDelimited(%q) = %v, want %v", tt.chunk, got, tt.want)
 			}
 		})
+	}
+}
+
+// TestParseDelimitedNeedsASeparatorOnlyWhenThereIsSomethingToParse pins where the reference
+// puts that failure: read-csv short-circuits a blank chunk before reaching (.charAt
+// separator 0), so an empty separator is not an error until there is a row to split.
+func TestParseDelimitedNeedsASeparatorOnlyWhenThereIsSomethingToParse(t *testing.T) {
+	if _, err := ParseDelimited("   ", ""); err != nil {
+		t.Errorf("a blank chunk with no separator: %v, want no error", err)
+	}
+	if _, err := ParseDelimited("a,b\n", ""); err == nil {
+		t.Error("a chunk with no separator returned no error")
 	}
 }
 

@@ -52,11 +52,17 @@ func requiredIntParam(c echo.Context, name string) (int64, error) {
 	return value, nil
 }
 
-// requiredParam reads a query parameter the route declares as a required non-blank string.
-func requiredParam(c echo.Context, name string) (string, error) {
-	value := c.QueryParam(name)
-	if strings.TrimSpace(value) == "" {
-		return "", schemaError(name + " must be a non-blank string")
+// presentParam reads a query parameter the route declares as required but not as non-blank,
+// so a value made entirely of whitespace is accepted.
+//
+// The separator needs this and would be broken by the obvious alternative. It is declared
+// s/Str rather than NonBlankString, a tab is its most common value for a TSV, and echo has
+// already percent-decoded it by the time a handler sees it -- so a blank check would reject
+// every tab- and space-delimited preview the DE asks for.
+func presentParam(c echo.Context, name string) (string, error) {
+	values, ok := c.QueryParams()[name]
+	if !ok || len(values) == 0 {
+		return "", schemaError(name + " is required")
 	}
-	return value, nil
+	return values[0], nil
 }

@@ -2,6 +2,9 @@ package service
 
 import (
 	"encoding/csv"
+	"errors"
+	"fmt"
+	"io"
 	"strconv"
 	"strings"
 )
@@ -193,13 +196,23 @@ func seekLineStart(chunk string, position int64) int {
 // reads "0", "1" and so on. A blank chunk is one empty row rather than none, matching the
 // reference -- the client renders a row count and zero rows is not the same answer as one
 // empty one.
-func ParseDelimited(chunk string, separator rune) ([]map[string]string, error) {
+//
+// The separator is taken as a string rather than a rune, and an empty one is an error only
+// once there is something to parse. That is where the reference puts it too: read-csv
+// short-circuits a blank chunk before it ever reaches (.charAt separator 0), so an empty
+// separator against an empty file is not a failure there and is not one here.
+func ParseDelimited(chunk, separator string) ([]map[string]string, error) {
 	if strings.TrimSpace(chunk) == "" {
 		return []map[string]string{{}}, nil
 	}
 
+	delimiters := []rune(separator)
+	if len(delimiters) == 0 {
+		return nil, fmt.Errorf("a separator is required to parse delimited text")
+	}
+
 	reader := csv.NewReader(strings.NewReader(chunk))
-	reader.Comma = separator
+	reader.Comma = delimiters[0]
 	// Rows of differing width are ordinary here: the file is whatever a user uploaded, and
 	// the endpoint reports the widest row rather than refusing to show a ragged one.
 	reader.FieldsPerRecord = -1
@@ -207,20 +220,52 @@ func ParseDelimited(chunk string, separator rune) ([]map[string]string, error) {
 	// refusing the file would make preview useless.
 	reader.LazyQuotes = true
 
-	records, err := reader.ReadAll()
-	if err != nil {
-		return nil, err
-	}
+	var out []map[string]string
+	var consumed int64
 
-	out := make([]map[string]string, 0, len(records))
-	for _, record := range records {
+	for {
+		record, err := reader.Read()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+
+		// encoding/csv skips an empty line; opencsv reports one as a row holding a single
+		// empty column. A blank line in a data file is ordinary, and dropping it would
+		// shift the index of every row after it -- so they are counted back in from the
+		// bytes between the previous record and this one. Only the *leading* blank lines
+		// of that span count, which is what keeps a newline inside a quoted field from
+		// being mistaken for one.
+		offset := reader.InputOffset()
+		out = append(out, blankRows(chunk[consumed:offset])...)
+		consumed = offset
+
 		row := make(map[string]string, len(record))
 		for i, value := range record {
 			row[strconv.Itoa(i)] = value
 		}
 		out = append(out, row)
 	}
-	return out, nil
+
+	// Blank lines after the last record have no following record to be found in front of.
+	return append(out, blankRows(chunk[consumed:])...), nil
+}
+
+// blankRows is one row per empty line at the start of a span, in the shape opencsv gives an
+// empty line: a single column holding an empty string.
+func blankRows(span string) []map[string]string {
+	lines := strings.Split(span, "\n")
+	// The final element is whatever followed the last newline, which is not a line yet.
+	var out []map[string]string
+	for _, line := range lines[:max(len(lines)-1, 0)] {
+		if strings.TrimSuffix(line, "\r") != "" {
+			break
+		}
+		out = append(out, map[string]string{"0": ""})
+	}
+	return out
 }
 
 // WidestRow is the number of columns in the widest row, which the response reports so a

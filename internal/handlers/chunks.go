@@ -87,12 +87,79 @@ func (h *Chunks) ChunkByPath(c echo.Context) error {
 
 // TabularChunk handles GET /data/{data-id}/chunks-tabular.
 func (h *Chunks) TabularChunk(c echo.Context) error {
-	return h.serve(c, h.pathFromID, h.tabularChunk)
+	return h.serveTabular(c, h.pathFromID)
 }
 
 // TabularChunkByPath handles GET /data/by-path/chunks-tabular/{path}.
 func (h *Chunks) TabularChunkByPath(c echo.Context) error {
-	return h.serve(c, pathFromWildcard, h.tabularChunk)
+	return h.serveTabular(c, pathFromWildcard)
+}
+
+// serveTabular reads and checks the paging parameters before anything else runs.
+//
+// The order matters and is not the obvious one. The reference puts these two checks in a
+// pre-hook on read-csv-chunk, which fires ahead of the function body -- so they happen
+// before the caller is validated and before the path is even resolved. A request naming a
+// missing path with page=0 answers ERR_PAGE_NOT_POS, not ERR_DOES_NOT_EXIST. Running them
+// after the validators, as the other four routes here do with their parameters, would
+// report a different error_code for the same request.
+func (h *Chunks) serveTabular(
+	c echo.Context,
+	resolve func(echo.Context, context.Context, *rods.Scope) (string, error),
+) error {
+	params, err := tabularParams(c)
+	if err != nil {
+		return err
+	}
+
+	return h.serve(c, resolve, func(c echo.Context, ctx context.Context, scope *rods.Scope, user, path string) error {
+		return h.tabularChunk(c, ctx, scope, user, path, params)
+	})
+}
+
+// tabularRequest carries the parameters a tabular chunk request was made with.
+type tabularRequest struct {
+	// Separator is url-decoded a second time, as the reference does: ring has already
+	// decoded the query string once, and do-read-csv-chunk decodes what it is handed
+	// again. It may be empty, which is not rejected here -- see ParseDelimited.
+	Separator string
+
+	Page int64
+	Size int64
+}
+
+// tabularParams reads the paging parameters and applies the two checks the reference makes
+// before it does anything else.
+func tabularParams(c echo.Context) (tabularRequest, error) {
+	separator, err := presentParam(c, "separator")
+	if err != nil {
+		return tabularRequest{}, err
+	}
+	decoded, err := url.QueryUnescape(separator)
+	if err != nil {
+		return tabularRequest{}, schemaError("separator must be a url-encoded character")
+	}
+
+	page, err := requiredIntParam(c, "page")
+	if err != nil {
+		return tabularRequest{}, err
+	}
+	size, err := requiredIntParam(c, "size")
+	if err != nil {
+		return tabularRequest{}, err
+	}
+
+	// Each carries its own code, and the page one reports the number as a number where the
+	// chunk size is reported as a string. That asymmetry is the reference's.
+	if page <= 0 {
+		return tabularRequest{}, apierror.New(apierror.ErrPageNotPos).With("page", page)
+	}
+	if size <= 0 {
+		return tabularRequest{}, apierror.New(apierror.ErrChunkTooSmall).
+			With("chunk-size", strconv.FormatInt(size, 10))
+	}
+
+	return tabularRequest{Separator: decoded, Page: page, Size: size}, nil
 }
 
 // serve runs the part every one of these six routes shares: find the caller, find the path,
@@ -233,44 +300,21 @@ func (h *Chunks) chunk(c echo.Context, ctx context.Context, scope *rods.Scope, u
 }
 
 // tabularChunk returns a page of a delimited file, parsed into rows.
-func (h *Chunks) tabularChunk(c echo.Context, ctx context.Context, scope *rods.Scope, user, path string) error {
-	separator, err := requiredParam(c, "separator")
-	if err != nil {
-		return err
-	}
-	// The separator arrives url-encoded, because a tab cannot travel in a query string as
-	// itself. %09 is the one the DE sends for a TSV.
-	decoded, err := url.QueryUnescape(separator)
-	if err != nil || decoded == "" {
-		return schemaError("separator must be a url-encoded character")
-	}
-
-	page, err := requiredIntParam(c, "page")
-	if err != nil {
-		return err
-	}
-	size, err := requiredIntParam(c, "size")
-	if err != nil {
-		return err
-	}
-
-	// Both checks come before anything is read, and each has its own code. They run after
-	// the path has been validated here, where the reference runs them before -- its
-	// pre-hook fires ahead of the function body. Nothing observable turns on the order: a
-	// request that fails both gets one of two 500s either way.
-	if page <= 0 {
-		return apierror.New(apierror.ErrPageNotPos).With("page", page)
-	}
-	if size <= 0 {
-		return apierror.New(apierror.ErrChunkTooSmall).With("chunk-size", strconv.FormatInt(size, 10))
-	}
-
+//
+// The paging parameters were read and checked before the validators ran; see serveTabular.
+func (h *Chunks) tabularChunk(
+	c echo.Context,
+	ctx context.Context,
+	scope *rods.Scope,
+	user, path string,
+	req tabularRequest,
+) error {
 	stat, err := scope.Stat(ctx, path).Get(ctx)
 	if err != nil {
 		return err
 	}
 
-	plan := service.PlanTabularPage(page, size, stat.Size)
+	plan := service.PlanTabularPage(req.Page, req.Size, stat.Size)
 	// The bound is inclusive, so a request for one page past the end is accepted and
 	// answers with an empty page. That is the reference's arithmetic, and the page it
 	// reports here is the zero-based one while the response reports the one-based one.
@@ -285,18 +329,18 @@ func (h *Chunks) tabularChunk(c echo.Context, ctx context.Context, scope *rods.S
 		return err
 	}
 
-	chunk := service.TrimToWholeLines(raw, size, plan)
-	rows, err := service.ParseDelimited(chunk, []rune(decoded)[0])
+	chunk := service.TrimToWholeLines(raw, req.Size, plan)
+	rows, err := service.ParseDelimited(chunk, req.Separator)
 	if err != nil {
-		// Not an error code of its own: the reference lets the parser's exception reach the
-		// default handler, which answers 500 with ERR_UNCHECKED_EXCEPTION. Naming it here
-		// would report a 400 for a file the reference calls a server fault.
+		// Not an error code of its own: the reference lets the parser's exception reach
+		// the default handler, which answers 500 with ERR_UNCHECKED_EXCEPTION. Naming it
+		// here would report a 400 for a file the reference calls a server fault.
 		return fmt.Errorf("parsing %q as delimited text: %w", path, err)
 	}
 
 	return writeJSONOK(c, tabularChunkResponse{
 		Path:        path,
-		Page:        strconv.FormatInt(page, 10),
+		Page:        strconv.FormatInt(req.Page, 10),
 		NumberPages: strconv.FormatInt(plan.Pages, 10),
 		User:        user,
 		MaxCols:     strconv.Itoa(service.WidestRow(rows)),

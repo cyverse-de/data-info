@@ -321,6 +321,13 @@ recovers its own way.
 its parser. The wire contract is the row shape, which is pinned by tests; the reading of a
 malformed file is not a contract either service documents.
 
+**One difference in that family *is* reproduced, because it is not pathological.**
+`encoding/csv` silently skips an empty line where opencsv reports one as a row holding a
+single empty column. A blank line in a data file is ordinary, and dropping it would shift the
+index of every row after it -- a preview quietly showing the wrong data rather than failing.
+`ParseDelimited` counts them back in from the bytes between records, taking only the leading
+blank lines of each span so that a newline inside a quoted field is not mistaken for one.
+
 ## 20. The upload's temp-object cleanup is not a tracked async task
 
 `schedule-temp-cleanup` registers a `data-upload-cleanup` async task with a
