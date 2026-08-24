@@ -200,3 +200,61 @@ func resolveID(ctx context.Context, scope *rods.Scope, id string) (string, error
 	}
 	return path, nil
 }
+
+// The three below are the clj-irods family for an endpoint that concerns a single path.
+// They report it inside a list, because that validator accepts either one path or many and
+// always attaches a list -- so ERR_NOT_A_FILE arrives here under "paths" where the jargon
+// sibling above puts it under "path". The Rods in the name is the family, not the shape.
+//
+// Each reads through the scope's per-path accessor, which answers from a batch that has
+// already run, so an endpoint applying all three to one path pays one catalog query rather
+// than three.
+
+// requireRodsExists rejects a path that is not there.
+func requireRodsExists(ctx context.Context, scope *rods.Scope, path string) error {
+	stat, err := scope.Stat(ctx, path).Get(ctx)
+	if err != nil {
+		return err
+	}
+	if !stat.Exists {
+		return apierror.New(apierror.ErrDoesNotExist).With("paths", []string{path})
+	}
+	return nil
+}
+
+// requireRodsIsFile rejects a path that is not a data object.
+func requireRodsIsFile(ctx context.Context, scope *rods.Scope, path string) error {
+	stat, err := scope.Stat(ctx, path).Get(ctx)
+	if err != nil {
+		return err
+	}
+	if stat.Type != rods.ObjectTypeFile {
+		return apierror.New(apierror.ErrNotAFile).With("paths", []string{path})
+	}
+	return nil
+}
+
+// requireRodsReadable rejects a path the caller cannot read.
+func requireRodsReadable(ctx context.Context, scope *rods.Scope, user, path string) error {
+	stat, err := scope.Stat(ctx, path).Get(ctx)
+	if err != nil {
+		return err
+	}
+	if !rods.Permits(stat.Permission, rods.PermissionRead) {
+		return apierror.New(apierror.ErrNotReadable).With("paths", []string{path}).With("user", user)
+	}
+	return nil
+}
+
+// requirePathReadable rejects one path the caller cannot read, under the jargon family's
+// singular keys.
+func requirePathReadable(ctx context.Context, scope *rods.Scope, user, path string) error {
+	stat, err := scope.Stat(ctx, path).Get(ctx)
+	if err != nil {
+		return err
+	}
+	if !rods.Permits(stat.Permission, rods.PermissionRead) {
+		return apierror.New(apierror.ErrNotReadable).With("path", path).With("user", user)
+	}
+	return nil
+}

@@ -2,9 +2,9 @@ package handlers
 
 import (
 	"context"
-	"strings"
 
 	"github.com/cyverse-de/data-info/internal/apierror"
+	"github.com/cyverse-de/data-info/internal/icat"
 	"github.com/cyverse-de/data-info/internal/rods"
 	"github.com/cyverse-de/data-info/internal/service"
 	"github.com/labstack/echo/v4"
@@ -286,23 +286,139 @@ func validationBehavior(raw string) rods.Permission {
 	}
 }
 
-// boolParam reads a boolean query parameter.
+// dataIDsRequest is the body /stat-lister takes. The list is required, and paths are not
+// accepted: this endpoint pages a set of ids and has nowhere to put a path.
+type dataIDsRequest struct {
+	IDs []string `json:"ids"`
+}
+
+// dataIDListing is what /stat-lister returns. The two arrays are always present, empty
+// included, and their order is the page's order within each type.
+type dataIDListing struct {
+	Files   []service.Stat `json:"files"`
+	Folders []service.Stat `json:"folders"`
+	Total   int64          `json:"total"`
+}
+
+// Listing handles POST /stat-lister.
 //
-// Only true and false are accepted, case-insensitively. ring-swagger's coercion accepts
-// exactly those, and anything else stays a string and fails the Boolean schema, so a request
-// carrying yes or 1 is rejected rather than quietly read as one value or the other.
-func boolParam(c echo.Context, name string) (bool, error) {
-	raw := c.QueryParam(name)
-	if raw == "" {
-		return false, nil
+// It is /stat-gatherer paged: the same entries, selected and ordered by the catalog so that
+// sorting and paging apply across the whole set rather than within a response. That is why
+// it goes to the catalog directly -- the query unions collections and data objects, sorts
+// them together and pages the result, which GenQuery cannot express.
+func (h *Stats) Listing(c echo.Context) error {
+	ctx := c.Request().Context()
+
+	var body dataIDsRequest
+	if err := bindBody(c, &body); err != nil {
+		return err
+	}
+	if body.IDs == nil {
+		return schemaError("ids is required")
 	}
 
-	switch strings.ToLower(raw) {
-	case "true":
-		return true, nil
-	case "false":
-		return false, nil
-	default:
-		return false, schemaError(name + " must be true or false")
+	user, err := requireUser(c)
+	if err != nil {
+		return err
 	}
+	if err := h.deps.CheckPathCount(len(body.IDs)); err != nil {
+		return err
+	}
+
+	// Both are required *by the schema* here, where the folder listing declares limit as
+	// optional and checks it in the handler. The difference shows in the answer: a missing
+	// limit is a schema failure and a 400 on this route, and ERR_MISSING_QUERY_PARAMETER on
+	// that one -- which its own error style then answers with a 500.
+	limit, err := requiredIntParam(c, "limit")
+	if err != nil {
+		return err
+	}
+	if limit <= 0 {
+		return schemaError("limit must be a positive integer")
+	}
+	offset, err := requiredIntParam(c, "offset")
+	if err != nil {
+		return err
+	}
+	if offset < 0 {
+		return schemaError("offset must be a non-negative integer")
+	}
+
+	column, err := icat.ResolveSortColumn(c.QueryParam("sort-field"))
+	if err != nil {
+		return schemaError(err.Error())
+	}
+	direction, err := icat.ResolveSortDirection(c.QueryParam("sort-dir"))
+	if err != nil {
+		return schemaError(err.Error())
+	}
+
+	scope, err := h.deps.OpenScope(ctx, user)
+	if err != nil {
+		return err
+	}
+	defer scope.Close()
+
+	if err := requireKnownUser(ctx, scope, user, true); err != nil {
+		return err
+	}
+
+	infoTypes, includeUnknown := infoTypeFilter(c)
+	query := rods.UUIDListingQuery{
+		UUIDs:                  body.IDs,
+		InfoTypes:              infoTypes,
+		IncludeUnknownInfoType: includeUnknown,
+		SortColumn:             column,
+		SortDirection:          direction,
+		Limit:                  int(limit),
+		Offset:                 int(offset),
+	}
+
+	// The page and the total are dispatched together and then awaited, so the two catalog
+	// queries run at once rather than one after the other.
+	pageValue := scope.UUIDListing(ctx, query)
+	totalValue := scope.UUIDCount(ctx, query)
+
+	page, err := pageValue.Get(ctx)
+	if err != nil {
+		return err
+	}
+	total, err := totalValue.Get(ctx)
+	if err != nil {
+		return err
+	}
+
+	// The rows arrived with the page, so decorating them asks the catalog only for what a
+	// row does not carry: access lists for a share count, child counts for a folder.
+	ordered := make([]string, 0, len(page))
+	for _, row := range page {
+		ordered = append(ordered, row.FullPath)
+	}
+	stats, err := service.StatsOfLoaded(ctx, scope, user, ordered, service.StatOptions{
+		Fields:      service.ParseFieldSet(c.QueryParam("filter-include"), c.QueryParam("filter-exclude")),
+		Layout:      h.deps.Layout,
+		PermsFilter: h.deps.PermsFilter,
+	})
+	if err != nil {
+		return err
+	}
+
+	out := dataIDListing{
+		Files:   make([]service.Stat, 0, len(page)),
+		Folders: make([]service.Stat, 0, len(page)),
+		Total:   total,
+	}
+	for _, row := range page {
+		stat, ok := stats[row.FullPath]
+		if !ok {
+			continue
+		}
+		if row.IsCollection() {
+			out.Folders = append(out.Folders, stat)
+		} else {
+			out.Files = append(out.Files, stat)
+		}
+	}
+
+	return writeJSONOK(c, out)
 }

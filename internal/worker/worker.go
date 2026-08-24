@@ -50,6 +50,11 @@ const terminalDeadline = 2 * time.Minute
 // caller never sees is better than a job that runs at the speed of an HTTP round trip.
 const progressBuffer = 64
 
+// progressFlushDeadline bounds how long a finished job waits for its buffered progress to be
+// posted before the terminal status goes out regardless. Short, because the only thing on the
+// other side of it is the release of the job's paths.
+const progressFlushDeadline = 5 * time.Second
+
 // Tasks is the part of the async-tasks client a runner needs.
 type Tasks interface {
 	GetByID(ctx context.Context, id string) (*asynctasks.Task, error)
@@ -177,9 +182,8 @@ func (r *Runner) run(taskID, name string, job Job) {
 	runErr := job.Run(r.ctx, task, progress)
 
 	// Stop accepting progress before the terminal status, so the history cannot end with a
-	// "running" line posted after the job finished. Whatever is still buffered is thrown
-	// away rather than sent: progress is telemetry, and the terminal status is what
-	// releases the job's paths, so nothing may delay it.
+	// "running" line posted after the job finished, and give what is already buffered a
+	// bounded chance to land first.
 	done()
 
 	if runErr != nil {
@@ -199,18 +203,30 @@ func (r *Runner) run(taskID, name string, job Job) {
 }
 
 // progressReporter returns a Progress that posts in the background, and a function that
-// stops it.
+// stops it and waits, briefly, for what is already buffered.
 //
-// Stopping discards whatever is still buffered. Flushing it would put the terminal status --
-// the only thing that releases the job's paths -- behind however long a degraded
-// async-tasks takes to accept sixty-odd updates nobody is waiting for.
+// The wait is bounded rather than absent or unlimited, and the bound is the whole design.
+// The status trail is contract -- terrain's move poller reads it to show progress -- so
+// discarding the buffer outright loses it: a fast job finishes before the sender has posted
+// anything, and a rename came back with "begin" followed by "completed", three statuses
+// short of what the reference reports. Waiting without a bound is the other failure: the
+// terminal status is the only thing that releases the job's paths, so a degraded
+// async-tasks would hold them for as long as it stayed degraded.
+//
+// So: drain until progressFlushDeadline, then give up and let the terminal status through.
+// A healthy async-tasks accepts these in milliseconds, which is the case that matters.
 func (r *Runner) progressReporter(log *logrus.Entry, taskID string) (Progress, func()) {
 	updates := make(chan asynctasks.Status, progressBuffer)
 
-	// stopped is read by the sender to decide whether to post or discard, and guarded by
-	// mu on the writer side so that no send can race the close below.
+	// closed says the channel is shut and no further send may be attempted; stopped says
+	// the sender should discard rather than post what is left. They are separate because
+	// stopping accepts no new updates while still draining the ones already queued, and
+	// only a flush that runs out of time sets the second.
+	//
+	// Both are guarded by mu on the writer side so that no send can race the close.
 	var (
 		mu      sync.RWMutex
+		closed  bool
 		stopped bool
 	)
 
@@ -240,7 +256,7 @@ func (r *Runner) progressReporter(log *logrus.Entry, taskID string) (Progress, f
 		mu.RLock()
 		defer mu.RUnlock()
 
-		if stopped {
+		if closed {
 			return
 		}
 
@@ -261,12 +277,33 @@ func (r *Runner) progressReporter(log *logrus.Entry, taskID string) (Progress, f
 	var once sync.Once
 	stop := func() {
 		once.Do(func() {
+			// Closed first so the sender sees the end of the stream, but `stopped` is not
+			// set yet: the sender keeps posting what is already queued.
 			mu.Lock()
-			stopped = true
+			closed = true
 			close(updates)
 			mu.Unlock()
 
-			sending.Wait()
+			flushed := make(chan struct{})
+			go func() {
+				sending.Wait()
+				close(flushed)
+			}()
+
+			select {
+			case <-flushed:
+			case <-time.After(progressFlushDeadline):
+				// Out of patience. Setting stopped makes the sender discard the rest, and
+				// the terminal status goes out now rather than behind a queue nobody is
+				// waiting on.
+				mu.Lock()
+				stopped = true
+				mu.Unlock()
+				log.Warn("gave up flushing progress updates before the terminal status; " +
+					"async-tasks is probably slow or degraded, and this task's history " +
+					"will be missing some of its running statuses")
+				<-flushed
+			}
 		})
 	}
 

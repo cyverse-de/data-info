@@ -45,6 +45,8 @@ func (e EmptyTrash) Run(ctx context.Context, task *asynctasks.Task, progress wor
 	defer scope.Close()
 
 	var failures int
+	progress(pathsetTrash, actionBegin)
+
 	for i, path := range trashPaths {
 		if err := ctx.Err(); err != nil {
 			return fmt.Errorf("emptying the trash was stopped after %d of %d paths: %w",
@@ -57,12 +59,16 @@ func (e EmptyTrash) Run(ctx context.Context, task *asynctasks.Task, progress wor
 			failures++
 			e.Deps.Log.WithError(err).WithField("path", path).
 				Error("could not remove something from the trash; continuing with the rest")
-			progress(path, "error-deleting")
-			continue
+			progress(path, actionErrorDeleting)
 		}
 
+		// Reported whether or not the delete worked. The reference puts this outside the
+		// try that catches the failure, so a path that could not be removed still gets an
+		// end-delete after its error-deleting.
 		progress(path, actionEndDelete)
 	}
+
+	progress(pathsetTrash, actionEnd)
 
 	var runErr error
 	if failures > 0 {
@@ -119,6 +125,8 @@ func (r Restore) restore(
 	plans map[string]string,
 	progress worker.Progress,
 ) error {
+	progress(pathsetDeleted, actionBegin)
+
 	for i, path := range trashPaths {
 		if err := ctx.Err(); err != nil {
 			return fmt.Errorf("the restore was stopped after %d of %d paths: %w", i, len(trashPaths), err)
@@ -152,6 +160,8 @@ func (r Restore) restore(
 
 		progress(path, actionEndRestore)
 	}
+
+	progress(pathsetDeleted, actionEnd)
 	return nil
 }
 

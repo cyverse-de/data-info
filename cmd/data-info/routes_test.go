@@ -32,39 +32,25 @@ var movedToInfoTyper = map[operation]string{
 
 // notYetPorted are operations the Clojure service serves that this one does not.
 //
-// Every entry is a gap, not a decision. The list exists so that the gaps are counted and
-// named rather than discovered at cutover, and so that a *new* gap fails this test instead
-// of joining them silently. Removing an entry as it is ported is the point.
+// It is empty, and keeping it empty is the point. A route-level audit on 2026-08-21 found
+// eleven unported operations -- three of them behind file preview in the DE -- that had gone
+// unnoticed through two phase sign-offs because nothing compared the two inventories. They
+// were ported on 2026-08-24.
 //
-// Found by a route-level audit on 2026-08-21, after the shadow harness's error-code coverage
-// reporting showed ERR_INVALID_PAGE, ERR_PAGE_NOT_POS and ERR_CHUNK_TOO_SMALL to be
-// unreachable -- they are raised only by the tabular paging endpoints, which had not been
-// written.
-var notYetPorted = map[operation]string{
-	// Phase 5, read-only endpoints. terrain calls the first three.
-	{"POST", "/creatability-marker"}:       "terrain clients/data_info/raw.clj can-create-folder",
-	{"POST", "/stat-lister"}:               "terrain clients/data_info/raw.clj paged stat by uuid",
-	{"GET", "/navigation/root"}:            "terrain clients/data_info/raw.clj list-roots",
-	{"GET", "/navigation/home"}:            "no caller found in terrain, apps, analyses or search",
-	{"GET", "/data/{data-id}/permissions"}: "no caller found; the bulk POST /permissions-gatherer is ported",
-
-	// Phase 6, chunking and manifest. terrain calls all three by-id forms, which is what
-	// backs file preview in the DE.
-	{"GET", "/data/{data-id}/manifest"}:       "terrain routes/filesystem.clj GET /file/manifest",
-	{"GET", "/data/{data-id}/chunks"}:         "terrain routes/filesystem.clj POST /read-chunk",
-	{"GET", "/data/{data-id}/chunks-tabular"}: "terrain routes/filesystem.clj POST /read-tabular-chunk",
-
-	{"GET", "/data/by-path/manifest/{path}"}:       "by-path form of the above; no caller found",
-	{"GET", "/data/by-path/chunks/{path}"}:         "by-path form of the above; no caller found",
-	{"GET", "/data/by-path/chunks-tabular/{path}"}: "by-path form of the above; no caller found",
-}
+// An entry here is a gap, not a decision: it says the gap has been counted and named rather
+// than discovered at cutover. Adding one is how a deliberate omission is recorded, and the
+// test below is what stops an accidental one from joining it silently.
+var notYetPorted = map[operation]string{}
 
 // TestEveryClojureRouteIsServedOrAccountedFor compares what this service registers against
 // the Clojure service's own /swagger.json, captured at phase 0 as the shape of record.
 //
-// A route-level audit found eleven unported operations that had gone unnoticed because
-// nothing compared the two inventories -- three of them behind file preview in the DE, which
-// a cutover would have broken outright. This test is that comparison, run every build.
+// The captured document is a complete inventory, which is worth saying because it is not
+// obvious: five of the Clojure routes are marked :no-doc and so are absent from it. Each of
+// those is a wildcard twin of a documented route -- /data/path/:zone/* alongside
+// /data/path/{zone}/{path}, and the three /data/by-path forms -- and normalising a wildcard
+// to {path} maps the two onto the same operation. Enumerating the routes from the Clojure
+// source gives the same 59 operations this document does.
 func TestEveryClojureRouteIsServedOrAccountedFor(t *testing.T) {
 	reference := clojureOperations(t)
 	served := servedOperations(t)

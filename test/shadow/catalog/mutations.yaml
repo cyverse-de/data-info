@@ -315,3 +315,90 @@ cases:
     path: /path-list-creator
     query: {user: "{{.User}}"}
     body: {paths: ["{{.Root}}"]}
+
+  # Sharing with a real principal, which nothing else here does: every other sharing case
+  # names either the caller themselves or a user that does not exist, so all of them stop at
+  # a validator and none reaches an access change. That gap hid a bug where no file could be
+  # unshared at all -- iRODS refuses a recursive access change on a data object, and the
+  # request asked for one.
+  #
+  # anonymous rather than a person: it is a service account the zone already has, it is what
+  # /anonymizer grants to, and the fixtures these run against are reaped.
+  - id: share-a-file-with-a-real-user
+    tier: write
+    method: POST
+    path: /sharer
+    query: {user: "{{.User}}"}
+    seed: {filename: to-share.txt, content: "shared\n"}
+    body:
+      sharing:
+        - user: anonymous
+          paths:
+            - {path: "{{.SeedPath}}", permission: read}
+
+  - id: unshare-a-file-from-a-real-user
+    tier: write
+    method: POST
+    path: /unsharer
+    query: {user: "{{.User}}"}
+    seed: {filename: to-unshare.txt, content: "shared\n"}
+    before:
+      - method: POST
+        path: /sharer
+        query: {user: "{{.User}}"}
+        body:
+          sharing:
+            - user: anonymous
+              paths:
+                - {path: "{{.SeedPath}}", permission: read}
+    body:
+      unshare:
+        - user: anonymous
+          paths: ["{{.SeedPath}}"]
+
+  # The folder forms, where a recursive access change is the right thing to ask for and the
+  # file forms above are where it is not.
+  - id: share-a-folder-with-a-real-user
+    tier: write
+    method: POST
+    path: /sharer
+    query: {user: "{{.User}}"}
+    seed: {filename: inside.txt, content: "shared\n"}
+    body:
+      sharing:
+        - user: anonymous
+          paths:
+            - {path: "{{.Root}}", permission: read}
+
+  - id: unshare-a-folder-from-a-real-user
+    tier: write
+    method: POST
+    path: /unsharer
+    query: {user: "{{.User}}"}
+    seed: {filename: inside.txt, content: "shared\n"}
+    before:
+      - method: POST
+        path: /sharer
+        query: {user: "{{.User}}"}
+        body:
+          sharing:
+            - user: anonymous
+              paths:
+                - {path: "{{.Root}}", permission: read}
+    body:
+      unshare:
+        - user: anonymous
+          paths: ["{{.Root}}"]
+
+  # Write access rather than read, so a grant that ignores the requested level shows up.
+  - id: share-a-file-with-write-access
+    tier: write
+    method: POST
+    path: /sharer
+    query: {user: "{{.User}}"}
+    seed: {filename: to-share-write.txt, content: "shared\n"}
+    body:
+      sharing:
+        - user: anonymous
+          paths:
+            - {path: "{{.SeedPath}}", permission: write}

@@ -14,8 +14,10 @@ package shadow
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -28,6 +30,15 @@ type Normalizer struct {
 	// not be sorted. A paged listing is the example that matters: its order is precisely
 	// what a sort-field request is asking for, so sorting it would hide the bug.
 	PreserveOrder map[string]bool
+
+	// CompareHeaders names the response headers that are contract. Each is compared
+	// exactly; see compareHeaders for why this is not an expected-difference table.
+	CompareHeaders map[string]bool
+
+	// IgnoreHeaders names the headers that differ by HTTP stack and carry nothing a
+	// caller acts on. A header on neither list is reported, so the two together are a
+	// classification of everything either service sends rather than a filter.
+	IgnoreHeaders map[string]bool
 }
 
 // Replacement rewrites part of a response.
@@ -47,6 +58,17 @@ var (
 var (
 	// hostPortPattern matches the service's own address in a reported URL.
 	hostPortPattern = regexp.MustCompile(`http://[^/"]+`)
+
+	// instancePattern matches the pod name a service stamps into an async task's detail.
+	// Both spellings of the deployment appear, so the prefix is matched loosely rather than
+	// pinned to either name.
+	instancePattern = regexp.MustCompile(`\[data-info[a-z-]*-[a-z0-9]+-[a-z0-9]+\]`)
+
+	// trashSuffixPattern matches the random suffix appended when something is moved to the
+	// trash, keeping the path in front of it. Anchored to a trash path and to the closing
+	// quote so it cannot rewrite an ordinary filename that happens to end in a short
+	// extension.
+	trashSuffixPattern = regexp.MustCompile(`(/trash/[^"]*)\.[A-Za-z0-9]{7}"`)
 
 	// schemaReasonPattern matches the reason attached to a schema-validation failure,
 	// whether it is rendered as a string or as a nested object.
@@ -76,31 +98,78 @@ func NewNormalizer(runID string) *Normalizer {
 	// body would come back interleaved with the placeholder and fail to parse -- turning
 	// every case into "not JSON" rather than a real comparison.
 	if runID != "" {
+		// Last, not first. The run id is a free-form string that may be a run of hex
+		// digits, and a short one lands inside a uuid or a timestamp by chance: a run
+		// called "c1" rewrote the uuid cc1b6e6c-... into cc{RUN}b6e6c-..., which then no
+		// longer matched the uuid pattern and was reported as a difference on every case
+		// that returned one. Canonicalising the structured values first puts them beyond
+		// its reach. ValidateRunID refuses the ids that would still collide.
 		replacements = append(replacements, Replacement{regexp.MustCompile(regexp.QuoteMeta(runID)), "{RUN}"})
 	}
 
 	return &Normalizer{
-		Replacements: append(replacements,
-			Replacement{regexp.MustCompile(`/(A|B)/`), "/{SIDE}/"},
-			Replacement{uuidPattern, "{UUID}"},
-			Replacement{millisPattern, canonicalMillis},
+		Replacements: append([]Replacement{
+			{regexp.MustCompile(`/(A|B)/`), "/{SIDE}/"},
+			{uuidPattern, "{UUID}"},
+			{millisPattern, canonicalMillis},
+		},
+			append(replacements,
 
-			// The two services necessarily answer on different ports, and the status
-			// endpoint reports its own address. Comparing that would only ever measure
-			// how the harness was wired.
-			Replacement{hostPortPattern, "http://{HOST}"},
+				// The two services necessarily answer on different ports, and the status
+				// endpoint reports its own address. Comparing that would only ever
+				// measure how the harness was wired.
+				Replacement{hostPortPattern, "http://{HOST}"},
 
-			// A schema-validation failure renders prismatic/schema's internal
-			// explanation on the reference side, which has no Go equivalent and is
-			// diagnostic text rather than contract. The error_code and the status are
-			// still compared exactly, and those are what callers branch on.
-			Replacement{schemaReasonPattern, `"reason":"{SCHEMA}"`},
+				// A schema-validation failure renders prismatic/schema's internal
+				// explanation on the reference side, which has no Go equivalent and is
+				// diagnostic text rather than contract. The error_code and the status are
+				// still compared exactly, and those are what callers branch on.
+				Replacement{schemaReasonPattern, `"reason":"{SCHEMA}"`},
+
+				// An async task's detail names the pod that ran it. Each service correctly
+				// reports its own, so comparing them would only ever measure that the two
+				// are different deployments -- the premise of the run, not a finding.
+				Replacement{instancePattern, "[{INSTANCE}]"},
+
+				// Moving something to the trash appends a random suffix so that two
+				// deletes of the same name do not collide. It differs per call by design,
+				// on one service as much as between two.
+				Replacement{trashSuffixPattern, `${1}.{TRASHSUFFIX}"`},
+			)...,
 		),
 		// Arrays whose order is the answer rather than incidental. A listing's order is
 		// exactly what a sort-field request asks for, so sorting it here would hide the
 		// bug the case exists to catch. A task's status trail is the same: terrain's move
 		// poller reads it in order to show progress, so two services reporting the same
 		// statuses in different orders is a difference, not a tie.
+		// Observed on 2026-08-24 by probing both services in QA across service info, a
+		// bulk stat, a folder listing, a 400, a 500 and an unrecognised route. The
+		// reference emitted Content-Length, Content-Type, Date and Server; this service
+		// emitted the same minus Server, plus Transfer-Encoding. Replace this list from a
+		// fresh discovery run rather than extending it by guess.
+		CompareHeaders: map[string]bool{
+			// Governs how every caller parses the body, and on a download it comes from
+			// the media-type table -- the most likely to differ and the most likely to
+			// matter.
+			"Content-Type": true,
+			// The download filename, in both of its spellings.
+			"Content-Disposition": true,
+			// Invisible in a compared body, since both sides decode to the same bytes,
+			// but it changes what a caller that streams rather than buffers receives.
+			"Content-Encoding": true,
+			"Location":         true,
+		},
+		IgnoreHeaders: map[string]bool{
+			"Date":   true,
+			"Server": true,
+			// Derived from a body that is already compared exactly, so it can only
+			// restate that result or add chunked-versus-not noise.
+			"Content-Length":    true,
+			"Transfer-Encoding": true,
+			// Transport, not payload.
+			"Connection": true,
+			"Keep-Alive": true,
+		},
 		PreserveOrder: map[string]bool{
 			"files":    true,
 			"folders":  true,
@@ -112,8 +181,9 @@ func NewNormalizer(runID string) *Normalizer {
 
 // Response is one service's answer.
 type Response struct {
-	Status int
-	Body   []byte
+	Status  int
+	Body    []byte
+	Headers http.Header
 }
 
 // Diff is one difference between two responses.
@@ -124,7 +194,7 @@ type Diff struct {
 
 // Compare returns the differences between the reference service's response and ours.
 func (n *Normalizer) Compare(reference, candidate Response) []Diff {
-	var diffs []Diff
+	diffs := n.compareHeaders(reference.Headers, candidate.Headers)
 
 	if reference.Status != candidate.Status {
 		diffs = append(diffs, Diff{
@@ -239,4 +309,110 @@ func equalBytes(a, b []byte) bool {
 		}
 	}
 	return true
+}
+
+// compareHeaders diffs the headers that are contract, and reports any header that is
+// neither compared nor ignored.
+//
+// The classification is not an expected-difference table, and the distinction matters
+// because the two look alike. CompareHeaders declares which headers are *contract*, decided
+// once for the service; it does not declare which differences are tolerable. Everything on
+// it is compared exactly with no per-case exceptions, so "every reported difference is a
+// real defect" holds for headers exactly as it does for statuses. A per-case exemption would
+// break that the same way a status exemption would.
+func (n *Normalizer) compareHeaders(reference, candidate http.Header) []Diff {
+	var diffs []Diff
+
+	for name := range n.CompareHeaders {
+		name = http.CanonicalHeaderKey(name)
+		ref, cand := headerValue(reference, name), headerValue(candidate, name)
+		if ref == cand {
+			continue
+		}
+		diffs = append(diffs, Diff{
+			Kind:   "header:" + name,
+			Detail: fmt.Sprintf("reference %s, candidate %s", quoteOrAbsent(ref), quoteOrAbsent(cand)),
+		})
+	}
+
+	// Anything neither compared nor ignored is an error rather than an omission. A contract
+	// header nobody thought to list would otherwise be silently unchecked -- the same shape
+	// of miss as a route that is registered but half implemented, which passed a route
+	// audit for exactly that reason.
+	//
+	// The union spans both services, not just the reference. A header the *candidate*
+	// emits and the reference never did is a wire change too, and a Go stack introduces
+	// them readily: echo sets a content type where the reference left one off, middleware
+	// adds its own. Discovering from the reference alone is blind to all of those by
+	// construction.
+	for _, name := range unclassifiedHeaders(n, reference, candidate) {
+		diffs = append(diffs, Diff{
+			Kind: "header:unclassified",
+			Detail: fmt.Sprintf("%s is on neither the compare list nor the ignore list; "+
+				"classify it as contract or as stack noise", name),
+		})
+	}
+
+	sort.Slice(diffs, func(i, j int) bool { return diffs[i].Kind < diffs[j].Kind })
+	return diffs
+}
+
+// unclassifiedHeaders names the headers either service sent that the normalizer has no
+// opinion about, in a stable order.
+func unclassifiedHeaders(n *Normalizer, sides ...http.Header) []string {
+	seen := map[string]bool{}
+	var out []string
+
+	for _, side := range sides {
+		for name := range side {
+			canonical := http.CanonicalHeaderKey(name)
+			if seen[canonical] || n.CompareHeaders[canonical] || n.IgnoreHeaders[canonical] {
+				continue
+			}
+			seen[canonical] = true
+			out = append(out, canonical)
+		}
+	}
+
+	sort.Strings(out)
+	return out
+}
+
+// headerValue joins a header's values the way they travel, so a repeated header compares as
+// one string rather than silently on its first value only.
+func headerValue(h http.Header, name string) string {
+	if h == nil {
+		return ""
+	}
+	return strings.Join(h.Values(name), ", ")
+}
+
+// quoteOrAbsent renders a header value for a report, distinguishing empty from absent --
+// which for a content type is the difference between two real behaviours.
+func quoteOrAbsent(value string) string {
+	if value == "" {
+		return "absent"
+	}
+	return strconv.Quote(value)
+}
+
+// ValidateRunID refuses a run identifier that would corrupt the values around it.
+//
+// The run id is substituted wherever it appears, which is what lets two runs of the same
+// case compare equal. An id made only of hex digits sits inside a uuid by chance, and one
+// made only of decimal digits sits inside a timestamp -- and the substitution then damages
+// the very values the normaliser exists to canonicalise. Requiring one character that is
+// neither makes both impossible, which is why the default is a timestamp behind the word
+// "run".
+func ValidateRunID(runID string) error {
+	if len(runID) < 3 {
+		return fmt.Errorf("shadow: the run id %q is too short to be distinctive", runID)
+	}
+	for _, r := range runID {
+		if !strings.ContainsRune("0123456789abcdefABCDEF", r) {
+			return nil
+		}
+	}
+	return fmt.Errorf("shadow: the run id %q is all hex digits, so it would be substituted "+
+		"inside uuids and timestamps; use one containing a character outside 0-9a-f", runID)
 }

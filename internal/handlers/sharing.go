@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"net/url"
 	"strings"
 
 	"github.com/cyverse-de/data-info/internal/apierror"
@@ -384,38 +383,10 @@ func (h *Writes) Anonymize(c echo.Context) error {
 		if _, err := service.Share(ctx, scope, req); err != nil {
 			return err
 		}
-		urls[path] = h.anonURL(path)
+		urls[path] = h.deps.anonURL(path)
 	}
 
 	return writeJSONOK(c, map[string]any{"user": user, "paths": urls})
-}
-
-// anonURL builds the address the anonymous file service serves a path at.
-//
-// The longest configured prefix wins, so that a more specific mapping is not shadowed by a
-// more general one that happens to be checked first. A path no mapping covers gets an empty
-// URL rather than a wrong one.
-func (h *Writes) anonURL(path string) string {
-	var best string
-	for prefix := range h.deps.AnonMappings {
-		if len(path) > len(prefix) && strings.HasPrefix(path, prefix) && len(prefix) > len(best) {
-			best = prefix
-		}
-	}
-	if best == "" {
-		return ""
-	}
-
-	mapped := h.deps.AnonMappings[best] + path[len(best):]
-
-	// Each segment is escaped on its own so the separators survive, and a space becomes
-	// %20 rather than a plus -- this ends up in a URL a person is given, not in a form.
-	segments := strings.Split(mapped, "/")
-	for i, segment := range segments {
-		segments[i] = strings.ReplaceAll(url.QueryEscape(segment), "+", "%20")
-	}
-
-	return strings.TrimRight(h.deps.AnonBaseURL, "/") + "/" + strings.Join(segments, "/")
 }
 
 // shareRequest fills in the parts of a share that come from configuration rather than from

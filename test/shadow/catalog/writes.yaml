@@ -116,3 +116,26 @@ cases:
     query: {user: "{{.User}}"}
     body: {paths: ["{{.Root}}/a/../b"]}
 
+
+  # Read-only, but by data id, so it needs a seeded fixture to have an id to name. It sits
+  # here rather than in reads.yaml because that file's cases share one fixture and cannot
+  # seed.
+  - id: permissions-by-id
+    tier: write
+    method: GET
+    path: /data/{{.SeedID}}/permissions
+    query: {user: "{{.User}}"}
+    seed: {filename: perms.txt, content: "a file whose sharing is reported\n"}
+
+  - id: permissions-by-id-that-names-nothing
+    tier: write
+    method: GET
+    path: /data/00000000-0000-0000-0000-000000000000/permissions
+    query: {user: "{{.User}}"}
+
+  - id: permissions-by-id-unknown-user
+    tier: write
+    method: GET
+    path: /data/{{.SeedID}}/permissions
+    query: {user: nosuchuser}
+    seed: {filename: perms-unknown-user.txt, content: "a file\n"}

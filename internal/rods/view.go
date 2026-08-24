@@ -94,10 +94,18 @@ type View interface {
 
 	// Subfolders returns every subfolder of a collection, unpaged.
 	Subfolders(ctx context.Context, path string) *lazy.Value[[]icat.ListingRow]
+
+	// UUIDListing returns a sorted page of the items carrying a set of data ids, and
+	// UUIDCount how many there are in total.
+	UUIDListing(ctx context.Context, q UUIDListingQuery) *lazy.Value[[]icat.ListingRow]
+	UUIDCount(ctx context.Context, q UUIDListingQuery) *lazy.Value[int64]
 }
 
 // ListingQuery selects a page of a collection's children.
 type ListingQuery = icat.ListingQuery
+
+// UUIDListingQuery selects a page of the items carrying a set of data ids.
+type UUIDListingQuery = icat.UUIDListingQuery
 
 // ChildCounts is how many files and subfolders a collection holds.
 type ChildCounts = icat.ChildCounts
@@ -525,6 +533,58 @@ func (s *Scope) Subfolders(_ context.Context, path string) *lazy.Value[[]icat.Li
 
 		s.publishRows(rows)
 		return rows, nil
+	})
+}
+
+// UUIDListing returns a sorted page of the items carrying a set of data ids.
+//
+// The rows are published into the scope, so decorating each entry afterwards -- with a
+// label, a share count, whatever the caller asked for -- answers from this page rather than
+// querying the catalog again per entry.
+func (s *Scope) UUIDListing(_ context.Context, q UUIDListingQuery) *lazy.Value[[]icat.ListingRow] {
+	q.User = s.opts.User
+	q.Zone = s.deps.Zone
+	if q.InfoTypeAttribute == "" {
+		q.InfoTypeAttribute = s.deps.InfoTypeAttribute
+	}
+
+	groups := s.groupIDs(s.ctx)
+
+	return lazy.Go(s.ctx, s.catalogSem, func(ctx context.Context) ([]icat.ListingRow, error) {
+		ids, err := groups.Get(ctx)
+		if err != nil {
+			return nil, err
+		}
+		q.GroupIDs = ids
+
+		rows, err := s.deps.ICAT.PagedUUIDs(ctx, q)
+		if err != nil {
+			return nil, err
+		}
+
+		s.publishRows(rows)
+		return rows, nil
+	})
+}
+
+// UUIDCount returns how many of a set of data ids name something the user can see.
+func (s *Scope) UUIDCount(_ context.Context, q UUIDListingQuery) *lazy.Value[int64] {
+	q.User = s.opts.User
+	q.Zone = s.deps.Zone
+	if q.InfoTypeAttribute == "" {
+		q.InfoTypeAttribute = s.deps.InfoTypeAttribute
+	}
+
+	groups := s.groupIDs(s.ctx)
+
+	return lazy.Go(s.ctx, s.catalogSem, func(ctx context.Context) (int64, error) {
+		ids, err := groups.Get(ctx)
+		if err != nil {
+			return 0, err
+		}
+		q.GroupIDs = ids
+
+		return s.deps.ICAT.CountUUIDs(ctx, q)
 	})
 }
 

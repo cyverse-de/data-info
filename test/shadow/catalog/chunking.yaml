@@ -1,0 +1,249 @@
+# The manifest and the two chunk readers, which together back file preview in the DE.
+#
+# Every case is a write case even though none of these endpoints writes anything. The tier
+# is what decides whether a case gets a fixture of its own, and these need one: a chunk case
+# has to name a file whose contents it knows, and only a seeded fixture provides that. The
+# state diff a write case also runs is a free extra assurance here -- a read that changed
+# something would show up in it.
+group: chunking
+cases:
+  - id: manifest-by-id
+    tier: write
+    method: GET
+    path: /data/{{.SeedID}}/manifest
+    query: {user: "{{.User}}"}
+    seed: {filename: manifest.txt, content: "the contents do not matter here\n"}
+
+  - id: manifest-by-path
+    tier: write
+    method: GET
+    path: /data/by-path/manifest{{.SeedPath}}
+    query: {user: "{{.User}}"}
+    seed: {filename: manifest-by-path.txt, content: "the contents do not matter here\n"}
+
+  # A name the media-type table has an entry for, which is the half of the manifest that does
+  # not come from iRODS.
+  - id: manifest-of-a-csv
+    tier: write
+    method: GET
+    path: /data/by-path/manifest{{.SeedPath}}
+    query: {user: "{{.User}}"}
+    seed: {filename: typed.csv, content: "a,b\n"}
+
+  - id: manifest-of-a-name-with-no-extension
+    tier: write
+    method: GET
+    path: /data/by-path/manifest{{.SeedPath}}
+    query: {user: "{{.User}}"}
+    seed: {filename: untyped, content: "no extension to go on\n"}
+
+  - id: manifest-of-a-folder
+    tier: write
+    method: GET
+    path: /data/by-path/manifest{{.Root}}
+    query: {user: "{{.User}}"}
+
+  - id: manifest-of-a-missing-path
+    tier: write
+    method: GET
+    path: /data/by-path/manifest{{.Root}}/definitely-not-here
+    query: {user: "{{.User}}"}
+
+  - id: manifest-unknown-user
+    tier: write
+    method: GET
+    path: /data/by-path/manifest{{.SeedPath}}
+    query: {user: nosuchuser}
+    seed: {filename: manifest-unknown-user.txt, content: "hello\n"}
+
+  - id: chunk-from-the-start
+    tier: write
+    method: GET
+    path: /data/{{.SeedID}}/chunks
+    query: {user: "{{.User}}", position: "0", size: "10"}
+    seed: {filename: chunk.txt, content: "0123456789abcdefghij\n"}
+
+  - id: chunk-from-the-middle
+    tier: write
+    method: GET
+    path: /data/{{.SeedID}}/chunks
+    query: {user: "{{.User}}", position: "5", size: "10"}
+    seed: {filename: chunk-middle.txt, content: "0123456789abcdefghij\n"}
+
+  # Asks for more than is there, which is what a client does when it does not know the size.
+  - id: chunk-larger-than-the-file
+    tier: write
+    method: GET
+    path: /data/{{.SeedID}}/chunks
+    query: {user: "{{.User}}", position: "0", size: "100000"}
+    seed: {filename: chunk-short.txt, content: "short\n"}
+
+  - id: chunk-starting-past-the-end
+    tier: write
+    method: GET
+    path: /data/{{.SeedID}}/chunks
+    query: {user: "{{.User}}", position: "1000", size: "10"}
+    seed: {filename: chunk-past.txt, content: "short\n"}
+
+  - id: chunk-of-nothing
+    tier: write
+    method: GET
+    path: /data/{{.SeedID}}/chunks
+    query: {user: "{{.User}}", position: "0", size: "0"}
+    seed: {filename: chunk-zero.txt, content: "some contents\n"}
+
+  # The chunk boundary lands inside a multi-byte character, which is what the UTF-8 trimming
+  # in the reference's read-at-position exists for: a partial sequence must be dropped rather
+  # than reported as a replacement character.
+  - id: chunk-splitting-a-multibyte-character
+    tier: write
+    method: GET
+    path: /data/{{.SeedID}}/chunks
+    query: {user: "{{.User}}", position: "0", size: "4"}
+    seed: {filename: chunk-utf8.txt, content: "abcé def\n"}
+
+  - id: chunk-starting-inside-a-multibyte-character
+    tier: write
+    method: GET
+    path: /data/{{.SeedID}}/chunks
+    query: {user: "{{.User}}", position: "4", size: "6"}
+    seed: {filename: chunk-utf8-start.txt, content: "abcé def\n"}
+
+  - id: chunk-by-path
+    tier: write
+    method: GET
+    path: /data/by-path/chunks{{.SeedPath}}
+    query: {user: "{{.User}}", position: "0", size: "10"}
+    seed: {filename: chunk-by-path.txt, content: "0123456789abcdefghij\n"}
+
+  - id: chunk-of-a-folder
+    tier: write
+    method: GET
+    path: /data/by-path/chunks{{.Root}}
+    query: {user: "{{.User}}", position: "0", size: "10"}
+
+  - id: chunk-of-a-missing-path
+    tier: write
+    method: GET
+    path: /data/by-path/chunks{{.Root}}/definitely-not-here
+    query: {user: "{{.User}}", position: "0", size: "10"}
+
+  # Five twelve-byte lines, so a page size of 24 divides the file into three.
+  - id: tabular-first-page
+    tier: write
+    method: GET
+    path: /data/{{.SeedID}}/chunks-tabular
+    query: {user: "{{.User}}", separator: ",", page: "1", size: "24"}
+    seed: {filename: table.csv, content: "aaa,bbb,ccc\nddd,eee,fff\nggg,hhh,iii\njjj,kkk,lll\nmmm,nnn,ooo\n"}
+
+  - id: tabular-second-page
+    tier: write
+    method: GET
+    path: /data/{{.SeedID}}/chunks-tabular
+    query: {user: "{{.User}}", separator: ",", page: "2", size: "24"}
+    seed: {filename: table-page-two.csv, content: "aaa,bbb,ccc\nddd,eee,fff\nggg,hhh,iii\njjj,kkk,lll\nmmm,nnn,ooo\n"}
+
+  - id: tabular-last-page
+    tier: write
+    method: GET
+    path: /data/{{.SeedID}}/chunks-tabular
+    query: {user: "{{.User}}", separator: ",", page: "3", size: "24"}
+    seed: {filename: table-last-page.csv, content: "aaa,bbb,ccc\nddd,eee,fff\nggg,hhh,iii\njjj,kkk,lll\nmmm,nnn,ooo\n"}
+
+  # One page for the whole file, which is what a preview of a small file asks for.
+  - id: tabular-whole-file-in-one-page
+    tier: write
+    method: GET
+    path: /data/{{.SeedID}}/chunks-tabular
+    query: {user: "{{.User}}", separator: ",", page: "1", size: "1000"}
+    seed: {filename: table-one-page.csv, content: "aaa,bbb,ccc\nddd,eee,fff\n"}
+
+  # The separator arrives url-encoded; a tab is what the DE sends for a TSV.
+  - id: tabular-tab-separated
+    tier: write
+    method: GET
+    path: /data/{{.SeedID}}/chunks-tabular
+    query: {user: "{{.User}}", separator: "\t", page: "1", size: "1000"}
+    seed: {filename: table.tsv, content: "aaa\tbbb\tccc\nddd\teee\tfff\n"}
+
+  - id: tabular-quoted-fields-containing-the-separator
+    tier: write
+    method: GET
+    path: /data/{{.SeedID}}/chunks-tabular
+    query: {user: "{{.User}}", separator: ",", page: "1", size: "1000"}
+    seed: {filename: table-quoted.csv, content: "\"a,b\",c\n\"d,e\",f\n"}
+
+  - id: tabular-ragged-rows
+    tier: write
+    method: GET
+    path: /data/{{.SeedID}}/chunks-tabular
+    query: {user: "{{.User}}", separator: ",", page: "1", size: "1000"}
+    seed: {filename: table-ragged.csv, content: "a,b,c\nd\ne,f\n"}
+
+  # Cannot be run as a paired case. Fixtures are built through the reference so that a
+  # comparison never depends on the service under test being correct -- and the reference
+  # cannot create a zero-byte object at all (deferred fix 8), so the seed fails before the
+  # comparison starts. The Go side's handling of an empty file is covered by
+  # TestParseDelimited instead.
+  - id: tabular-empty-file
+    tier: write
+    method: GET
+    path: /data/{{.SeedID}}/chunks-tabular
+    query: {user: "{{.User}}", separator: ",", page: "1", size: "1000"}
+    seed: {filename: table-empty.csv, content: ""}
+    skip: the reference cannot upload a zero-byte file, so this fixture cannot be built
+
+  - id: tabular-page-zero
+    tier: write
+    method: GET
+    path: /data/{{.SeedID}}/chunks-tabular
+    query: {user: "{{.User}}", separator: ",", page: "0", size: "24"}
+    seed: {filename: table-page-zero.csv, content: "aaa,bbb,ccc\n"}
+
+  - id: tabular-negative-page
+    tier: write
+    method: GET
+    path: /data/{{.SeedID}}/chunks-tabular
+    query: {user: "{{.User}}", separator: ",", page: "-1", size: "24"}
+    seed: {filename: table-negative-page.csv, content: "aaa,bbb,ccc\n"}
+
+  - id: tabular-size-zero
+    tier: write
+    method: GET
+    path: /data/{{.SeedID}}/chunks-tabular
+    query: {user: "{{.User}}", separator: ",", page: "1", size: "0"}
+    seed: {filename: table-size-zero.csv, content: "aaa,bbb,ccc\n"}
+
+  # The page bound is inclusive, so the first page refused is two past the count, not one.
+  - id: tabular-one-page-past-the-end
+    tier: write
+    method: GET
+    path: /data/{{.SeedID}}/chunks-tabular
+    query: {user: "{{.User}}", separator: ",", page: "4", size: "24"}
+    seed: {filename: table-past-one.csv, content: "aaa,bbb,ccc\nddd,eee,fff\nggg,hhh,iii\njjj,kkk,lll\nmmm,nnn,ooo\n"}
+
+  - id: tabular-well-past-the-end
+    tier: write
+    method: GET
+    path: /data/{{.SeedID}}/chunks-tabular
+    query: {user: "{{.User}}", separator: ",", page: "99", size: "24"}
+    seed: {filename: table-past-many.csv, content: "aaa,bbb,ccc\nddd,eee,fff\nggg,hhh,iii\njjj,kkk,lll\nmmm,nnn,ooo\n"}
+
+  - id: tabular-by-path
+    tier: write
+    method: GET
+    path: /data/by-path/chunks-tabular{{.SeedPath}}
+    query: {user: "{{.User}}", separator: ",", page: "1", size: "1000"}
+    seed: {filename: table-by-path.csv, content: "aaa,bbb,ccc\nddd,eee,fff\n"}
+
+  - id: tabular-of-a-folder
+    tier: write
+    method: GET
+    path: /data/by-path/chunks-tabular{{.Root}}
+    query: {user: "{{.User}}", separator: ",", page: "1", size: "24"}
+
+  - id: tabular-of-a-missing-path
+    tier: write
+    method: GET
+    path: /data/by-path/chunks-tabular{{.Root}}/definitely-not-here
+    query: {user: "{{.User}}", separator: ",", page: "1", size: "24"}

@@ -28,6 +28,12 @@ type Error struct {
 	Extra  map[string]any
 	Status int // when non-zero, overrides the status implied by Code and Style
 	Cause  error
+
+	// Schema marks a request that failed the shape its endpoint declares, as opposed to
+	// one whose handler threw. The reference renders the two through different middleware
+	// and they answer with different headers, so the distinction has to survive to the
+	// point the response is written. See contentTypeFor.
+	Schema bool
 }
 
 // New returns an Error carrying the given code.
@@ -55,6 +61,13 @@ func (e *Error) WithStyle(s Style) *Error {
 // rather than the body -- HEAD /data/{data-id} answers a bare 422 for an unparseable id.
 func (e *Error) WithStatus(status int) *Error {
 	e.Status = status
+	return e
+}
+
+// AsSchemaFailure marks the error as a request-validation failure rather than a handler
+// failure, which decides how the response is framed.
+func (e *Error) AsSchemaFailure() *Error {
+	e.Schema = true
 	return e
 }
 

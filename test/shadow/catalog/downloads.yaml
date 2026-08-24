@@ -1,0 +1,81 @@
+# GET /data/path/{zone}/* serves a folder listing for a collection and the file's own bytes
+# for a data object. The listing half is in listing.yaml; this is the other one.
+#
+# A caveat worth knowing when reading a green report: the harness compares status and body,
+# and a download's body is compared byte for byte because neither side's is JSON. It does not
+# compare headers, so the Content-Type and the RFC 6266 Content-Disposition these cases
+# exercise are *not* checked here. internal/handlers/download_test.go pins the header; these
+# cases pin the bytes.
+group: downloads
+cases:
+  - id: download-a-file
+    tier: write
+    method: GET
+    path: /data/path{{.SeedPath}}
+    query: {user: "{{.User}}"}
+    seed: {filename: download.txt, content: "the contents of the file\n"}
+
+  - id: download-as-an-attachment
+    tier: write
+    method: GET
+    path: /data/path{{.SeedPath}}
+    query: {user: "{{.User}}", attachment: "true"}
+    seed: {filename: download-attached.txt, content: "the contents of the file\n"}
+
+  # Cannot be run as a paired case: fixtures are built through the reference, and the
+  # reference cannot create a zero-byte object (deferred fix 8). The empty-file short
+  # circuit is covered by TestDownloadOfAnEmptyFileNeedsNoConnection instead.
+  - id: download-an-empty-file
+    tier: write
+    method: GET
+    path: /data/path{{.SeedPath}}
+    query: {user: "{{.User}}"}
+    seed: {filename: download-empty.txt, content: ""}
+    skip: the reference cannot upload a zero-byte file, so this fixture cannot be built
+
+  # Multi-byte characters, so a download that decodes and re-encodes rather than copying
+  # bytes shows up as a body difference.
+  #
+  # The extension is .txt on purpose. A name the media-type table does not know sends the
+  # reference to Tika's content sniffing, which this service deliberately does not do
+  # (deferred fix 11) -- so such a case would report that accepted divergence on every run
+  # instead of testing what it is here to test. upload-with-no-extension covers the
+  # divergence itself, once.
+  - id: download-multibyte-content
+    tier: write
+    method: GET
+    path: /data/path{{.SeedPath}}
+    query: {user: "{{.User}}"}
+    seed: {filename: download-multibyte.txt, content: "caf\u00e9 \u4e16\u754c \U0001F600\n"}
+
+  - id: download-a-file-whose-name-has-spaces
+    tier: write
+    method: GET
+    path: /data/path{{.SeedPath}}
+    query: {user: "{{.User}}", attachment: "true"}
+    seed: {filename: "a download.txt", content: "spaces in the name\n"}
+
+  # Same shape: the reference rejects a non-ASCII filename on upload (deferred fix 9), so it
+  # cannot build this fixture either. What the download would have checked -- that the
+  # RFC 6266 header carries such a name in both spellings -- is covered by
+  # TestContentDisposition.
+  - id: download-a-file-whose-name-is-not-ascii
+    tier: write
+    method: GET
+    path: /data/path{{.SeedPath}}
+    query: {user: "{{.User}}", attachment: "true"}
+    seed: {filename: "r\u00e9sum\u00e9.txt", content: "not ascii\n"}
+    skip: the reference rejects a non-ASCII filename on upload, so this fixture cannot be built
+
+  - id: download-a-missing-file
+    tier: write
+    method: GET
+    path: /data/path{{.Root}}/definitely-not-here
+    query: {user: "{{.User}}"}
+
+  - id: download-unknown-user
+    tier: write
+    method: GET
+    path: /data/path{{.SeedPath}}
+    query: {user: nosuchuser}
+    seed: {filename: download-unknown-user.txt, content: "hello\n"}

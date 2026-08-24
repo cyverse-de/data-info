@@ -61,8 +61,20 @@ func HTTPErrorHandler(logErr func(echo.Context, *Error, error)) echo.HTTPErrorHa
 
 		status := apiErr.HTTPStatus()
 
-		// A few routes contract on the status alone. HEAD has no body by definition.
+		// A few routes contract on the status alone, and HEAD has no body by definition.
+		//
+		// It still carries a content type when the *request* was rejected before reaching
+		// the handler, because that response is rendered by the validation middleware like
+		// any other. When the handler itself answers, it answers with a bare status:
+		// entry.clj's id-entry returns ring's not-found, forbidden and
+		// unprocessable-entity, none of which set a header. So the two halves of this
+		// route's contract carry different headers, and only a schema failure is labelled.
 		if c.Request().Method == http.MethodHead {
+			var contentType string
+			if apiErr.Schema {
+				contentType = JSONContentType
+			}
+			setContentType(c, contentType)
 			report(logErr, c, apiErr, c.NoContent(status))
 			return
 		}
@@ -79,9 +91,22 @@ func HTTPErrorHandler(logErr func(echo.Context, *Error, error)) echo.HTTPErrorHa
 			}
 		}
 
-		// JSONBlob rather than JSON: echo's JSON appends a trailing newline and
-		// cheshire/encode does not, and these bodies are compared byte for byte.
-		report(logErr, c, apiErr, c.JSONBlob(status, []byte(raw)))
+		// Blob rather than JSON or JSONBlob, for two reasons. echo's JSON appends a
+		// trailing newline where cheshire/encode does not, and these bodies are compared
+		// byte for byte; and the content type is not always JSON here, or even present.
+		contentType := contentTypeFor(apiErr, raw)
+		setContentType(c, contentType)
+
+		if contentType != "" {
+			report(logErr, c, apiErr, c.Blob(status, contentType, []byte(raw)))
+			return
+		}
+
+		// No content type at all, which is not an oversight: an error reaching the
+		// reference's default exception handler is written without one.
+		c.Response().WriteHeader(status)
+		_, writeErr := c.Response().Write([]byte(raw))
+		report(logErr, c, apiErr, writeErr)
 	}
 }
 
@@ -132,8 +157,12 @@ func toAPIError(err error, style Style) (*Error, string) {
 		case http.StatusNotFound:
 			return New(ErrNotFound).WithStatus(http.StatusNotFound).WithCause(err), unrecognizedPath
 		case http.StatusMethodNotAllowed:
-			return New(ErrBadRequest).WithStatus(http.StatusMethodNotAllowed).
-				With("reason", "method not supported").WithCause(err), ""
+			// A 404 carrying the unrecognised-path body, not a 405. compojure matches a
+			// route on its method and path together, so a request with the wrong method
+			// simply does not match and falls through to route/not-found -- verified
+			// against the running service, which answers DELETE on a GET route with a 404
+			// and the same body an unknown path gets.
+			return New(ErrNotFound).WithStatus(http.StatusNotFound).WithCause(err), unrecognizedPath
 		case http.StatusRequestEntityTooLarge:
 			return New(ErrBadRequest).WithStatus(http.StatusRequestEntityTooLarge).
 				With("reason", "request body too large").WithCause(err), ""
@@ -161,4 +190,61 @@ func messageOf(he *echo.HTTPError) string {
 		return he.Internal.Error()
 	}
 	return http.StatusText(he.Code)
+}
+
+// JSONContentType is what every JSON response carries, successes and errors alike.
+//
+// Spelled without a space and with a lowercase charset because that is the byte sequence
+// ring emits, and the header is compared exactly against it.
+const JSONContentType = "application/json;charset=utf-8"
+
+// unrecognizedPathContentType is what the reference labels its unrecognised-path body with.
+//
+// It is text/html for a body that is plainly JSON, because the body comes from
+// compojure's route/not-found and nothing overrides the default. Callers see this on every
+// unknown path and every wrong method, so it is contract however wrong it looks.
+const unrecognizedPathContentType = "text/html;charset=utf-8"
+
+// contentTypeFor reports the content type an error response carries, or "" for none.
+//
+// Three answers, and all three were measured against the running service rather than
+// reasoned about:
+//
+//   - An unrecognised path, or a request with the wrong method, is labelled text/html.
+//   - An error that reached the reference's default exception handler -- a thrown code on a
+//     route written as (ok ...) -- carries no content type at all.
+//   - Everything else, including a schema failure on one of those same routes, is JSON.
+//
+// The middle case is why Error carries Schema: on an ok-style route the two are told apart
+// by which middleware rendered them, not by the code or the status.
+func contentTypeFor(apiErr *Error, raw string) string {
+	if raw == unrecognizedPath {
+		return unrecognizedPathContentType
+	}
+	if apiErr.Style == StyleOK && !apiErr.Schema {
+		return ""
+	}
+	return JSONContentType
+}
+
+// setContentType applies a content type, or suppresses the header entirely when it is empty.
+//
+// The suppression is the part that needs saying. net/http sniffs the first bytes written and
+// adds a Content-Type of its own when the header is absent, so simply not setting one
+// produced "text/plain; charset=utf-8" on every response the reference sends bare -- twenty-
+// two of them in a shadow run. Assigning nil to the map key is what net/http documents as
+// the way to mean "no content type", as opposed to not mentioning one.
+//
+// It also removes anything echo put there first. echo's router sets Allow on a
+// method-mismatch, and the reference sends no such header because it does not treat a
+// mismatch as a method problem at all -- see the StatusMethodNotAllowed case above.
+func setContentType(c echo.Context, contentType string) {
+	header := c.Response().Header()
+	header.Del("Allow")
+
+	if contentType == "" {
+		header["Content-Type"] = nil
+		return
+	}
+	header.Set(echo.HeaderContentType, contentType)
 }

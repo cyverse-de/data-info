@@ -65,7 +65,12 @@ func run() error {
 
 	id := *runID
 	if id == "" {
+		// The T is not decoration: it is what keeps the default out of a uuid or a
+		// timestamp when it is substituted. See shadow.ValidateRunID.
 		id = time.Now().UTC().Format("20060102T150405")
+	}
+	if err := shadow.ValidateRunID(id); err != nil {
+		return err
 	}
 
 	catalog, err := shadow.LoadCatalog(*catalogIn)

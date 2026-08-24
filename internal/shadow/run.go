@@ -424,7 +424,7 @@ func (r *Runner) send(ctx context.Context, base string, c Case) (Response, error
 		return Response{}, fmt.Errorf("reading the response: %w", err)
 	}
 
-	return Response{Status: resp.StatusCode, Body: raw}, nil
+	return Response{Status: resp.StatusCode, Body: raw, Headers: resp.Header}, nil
 }
 
 // multipartBody encodes an upload case, returning the body and the content type that

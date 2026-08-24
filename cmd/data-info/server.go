@@ -162,19 +162,35 @@ func registerDataRoutes(e *echo.Echo, cfg *config.Config, log *logrus.Entry, dep
 	ok := apierror.WithStyle(apierror.StyleOK)
 	e.POST("/stat-gatherer", stats.GatherPlain, ok)
 	e.POST("/path-info", stats.Gather, ok)
+	e.POST("/stat-lister", stats.Listing, ok)
 	e.POST("/existence-marker", reads.Existence, ok)
+	e.POST("/creatability-marker", reads.Creatability, ok)
+	e.GET("/navigation/root", listings.Root, ok)
 
 	// svc/trap routes: the status table applies.
 	e.POST("/permissions-gatherer", reads.Permissions)
 	e.POST("/data/directories", writes.CreateDirectories)
 	e.GET("/users/:username/groups", reads.UserGroups)
 	e.GET("/navigation/base-paths", reads.BasePaths)
+	e.GET("/navigation/home", listings.Home)
+	e.GET("/data/:data-id/permissions", reads.PermissionsByID)
 	e.GET("/data/uuid", listings.UUIDForPath)
 	e.HEAD("/data/:data-id", listings.Head)
 
 	// The wildcard routes carry an iRODS path, which may contain characters echo would
 	// otherwise treat as structure.
 	e.GET("/navigation/path/:zone/*", listings.Navigation, ok)
+
+	// The manifest and the two chunk readers, which together back file preview in the DE.
+	// Each has a by-id route and a by-path one, and the by-path form carries the whole path
+	// -- zone included -- in its wildcard.
+	chunks := handlers.NewChunks(hd)
+	e.GET("/data/:data-id/manifest", chunks.Manifest)
+	e.GET("/data/:data-id/chunks", chunks.Chunk)
+	e.GET("/data/:data-id/chunks-tabular", chunks.TabularChunk)
+	e.GET("/data/by-path/manifest/*", chunks.ManifestByPath)
+	e.GET("/data/by-path/chunks/*", chunks.ChunkByPath)
+	e.GET("/data/by-path/chunks-tabular/*", chunks.TabularChunkByPath)
 
 	// Trap-style, unlike its neighbour above: the data routes are wrapped in svc/trap in
 	// the reference, so their codes map through the status table rather than all

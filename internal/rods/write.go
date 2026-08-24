@@ -80,9 +80,9 @@ func (s *Scope) MakeDir(ctx context.Context, path string, recurse bool) error {
 
 // SetOwner makes a user the owner of a path.
 //
-// Not in admin mode: the service is already acting as the user, who has just created the
-// path and can therefore grant on it. The proxy account is not a rodsadmin, so asking for
-// the administrative flag is refused outright rather than being a harmless extra privilege.
+// Administrative only when the session is not proxied; see Session.IsProxied. Acting as the
+// user, the grant is theirs to make and the ordinary call is right; acting as the service
+// account directly, the ordinary call is the one iRODS refuses.
 //
 // Recursion is the caller's to decide, and the two callers differ: the reference grants
 // recursively on a new collection, so that everything created beneath it in the same request
@@ -95,7 +95,12 @@ func (s *Scope) SetOwner(ctx context.Context, path, user string, recurse bool) e
 		return err
 	}
 
-	if err := irodsclient.SetACL(ctx, sess, path, irodsclient.PermissionOwn, user, s.deps.Zone, recurse, false); err != nil {
+	recurse, err = s.recurseIfCollection(ctx, path, recurse)
+	if err != nil {
+		return err
+	}
+
+	if err := irodsclient.SetACL(ctx, sess, path, irodsclient.PermissionOwn, user, s.deps.Zone, recurse, !sess.IsProxied()); err != nil {
 		return err
 	}
 
@@ -260,8 +265,15 @@ func (s *Scope) SetPermission(ctx context.Context, path, user string, level Perm
 		return err
 	}
 
+	recurse, err = s.recurseIfCollection(ctx, path, recurse)
+	if err != nil {
+		return err
+	}
+
+	// Administrative only when this scope acts as the service account itself rather than on
+	// somebody's behalf, which is the dispatch clj-jargon makes.
 	perm := irodsclient.Permission(level)
-	if err := irodsclient.SetACL(ctx, sess, path, perm, user, s.deps.Zone, recurse, false); err != nil {
+	if err := irodsclient.SetACL(ctx, sess, path, perm, user, s.deps.Zone, recurse, !sess.IsProxied()); err != nil {
 		return err
 	}
 
@@ -278,6 +290,19 @@ func (s *Scope) SetInherit(ctx context.Context, path string, inherit, recurse bo
 		return err
 	}
 
+	// Only a collection has an inheritance flag. set-inherits and remove-inherits both
+	// guard on is-dir? and do nothing for a data object, rather than asking iRODS about a
+	// flag it does not have.
+	stat, err := s.Stat(ctx, path).Get(ctx)
+	if err != nil {
+		return err
+	}
+	if stat.Type != ObjectTypeDir {
+		return nil
+	}
+
+	// Never administrative, unlike the access-control calls above: set-inherits and
+	// remove-inherits do not dispatch on proxying, so neither does this.
 	if err := irodsclient.SetInherit(ctx, sess, path, inherit, recurse, false); err != nil {
 		return err
 	}
@@ -433,6 +458,31 @@ func (s *Scope) ReadFile(ctx context.Context, path string) ([]byte, error) {
 	return irodsclient.ReadFile(ctx, sess, normalizePath(path), MaxReadableFileSize)
 }
 
+// ReadAt returns up to length bytes of a data object starting at offset.
+//
+// The chunking endpoints read this way rather than opening a stream: they want one span of
+// one file, and a positional read is a single round trip where a stream would be an open, a
+// seek and a close.
+func (s *Scope) ReadAt(ctx context.Context, path string, offset, length int64) ([]byte, error) {
+	sess, err := s.session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return irodsclient.ReadAt(ctx, sess, normalizePath(path), offset, length)
+}
+
+// OpenFile opens a data object for streaming.
+//
+// The reader borrows the scope's session, so it must be closed before the scope is. A
+// handler that streams a download therefore closes it before returning, not after.
+func (s *Scope) OpenFile(ctx context.Context, path string) (io.ReadCloser, error) {
+	sess, err := s.session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return irodsclient.OpenReader(ctx, sess, normalizePath(path))
+}
+
 // ChildEntry is one member of a collection, with enough to know what it is.
 type ChildEntry struct {
 	Path  string
@@ -462,6 +512,14 @@ func (s *Scope) ChildEntries(ctx context.Context, path string) ([]ChildEntry, er
 	return out, nil
 }
 
+// Invalidate forgets what the scope remembered about a path.
+//
+// Every write through this scope does it already. It is exported for the handlers that
+// change a path through a *different* scope -- the ones that create a collection as the
+// service's own account and then report it as the caller -- because those two scopes have
+// separate memories and the caller's would otherwise still hold the answer from before.
+func (s *Scope) Invalidate(path string) { s.invalidate(normalizePath(path)) }
+
 // invalidate forgets what the scope remembered about a path, so a read after a write sees
 // the change rather than the answer from before it.
 func (s *Scope) invalidate(path string) {
@@ -472,4 +530,23 @@ func (s *Scope) invalidate(path string) {
 	for _, kind := range []kind{kindItem, kindACL, kindAVUs, kindChildCounts} {
 		delete(s.memo, memoKey{kind, path})
 	}
+}
+
+// recurseIfCollection drops a recursion request for a data object.
+//
+// Recursion is a property of a collection, and iRODS answers CAT_INVALID_ARGUMENT for an
+// access change that asks for it on a data object -- which made every unshare of a file fail,
+// and with it every delete of one carrying access from a non-inheriting parent. clj-jargon's
+// set-permissions never had the problem because it routes files and collections to different
+// functions and only the collection one takes the flag at all.
+func (s *Scope) recurseIfCollection(ctx context.Context, path string, recurse bool) (bool, error) {
+	if !recurse {
+		return false, nil
+	}
+
+	stat, err := s.Stat(ctx, path).Get(ctx)
+	if err != nil {
+		return false, err
+	}
+	return stat.Type == ObjectTypeDir, nil
 }
