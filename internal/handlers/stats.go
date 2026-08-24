@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"strings"
 
 	"github.com/cyverse-de/data-info/internal/apierror"
 	"github.com/cyverse-de/data-info/internal/rods"
@@ -283,26 +282,5 @@ func validationBehavior(raw string) rods.Permission {
 		return rods.PermissionWrite
 	default:
 		return rods.PermissionRead
-	}
-}
-
-// boolParam reads a boolean query parameter.
-//
-// Only true and false are accepted, case-insensitively. ring-swagger's coercion accepts
-// exactly those, and anything else stays a string and fails the Boolean schema, so a request
-// carrying yes or 1 is rejected rather than quietly read as one value or the other.
-func boolParam(c echo.Context, name string) (bool, error) {
-	raw := c.QueryParam(name)
-	if raw == "" {
-		return false, nil
-	}
-
-	switch strings.ToLower(raw) {
-	case "true":
-		return true, nil
-	case "false":
-		return false, nil
-	default:
-		return false, schemaError(name + " must be true or false")
 	}
 }

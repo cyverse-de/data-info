@@ -163,12 +163,16 @@ func registerDataRoutes(e *echo.Echo, cfg *config.Config, log *logrus.Entry, dep
 	e.POST("/stat-gatherer", stats.GatherPlain, ok)
 	e.POST("/path-info", stats.Gather, ok)
 	e.POST("/existence-marker", reads.Existence, ok)
+	e.POST("/creatability-marker", reads.Creatability, ok)
+	e.GET("/navigation/root", listings.Root, ok)
 
 	// svc/trap routes: the status table applies.
 	e.POST("/permissions-gatherer", reads.Permissions)
 	e.POST("/data/directories", writes.CreateDirectories)
 	e.GET("/users/:username/groups", reads.UserGroups)
 	e.GET("/navigation/base-paths", reads.BasePaths)
+	e.GET("/navigation/home", listings.Home)
+	e.GET("/data/:data-id/permissions", reads.PermissionsByID)
 	e.GET("/data/uuid", listings.UUIDForPath)
 	e.HEAD("/data/:data-id", listings.Head)
 

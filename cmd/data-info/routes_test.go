@@ -41,12 +41,8 @@ var movedToInfoTyper = map[operation]string{
 // unreachable -- they are raised only by the tabular paging endpoints, which had not been
 // written.
 var notYetPorted = map[operation]string{
-	// Phase 5, read-only endpoints. terrain calls the first three.
-	{"POST", "/creatability-marker"}:       "terrain clients/data_info/raw.clj can-create-folder",
-	{"POST", "/stat-lister"}:               "terrain clients/data_info/raw.clj paged stat by uuid",
-	{"GET", "/navigation/root"}:            "terrain clients/data_info/raw.clj list-roots",
-	{"GET", "/navigation/home"}:            "no caller found in terrain, apps, analyses or search",
-	{"GET", "/data/{data-id}/permissions"}: "no caller found; the bulk POST /permissions-gatherer is ported",
+	// Phase 5, read-only endpoints.
+	{"POST", "/stat-lister"}: "terrain clients/data_info/raw.clj paged stat by uuid",
 
 	// Phase 6, chunking and manifest. terrain calls all three by-id forms, which is what
 	// backs file preview in the DE.

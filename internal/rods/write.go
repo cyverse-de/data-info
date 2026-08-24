@@ -462,6 +462,14 @@ func (s *Scope) ChildEntries(ctx context.Context, path string) ([]ChildEntry, er
 	return out, nil
 }
 
+// Invalidate forgets what the scope remembered about a path.
+//
+// Every write through this scope does it already. It is exported for the handlers that
+// change a path through a *different* scope -- the ones that create a collection as the
+// service's own account and then report it as the caller -- because those two scopes have
+// separate memories and the caller's would otherwise still hold the answer from before.
+func (s *Scope) Invalidate(path string) { s.invalidate(normalizePath(path)) }
+
 // invalidate forgets what the scope remembered about a path, so a read after a write sees
 // the change rather than the answer from before it.
 func (s *Scope) invalidate(path string) {
