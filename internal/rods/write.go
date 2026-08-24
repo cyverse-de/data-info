@@ -95,6 +95,11 @@ func (s *Scope) SetOwner(ctx context.Context, path, user string, recurse bool) e
 		return err
 	}
 
+	recurse, err = s.recurseIfCollection(ctx, path, recurse)
+	if err != nil {
+		return err
+	}
+
 	if err := irodsclient.SetACL(ctx, sess, path, irodsclient.PermissionOwn, user, s.deps.Zone, recurse, !sess.IsProxied()); err != nil {
 		return err
 	}
@@ -260,6 +265,11 @@ func (s *Scope) SetPermission(ctx context.Context, path, user string, level Perm
 		return err
 	}
 
+	recurse, err = s.recurseIfCollection(ctx, path, recurse)
+	if err != nil {
+		return err
+	}
+
 	// Administrative only when this scope acts as the service account itself rather than on
 	// somebody's behalf, which is the dispatch clj-jargon makes.
 	perm := irodsclient.Permission(level)
@@ -278,6 +288,17 @@ func (s *Scope) SetInherit(ctx context.Context, path string, inherit, recurse bo
 	sess, err := s.session(ctx)
 	if err != nil {
 		return err
+	}
+
+	// Only a collection has an inheritance flag. set-inherits and remove-inherits both
+	// guard on is-dir? and do nothing for a data object, rather than asking iRODS about a
+	// flag it does not have.
+	stat, err := s.Stat(ctx, path).Get(ctx)
+	if err != nil {
+		return err
+	}
+	if stat.Type != ObjectTypeDir {
+		return nil
 	}
 
 	// Never administrative, unlike the access-control calls above: set-inherits and
@@ -509,4 +530,23 @@ func (s *Scope) invalidate(path string) {
 	for _, kind := range []kind{kindItem, kindACL, kindAVUs, kindChildCounts} {
 		delete(s.memo, memoKey{kind, path})
 	}
+}
+
+// recurseIfCollection drops a recursion request for a data object.
+//
+// Recursion is a property of a collection, and iRODS answers CAT_INVALID_ARGUMENT for an
+// access change that asks for it on a data object -- which made every unshare of a file fail,
+// and with it every delete of one carrying access from a non-inheriting parent. clj-jargon's
+// set-permissions never had the problem because it routes files and collections to different
+// functions and only the collection one takes the flag at all.
+func (s *Scope) recurseIfCollection(ctx context.Context, path string, recurse bool) (bool, error) {
+	if !recurse {
+		return false, nil
+	}
+
+	stat, err := s.Stat(ctx, path).Get(ctx)
+	if err != nil {
+		return false, err
+	}
+	return stat.Type == ObjectTypeDir, nil
 }
