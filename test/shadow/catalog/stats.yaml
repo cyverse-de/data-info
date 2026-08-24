@@ -111,3 +111,72 @@ cases:
     path: /path-info
     query: {user: "{{.User}}"}
     body: {ids: ["00000000-0000-0000-0000-000000000000"]}
+
+  # /stat-lister names data ids rather than paths, so it needs a fixture of its own to have
+  # an id to name. Nothing is written; the tier is what provides the seed.
+  - id: stat-lister-one-id
+    tier: write
+    method: POST
+    path: /stat-lister
+    query: {user: "{{.User}}", limit: "50", offset: "0"}
+    body: {ids: ["{{.SeedID}}"]}
+    seed: {filename: listed.txt, content: "a file to list\n"}
+
+  - id: stat-lister-no-ids
+    tier: write
+    method: POST
+    path: /stat-lister
+    query: {user: "{{.User}}", limit: "50", offset: "0"}
+    body: {ids: []}
+
+  - id: stat-lister-an-id-that-names-nothing
+    tier: write
+    method: POST
+    path: /stat-lister
+    query: {user: "{{.User}}", limit: "50", offset: "0"}
+    body: {ids: ["00000000-0000-0000-0000-000000000000"]}
+
+  - id: stat-lister-sorted-descending
+    tier: write
+    method: POST
+    path: /stat-lister
+    query: {user: "{{.User}}", limit: "50", offset: "0", sort-field: name, sort-dir: DESC}
+    body: {ids: ["{{.SeedID}}"]}
+    seed: {filename: listed-sorted.txt, content: "a file to list\n"}
+
+  - id: stat-lister-offset-beyond-the-end
+    tier: write
+    method: POST
+    path: /stat-lister
+    query: {user: "{{.User}}", limit: "50", offset: "1000"}
+    body: {ids: ["{{.SeedID}}"]}
+    seed: {filename: listed-offset.txt, content: "a file to list\n"}
+
+  - id: stat-lister-filtered-fields
+    tier: write
+    method: POST
+    path: /stat-lister
+    query: {user: "{{.User}}", limit: "50", offset: "0", filter-include: "id,path,type,label"}
+    body: {ids: ["{{.SeedID}}"]}
+    seed: {filename: listed-filtered.txt, content: "a file to list\n"}
+
+  - id: stat-lister-no-limit
+    tier: write
+    method: POST
+    path: /stat-lister
+    query: {user: "{{.User}}", offset: "0"}
+    body: {ids: []}
+
+  - id: stat-lister-no-offset
+    tier: write
+    method: POST
+    path: /stat-lister
+    query: {user: "{{.User}}", limit: "50"}
+    body: {ids: []}
+
+  - id: stat-lister-unknown-user
+    tier: write
+    method: POST
+    path: /stat-lister
+    query: {user: nosuchuser, limit: "50", offset: "0"}
+    body: {ids: []}

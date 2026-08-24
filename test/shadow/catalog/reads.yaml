@@ -95,3 +95,74 @@ cases:
     path: /existence-marker
     query: {user: "{{.User}}"}
     body: {paths: ["{{.Root}}/"]}
+
+  # Creatability walks a path's ancestors for the deepest one that exists and asks whether
+  # the caller can write to it, so the interesting cases are the ones several levels deep.
+  - id: creatability-marker-in-an-existing-folder
+    tier: read
+    method: POST
+    path: /creatability-marker
+    query: {user: "{{.User}}"}
+    body: {paths: ["{{.Root}}/a-new-folder"]}
+
+  - id: creatability-marker-several-levels-deep
+    tier: read
+    method: POST
+    path: /creatability-marker
+    query: {user: "{{.User}}"}
+    body: {paths: ["{{.Root}}/one/two/three"]}
+
+  - id: creatability-marker-under-someone-elses-tree
+    tier: read
+    method: POST
+    path: /creatability-marker
+    query: {user: "{{.User}}"}
+    body: {paths: ["/definitely-not-a-zone/nowhere/new-folder"]}
+
+  - id: creatability-marker-a-path-that-already-exists
+    tier: read
+    method: POST
+    path: /creatability-marker
+    query: {user: "{{.User}}"}
+    body: {paths: ["{{.Root}}"]}
+
+  - id: creatability-marker-no-paths
+    tier: read
+    method: POST
+    path: /creatability-marker
+    query: {user: "{{.User}}"}
+    body: {paths: []}
+
+  - id: creatability-marker-unknown-user
+    tier: read
+    method: POST
+    path: /creatability-marker
+    query: {user: nosuchuser}
+    body: {paths: ["{{.Root}}/a-new-folder"]}
+
+  # The root and home listings create the collection they report when it is missing. Running
+  # them against a user who already has both is the only safe shape here -- the scratch
+  # guard covers the fixture tree, not a user's home.
+  - id: navigation-root
+    tier: read
+    method: GET
+    path: /navigation/root
+    query: {user: "{{.User}}"}
+
+  - id: navigation-root-unknown-user
+    tier: read
+    method: GET
+    path: /navigation/root
+    query: {user: nosuchuser}
+
+  - id: navigation-home
+    tier: read
+    method: GET
+    path: /navigation/home
+    query: {user: "{{.User}}"}
+
+  - id: navigation-home-unknown-user
+    tier: read
+    method: GET
+    path: /navigation/home
+    query: {user: nosuchuser}

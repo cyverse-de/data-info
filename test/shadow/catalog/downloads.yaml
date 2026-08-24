@@ -1,0 +1,67 @@
+# GET /data/path/{zone}/* serves a folder listing for a collection and the file's own bytes
+# for a data object. The listing half is in listing.yaml; this is the other one.
+#
+# A caveat worth knowing when reading a green report: the harness compares status and body,
+# and a download's body is compared byte for byte because neither side's is JSON. It does not
+# compare headers, so the Content-Type and the RFC 6266 Content-Disposition these cases
+# exercise are *not* checked here. internal/handlers/download_test.go pins the header; these
+# cases pin the bytes.
+group: downloads
+cases:
+  - id: download-a-file
+    tier: write
+    method: GET
+    path: /data/path{{.SeedPath}}
+    query: {user: "{{.User}}"}
+    seed: {filename: download.txt, content: "the contents of the file\n"}
+
+  - id: download-as-an-attachment
+    tier: write
+    method: GET
+    path: /data/path{{.SeedPath}}
+    query: {user: "{{.User}}", attachment: "true"}
+    seed: {filename: download-attached.txt, content: "the contents of the file\n"}
+
+  # The reference answers this without opening the object at all, so it is the case that
+  # catches a short circuit returning the wrong thing.
+  - id: download-an-empty-file
+    tier: write
+    method: GET
+    path: /data/path{{.SeedPath}}
+    query: {user: "{{.User}}"}
+    seed: {filename: download-empty.txt, content: ""}
+
+  # Bytes that are not valid UTF-8, so a download that decodes rather than copies shows up.
+  - id: download-a-file-that-is-not-text
+    tier: write
+    method: GET
+    path: /data/path{{.SeedPath}}
+    query: {user: "{{.User}}"}
+    seed: {filename: download.bin, content: "\u00ff\u00fe not text\n"}
+
+  - id: download-a-file-whose-name-has-spaces
+    tier: write
+    method: GET
+    path: /data/path{{.SeedPath}}
+    query: {user: "{{.User}}", attachment: "true"}
+    seed: {filename: "a download.txt", content: "spaces in the name\n"}
+
+  - id: download-a-file-whose-name-is-not-ascii
+    tier: write
+    method: GET
+    path: /data/path{{.SeedPath}}
+    query: {user: "{{.User}}", attachment: "true"}
+    seed: {filename: "r\u00e9sum\u00e9.txt", content: "not ascii\n"}
+
+  - id: download-a-missing-file
+    tier: write
+    method: GET
+    path: /data/path{{.Root}}/definitely-not-here
+    query: {user: "{{.User}}"}
+
+  - id: download-unknown-user
+    tier: write
+    method: GET
+    path: /data/path{{.SeedPath}}
+    query: {user: nosuchuser}
+    seed: {filename: download-unknown-user.txt, content: "hello\n"}

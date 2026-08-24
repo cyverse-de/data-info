@@ -270,3 +270,66 @@ a+"/"`, which is what the comments meant. It is strictly more permissive than th
 real reason — but it is a behaviour change and is signed off as one here rather than slipped
 in. `TestConflicts` pins both the cases that must still collide and the ones that must not.
 
+
+## 16. A positional read is bounded, where the reference allocates whatever was asked for
+
+`read-at-position` allocates a `byte-array` of the requested size before reading anything, so
+`GET /data/{id}/chunks?size=2000000000` allocates two gigabytes. On the JVM that is an
+`OutOfMemoryError` and a 500; in Go it is an allocation the runtime cannot recover from and
+the pod is killed.
+
+**Not reproduced.** `Chunks.read` narrows the length to what the file actually holds before
+the read, which gives the identical answer for every case a real request produces — a caller
+asking for more than a small file contains gets the small file either way. Above that,
+`irodsclient.MaxChunkSize` (64 MiB) refuses the read. The only request that reaches the
+bound is one for tens of megabytes of a file at least that large, which no DE client makes:
+preview asks for kilobytes.
+
+## 17. Reading past the end of a short file throws
+
+`trim-chunk` indexes into the chunk at `chunk-size - 1` for any page beyond the first, without
+checking that the chunk is that long. A page whose read landed near the end of the file
+returns fewer bytes than that, so `(nth chunk pos)` throws `IndexOutOfBoundsException` and the
+request answers 500. The page bound above it does not prevent this: it is inclusive, and it
+compares against the page count rather than against what the read returned.
+
+**Not reproduced.** `service.seekLineStart` clamps the position to the last byte of the chunk,
+so the same request answers with an empty page. Reproducing the crash would mean writing an
+out-of-range index on purpose, which Go answers with a panic rather than an exception -- a
+worse failure than the one being copied.
+
+## 18. An anonymously-readable path outside every anon-files mapping throws
+
+`anon-file-url` runs `map-anon-url-path` and hands the result to `encode-mapped-anon-path`
+without checking it. A path no mapping covers maps to `nil`, and `(string/split nil #"/")`
+is a `NullPointerException` -- so `GET /data/{id}/manifest` on a file the anonymous account
+can read but that lives outside `/iplant/home` answers 500, as does `POST /anonymizer`.
+
+**Not reproduced.** `Deps.anonURL` reports an empty URL for an unmapped path. Every path the
+DE puts a file at is under the configured mapping, so this is unreachable in a deployment;
+it is recorded because the two are different answers.
+
+## 19. Delimited-text parsing is Go's, not opencsv's
+
+`read-csv` parses a chunk with opencsv; `service.ParseDelimited` uses `encoding/csv` with
+`LazyQuotes` and no field-count check. The two agree on ordinary delimited text, including
+quoted fields containing the separator, and on ragged rows. They can disagree on pathological
+quoting -- an unterminated quote, or a quote in the middle of an unquoted field -- where each
+recovers its own way.
+
+**Not reproduced, and not reproducible.** Matching opencsv byte for byte would mean porting
+its parser. The wire contract is the row shape, which is pinned by tests; the reading of a
+malformed file is not a contract either service documents.
+
+## 20. The upload's temp-object cleanup is not a tracked async task
+
+`schedule-temp-cleanup` registers a `data-upload-cleanup` async task with a
+`statuschangetimeout` behaviour, so an operator can see that an orphaned temp object is being
+retried and whether it was eventually removed. `Writes.scheduleTempCleanup` does the same
+retrying in a goroutine and records it only in the log.
+
+**Not a lock difference:** `data-upload-cleanup` is not one of the five types
+`internal/locks` treats as holding a path, matching the reference, so nothing waits on it
+either way. What is lost is the operator's view of it. Registering the task needs no new
+machinery -- `Deps.Creator` is already wired -- so this is a small piece of work rather than
+a blocked one.
