@@ -22,14 +22,16 @@ cases:
     query: {user: "{{.User}}", attachment: "true"}
     seed: {filename: download-attached.txt, content: "the contents of the file\n"}
 
-  # The reference answers this without opening the object at all, so it is the case that
-  # catches a short circuit returning the wrong thing.
+  # Cannot be run as a paired case: fixtures are built through the reference, and the
+  # reference cannot create a zero-byte object (deferred fix 8). The empty-file short
+  # circuit is covered by TestDownloadOfAnEmptyFileNeedsNoConnection instead.
   - id: download-an-empty-file
     tier: write
     method: GET
     path: /data/path{{.SeedPath}}
     query: {user: "{{.User}}"}
     seed: {filename: download-empty.txt, content: ""}
+    skip: the reference cannot upload a zero-byte file, so this fixture cannot be built
 
   # Multi-byte characters, so a download that decodes and re-encodes rather than copying
   # bytes shows up as a body difference.
@@ -53,12 +55,17 @@ cases:
     query: {user: "{{.User}}", attachment: "true"}
     seed: {filename: "a download.txt", content: "spaces in the name\n"}
 
+  # Same shape: the reference rejects a non-ASCII filename on upload (deferred fix 9), so it
+  # cannot build this fixture either. What the download would have checked -- that the
+  # RFC 6266 header carries such a name in both spellings -- is covered by
+  # TestContentDisposition.
   - id: download-a-file-whose-name-is-not-ascii
     tier: write
     method: GET
     path: /data/path{{.SeedPath}}
     query: {user: "{{.User}}", attachment: "true"}
     seed: {filename: "r\u00e9sum\u00e9.txt", content: "not ascii\n"}
+    skip: the reference rejects a non-ASCII filename on upload, so this fixture cannot be built
 
   - id: download-a-missing-file
     tier: write
