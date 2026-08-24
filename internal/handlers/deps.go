@@ -235,6 +235,7 @@ func requireKnownUser(ctx context.Context, scope *rods.Scope, user string, plura
 // text is diagnostic rather than contract.
 func schemaError(reason string) error {
 	return apierror.New(apierror.ErrIllegalArgument).
+		AsSchemaFailure().
 		WithStatus(http.StatusBadRequest).
 		With("reason", reason)
 }

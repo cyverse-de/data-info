@@ -129,3 +129,101 @@ func TestCanceledRequestWritesNothing(t *testing.T) {
 		t.Errorf("body = %q, want empty", rec.Body.String())
 	}
 }
+
+// TestContentTypeMatchesTheReference pins the header every response carries.
+//
+// All three answers were measured against the running QA service on 2026-08-24 rather than
+// reasoned about, because two of them are surprising: an error that reaches the reference's
+// default exception handler carries no content type at all, and the unrecognised-path body
+// is labelled text/html despite being JSON.
+func TestContentTypeMatchesTheReference(t *testing.T) {
+	tests := []struct {
+		name    string
+		style   Style
+		method  string
+		path    string
+		handler echo.HandlerFunc
+		want    string
+	}{
+		{
+			name:    "a trap route's thrown code is JSON",
+			style:   StyleTrap,
+			handler: func(echo.Context) error { return New(ErrNotOwner) },
+			want:    JSONContentType,
+		},
+		{
+			name:    "an ok route's thrown code carries no content type",
+			style:   StyleOK,
+			handler: func(echo.Context) error { return New(ErrDoesNotExist) },
+			want:    "",
+		},
+		{
+			name:    "a schema failure is JSON even on an ok route",
+			style:   StyleOK,
+			handler: func(echo.Context) error { return New(ErrIllegalArgument).AsSchemaFailure() },
+			want:    JSONContentType,
+		},
+		{
+			name:    "a schema failure is JSON on a trap route too",
+			style:   StyleTrap,
+			handler: func(echo.Context) error { return New(ErrIllegalArgument).AsSchemaFailure() },
+			want:    JSONContentType,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := newTestEcho()
+			var middleware []echo.MiddlewareFunc
+			if tt.style != StyleTrap {
+				middleware = append(middleware, WithStyle(tt.style))
+			}
+			e.GET("/x", tt.handler, middleware...)
+
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/x", nil))
+
+			if got := rec.Header().Get(echo.HeaderContentType); got != tt.want {
+				t.Errorf("Content-Type = %q, want %q (body %s)", got, tt.want, rec.Body.String())
+			}
+		})
+	}
+}
+
+// TestUnrecognizedPathIsLabelledHTML covers the content type on the not-found body, which is
+// text/html for a body that is plainly JSON. It comes from compojure's route/not-found with
+// nothing overriding the default, and callers see it on every unknown path.
+func TestUnrecognizedPathIsLabelledHTML(t *testing.T) {
+	e := newTestEcho()
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/no/such/route", nil))
+
+	if got := rec.Header().Get(echo.HeaderContentType); got != unrecognizedPathContentType {
+		t.Errorf("Content-Type = %q, want %q", got, unrecognizedPathContentType)
+	}
+}
+
+// TestWrongMethodIsAnUnrecognizedPath covers a status difference, not just a header.
+//
+// compojure matches a route on its method and path together, so a request with the wrong
+// method does not match and falls through to route/not-found. echo answers 405 by default,
+// which would have been a different status and a different body for the same request --
+// verified against the running service, which answers DELETE on a GET route with a 404.
+func TestWrongMethodIsAnUnrecognizedPath(t *testing.T) {
+	e := newTestEcho()
+	e.GET("/x", func(c echo.Context) error { return c.NoContent(http.StatusOK) })
+
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, httptest.NewRequest(http.MethodDelete, "/x", nil))
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+	want := `{"success":false,"reason":"unrecognized service path"}`
+	if got := rec.Body.String(); got != want {
+		t.Errorf("body = %q, want %q", got, want)
+	}
+	if got := rec.Header().Get(echo.HeaderContentType); got != unrecognizedPathContentType {
+		t.Errorf("Content-Type = %q, want %q", got, unrecognizedPathContentType)
+	}
+}

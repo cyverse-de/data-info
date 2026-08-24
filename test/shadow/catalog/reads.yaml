@@ -166,3 +166,18 @@ cases:
     method: GET
     path: /navigation/home
     query: {user: nosuchuser}
+
+  # compojure matches a route on its method and path together, so the wrong method is not a
+  # 405 -- it simply does not match and falls through to the unrecognised-path body. The
+  # catalog had no case for this, which is why the difference went unseen.
+  - id: wrong-method-on-a-real-route
+    tier: read
+    method: DELETE
+    path: /navigation/base-paths
+    query: {user: "{{.User}}"}
+
+  - id: wrong-method-on-a-bulk-route
+    tier: read
+    method: GET
+    path: /stat-gatherer
+    query: {user: "{{.User}}"}
