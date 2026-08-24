@@ -21,6 +21,17 @@ type Session struct {
 // ClientUser reports the user this session acts as. It is empty for the proxy account.
 func (s *Session) ClientUser() string { return s.clientUser }
 
+// IsProxied reports whether this session acts on behalf of somebody other than the account
+// it authenticated as.
+//
+// It decides whether an access-control change is made administratively. clj-jargon dispatches
+// set-dataobj-perms and set-coll-perms on the same question: a proxied connection uses the
+// ordinary calls, and one acting as the service account directly uses the InAdminMode ones.
+// Getting it backwards is not cosmetic -- iRODS answers CAT_INVALID_ARGUMENT for an ordinary
+// removal the account is not entitled to make, which failed every delete of a file carrying
+// access from a non-inheriting parent.
+func (s *Session) IsProxied() bool { return s.clientUser != "" }
+
 // FileSystem exposes the underlying client for the few callers that need it directly,
 // such as file handles that outlive a single call. Prefer Do, which adds cancellation and
 // error translation.

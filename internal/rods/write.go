@@ -80,9 +80,9 @@ func (s *Scope) MakeDir(ctx context.Context, path string, recurse bool) error {
 
 // SetOwner makes a user the owner of a path.
 //
-// Not in admin mode: the service is already acting as the user, who has just created the
-// path and can therefore grant on it. The proxy account is not a rodsadmin, so asking for
-// the administrative flag is refused outright rather than being a harmless extra privilege.
+// Administrative only when the session is not proxied; see Session.IsProxied. Acting as the
+// user, the grant is theirs to make and the ordinary call is right; acting as the service
+// account directly, the ordinary call is the one iRODS refuses.
 //
 // Recursion is the caller's to decide, and the two callers differ: the reference grants
 // recursively on a new collection, so that everything created beneath it in the same request
@@ -95,7 +95,7 @@ func (s *Scope) SetOwner(ctx context.Context, path, user string, recurse bool) e
 		return err
 	}
 
-	if err := irodsclient.SetACL(ctx, sess, path, irodsclient.PermissionOwn, user, s.deps.Zone, recurse, false); err != nil {
+	if err := irodsclient.SetACL(ctx, sess, path, irodsclient.PermissionOwn, user, s.deps.Zone, recurse, !sess.IsProxied()); err != nil {
 		return err
 	}
 
@@ -260,8 +260,10 @@ func (s *Scope) SetPermission(ctx context.Context, path, user string, level Perm
 		return err
 	}
 
+	// Administrative only when this scope acts as the service account itself rather than on
+	// somebody's behalf, which is the dispatch clj-jargon makes.
 	perm := irodsclient.Permission(level)
-	if err := irodsclient.SetACL(ctx, sess, path, perm, user, s.deps.Zone, recurse, false); err != nil {
+	if err := irodsclient.SetACL(ctx, sess, path, perm, user, s.deps.Zone, recurse, !sess.IsProxied()); err != nil {
 		return err
 	}
 
@@ -278,6 +280,8 @@ func (s *Scope) SetInherit(ctx context.Context, path string, inherit, recurse bo
 		return err
 	}
 
+	// Never administrative, unlike the access-control calls above: set-inherits and
+	// remove-inherits do not dispatch on proxying, so neither does this.
 	if err := irodsclient.SetInherit(ctx, sess, path, inherit, recurse, false); err != nil {
 		return err
 	}
