@@ -31,54 +31,59 @@ result.
 
 ## What is done
 
-Phases 0–4 and 7–11 are merged to `golang`: the skeleton and the frozen error contract, the
-runtime foundation, the iRODS access layer, the ICAT catalog, the request-scoped cache, the
-write path, the async machinery and path lock, the mutating endpoints, metadata/AVUs/
-path-lists/DataCite/ORE, and the deployment.
+Phases 0 to 11 are merged into `golang`. **Every operation the Clojure service serves is
+served here**: `TestEveryClojureRouteIsServedOrAccountedFor` reports `59 Clojure operations:
+57 served, 2 moved to info-typer, 0 not yet ported`, and it runs on every build.
 
-Phases 5 and 6 are **partly** done — see the gaps below.
+The last twelve landed on 2026-08-24 (#105), eleven found by a route audit and one -- file
+download on `GET /data/path/{zone}/*` -- that no route-level audit could have found, because
+the route was registered and only half implemented. `docs/port-gaps.md` is the account.
 
-Workstream C (moving file-type detection to info-typer) is written but unmerged.
+`data-info-next` is deployed to QA from the `golang` branch, taking no traffic, and has been
+differentially tested against the live Clojure service.
 
 ## What is blocked, and on what
 
-**1. Eleven endpoints were never ported.** See `docs/port-gaps.md` and the `notYetPorted`
-list in `cmd/data-info/routes_test.go`. Three of them — manifest, chunks and chunks-tabular —
-back file preview in the DE and terrain calls all three, so a cutover today would return 404
-for every preview. `/stat-lister` also matters and is not a thin wrapper: it is one of the
-two queries that cannot be expressed in GenQuery, so it needs the ICAT `paged-uuid-listing`
-path. This is the larger blocker and it is entirely in our hands.
+**Nothing in the port itself.** The two blockers recorded here previously are both resolved:
+the eleven unported endpoints are ported, and the `de-irods` connection limit that held the
+QA deployment turned out not to bite -- three concurrent consumers of that account coexist
+with no errors on either side. Whether it was ever real or was lifted without anyone noticing
+is not something I could determine.
 
-**2. QA iRODS allows `de-irods` one concurrent connection.** Measured 2026-08-20 against
-`data.cyverse.rocks`; a second is rejected ~5ms into the handshake, and it is not
-Go-specific — six concurrent requests against the *Clojure* service returned five
-`ERR_UNAVAILABLE`. `data-info-next` inherits `irods_user: de-irods`, so deploying it would
-put a third consumer on a budget the two live replicas already share, with its startup probe
-polling every 3s for up to five minutes. **The deploy is deliberately on hold until the
-server-side limit is raised.** The soak needs real concurrency regardless: p99 comparison and
-the 1000-path bulk cases are meaningless at one connection.
+**One environmental problem is worth resolving before the soak.** iRODS intermittently
+answers `ResourceHierarchyException: HIERARCHY_ERROR` when reading a file that was just
+written. It hits both services -- the Clojure one threw 92 during a single harness run -- and
+re-reading the same path afterwards succeeds every time. It makes a fully clean harness run a
+matter of luck, and during a soak it would look like intermittent service failure. It is a
+data-store problem rather than a service one.
 
-## Ready but not deployed
+## Deployed to QA
 
-The `data-info-next` role is merged to the deployments repo's `main` (deployments#107), and
-the image is built and pushed:
+`data-info-next` runs in QA from the `golang` branch, one replica, taking no traffic:
 
-    harbor.cyverse.org/de/data-info-next:golang@sha256:0ec7e9e1e173a2b4295361aa7217a58e9d1f89b68c787c64b4032bbce2f13d4f
+    harbor.cyverse.org/de/data-info-next:golang@sha256:44111eae4601ae1b1d83ae23e611630541de99e8fb6a85c7de31b935e5423e4f
 
-To bring it up once blocker 2 clears: set `data_info_next_enabled: true` in the QA inventory
-(`~/work/src/gitlab.cyverse.org/core-sw/qa-deployment/inventory/group_vars/all.yaml`, which
-has an unrelated uncommitted edit in it — do not commit that) and run
-`deploy_it.yml --tags data-info-next`. It is gated off by default and deliberately absent
-from `kubernetes.yml`'s deploy-all list.
+It is gated off by default and deliberately absent from `kubernetes.yml`'s deploy-all list, so
+it comes up only when asked for by name:
+
+    ansible-playbook -i <qa-inventory> deploy_it.yml --tags data-info-next -e data_info_next_enabled=true
+
+`data_info_next_enabled` is passed on the command line rather than written into the QA
+inventory, so nothing else brings it up. The inventory has an unrelated uncommitted edit in
+it — do not commit that.
+
+Rebuild with `build_it.yml --tags data-info-next`; the role's `git_ref` defaults to `golang`,
+and `-e data_info_next_git_ref=<branch>` builds a feature branch instead. The build rewrites
+`files/data-info-next.json` and never commits it.
 
 ## Open pull requests
 
 | PR | Base | What |
 |---|---|---|
-| data-info#103 | `golang` | the route audit and its permanent guard |
-| data-info#100 | `golang` | shadow harness async tier, multi-step cases, error-code coverage |
+| data-info#104 | `golang` | this document |
 | data-info#102 | `main` | on-demand CI build for the data-info-next image |
 | data-info#98 | `main` | drops a dead `heuristomancer` import from the Clojure tree |
+| deployments#110 | `main` | points the data-info-next descriptor at the completed port |
 | deployments#106 | `main` | info-typer's HTTP endpoint — workstream C |
 | info-typer#14 | `main` | info-typer's HTTP API — workstream C |
 | terrain#339 | `main` | terrain repointed at info-typer — workstream C |
@@ -88,30 +93,40 @@ those have deployed. data-info#98 is independent.
 
 ## The verification harness
 
-`cmd/dishadow` sends the same request to both services and diffs the responses **and the
-resulting state**. State diffing is what catches the real bugs: a `POST /sharer` can return
-an identical response while having set the inherit bit on the wrong collection.
+`docs/shadow-baseline.md` is the record: **174 matching cases and 7 differences**, each of the
+seven a deliberate deviation entered in `docs/deferred-fixes.md`. That file is the
+diff-acceptance record the cutover plan calls for -- the harness deliberately has no
+expected-difference table, so the matching is a person's job and that is what they match
+against. A difference with no entry is a defect.
 
-121 cases across 6 groups, in `test/shadow/catalog/`. Three tiers: read (shared fixture),
-write (paired `/A/` and `/B/` subtrees, response plus state compared), and async (the same,
-plus waiting for the task to carry an end date — the end date rather than the last status,
-because an absent end date is what holds a path lock). Cases can carry `before` steps to set
-up state, which is what lets restore run after a delete.
+Run it **one group at a time** with `scripts/run-group.sh <group> <run-id>`. A whole-catalog
+run takes twenty minutes and gets cut short; a group takes two to five. The script sets its
+own kubeconfig and refuses a production context, which is not paranoia -- shells here export
+`KUBECONFIG` pointing at prod.
 
-It reports which error codes a run elicited. That number is currently **unknown**, because
-the harness has never run against both services — it needs blocker 2 cleared. Until then the
-"every error code exercised" gate is unmet, not assumed.
+Four things the harness cannot catch, learned by it failing to:
+
+- **A registered route that is half implemented.** The download gap passed a route audit.
+  A grep for `TODO|not yet|until then|arrives with` over your own tree found it in seconds.
+- **A case that never reaches the code it names.** Every sharing case named the caller
+  themselves or a nonexistent user, so all of them stopped at a validator. That hid a bug
+  where no file could be unshared at all.
+- **Anything after the first difference in a case.** It reports one difference per kind, so a
+  status trail that diverges early conceals everything later. Four runs said `delete-a-file`
+  differs, and each time it was a different, deeper problem.
+- **A normalisation that is too greedy.** It does not fail loudly, it invents differences. A
+  run id of `c1` was substituted inside uuids and produced nine spurious differences.
 
 ## What I would do next
 
-1. **Port manifest and chunking** (`page_tabular.clj`, 165 lines; `manifest.clj`, 60). These
-   are user-visible and the largest remaining piece.
-2. **Port `/stat-lister`**, then `/creatability-marker` and `/navigation/root`.
-3. The five with no known caller last, but do port them — keeping the surface identical was a
-   contract decision, and dropping an endpoint should be deliberate.
-4. Merge workstream C in its order.
-5. Once the iRODS limit is raised: deploy `data-info-next`, run the harness, and let the
-   error-code coverage number tell us what the catalog is actually missing.
+1. **Merge the workstream C chain**, in order: info-typer#14, deployments#106, then
+   terrain#339. Nothing in data-info depends on it, but the cutover does.
+2. **Understand the HIERARCHY_ERROR**, or accept that soak noise will include it.
+3. **Soak.** The service is deployed, takes no traffic, and can be pointed at. The plan's
+   stage-3 preconditions are otherwise a matter of running the harness repeatedly and
+   watching it stay at seven.
+4. **Register the upload cleanup as a tracked async task** (deferred fix 20). Small, and the
+   only known behavioural gap left that is not a deliberate deviation.
 
 ## Traps worth knowing
 
