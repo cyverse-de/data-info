@@ -56,6 +56,11 @@ func (m Move) move(
 	sources, destinations []string,
 	progress worker.Progress,
 ) error {
+	// A multi-path move is bracketed the way the reference brackets it, and the length
+	// validation it reports up front covers the whole list rather than each source.
+	progress(pathsetSeveral, actionBegin)
+	progress(pathsetSeveral, actionValidate)
+
 	for i, source := range sources {
 		if err := ctx.Err(); err != nil {
 			// Shutdown. Stopping here leaves what has already moved in place and lets the
@@ -67,6 +72,8 @@ func (m Move) move(
 			return err
 		}
 	}
+
+	progress(pathsetSeveral, actionEnd)
 	return nil
 }
 

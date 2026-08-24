@@ -73,6 +73,8 @@ func (d Delete) delete(
 	trashPaths map[string]string,
 	progress worker.Progress,
 ) error {
+	progress(pathsetDeleted, actionBegin)
+
 	for i, path := range requested {
 		if err := ctx.Err(); err != nil {
 			return fmt.Errorf("the delete was stopped after %d of %d paths: %w", i, len(requested), err)
@@ -128,6 +130,8 @@ func (d Delete) delete(
 
 		progress(path, actionEndDelete)
 	}
+
+	progress(pathsetDeleted, actionEnd)
 	return nil
 }
 

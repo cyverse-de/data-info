@@ -61,11 +61,20 @@ func HTTPErrorHandler(logErr func(echo.Context, *Error, error)) echo.HTTPErrorHa
 
 		status := apiErr.HTTPStatus()
 
-		// A few routes contract on the status alone. HEAD has no body by definition -- but
-		// it still carries the content type the body would have had, which is what the
-		// reference sends and what a client reading only the headers sees.
+		// A few routes contract on the status alone, and HEAD has no body by definition.
+		//
+		// It still carries a content type when the *request* was rejected before reaching
+		// the handler, because that response is rendered by the validation middleware like
+		// any other. When the handler itself answers, it answers with a bare status:
+		// entry.clj's id-entry returns ring's not-found, forbidden and
+		// unprocessable-entity, none of which set a header. So the two halves of this
+		// route's contract carry different headers, and only a schema failure is labelled.
 		if c.Request().Method == http.MethodHead {
-			setContentType(c, contentTypeFor(apiErr, raw))
+			var contentType string
+			if apiErr.Schema {
+				contentType = JSONContentType
+			}
+			setContentType(c, contentType)
 			report(logErr, c, apiErr, c.NoContent(status))
 			return
 		}

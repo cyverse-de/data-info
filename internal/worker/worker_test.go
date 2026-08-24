@@ -25,6 +25,11 @@ type fakeTasks struct {
 
 	// failuresLeft makes the next N posts fail, to exercise the retry budgets.
 	failuresLeft int
+
+	// slowProgress delays each progress post, modelling a degraded async-tasks. The
+	// terminal status is deliberately unaffected: what the flush bound protects is the
+	// release of the job's paths, and only the progress queue can delay it.
+	slowProgress time.Duration
 }
 
 func (f *fakeTasks) GetByID(context.Context, string) (*asynctasks.Task, error) {
@@ -38,6 +43,10 @@ func (f *fakeTasks) GetByID(context.Context, string) (*asynctasks.Task, error) {
 }
 
 func (f *fakeTasks) AddStatus(_ context.Context, _ string, status asynctasks.Status) error {
+	if f.slowProgress > 0 && status.Status == asynctasks.StatusRunning {
+		time.Sleep(f.slowProgress)
+	}
+
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
@@ -344,4 +353,95 @@ func TestProgressIsSafeFromSeveralGoroutines(t *testing.T) {
 		t.Fatalf("Start: %v", err)
 	}
 	shutdown(t, runner)
+}
+
+// TestProgressIsFlushedBeforeTheTerminalStatus covers the status trail, which is contract:
+// terrain's move poller reads it to show a user what an operation is doing.
+//
+// A fast job finishes before the background sender has posted anything, so discarding the
+// buffer at that point loses the whole trail. A shadow run against QA reported exactly that
+// -- a rename came back as "begin" then "completed", three statuses short of the reference.
+func TestProgressIsFlushedBeforeTheTerminalStatus(t *testing.T) {
+	tasks := &fakeTasks{}
+	runner := testRunner(tasks)
+
+	if err := runner.Start("/tasks/abc", "move", JobFunc(
+		func(_ context.Context, _ *asynctasks.Task, progress Progress) error {
+			for _, action := range []string{"begin", "validated-path-lengths", "did-rename", "end"} {
+				progress("/a/path", action)
+			}
+			return nil
+		},
+	)); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	shutdown(t, runner)
+
+	var actions []string
+	for _, s := range tasks.progress() {
+		if s.Status == asynctasks.StatusRunning {
+			actions = append(actions, s.Detail)
+		}
+	}
+
+	want := []string{
+		"[test-instance] /a/path: begin",
+		"[test-instance] /a/path: validated-path-lengths",
+		"[test-instance] /a/path: did-rename",
+		"[test-instance] /a/path: end",
+	}
+	if len(actions) != len(want) {
+		t.Fatalf("progress = %v, want %v", actions, want)
+	}
+	for i := range want {
+		if actions[i] != want[i] {
+			t.Errorf("progress[%d] = %q, want %q", i, actions[i], want[i])
+		}
+	}
+
+	if terminal := tasks.terminal(); len(terminal) != 1 || terminal[0].Status != asynctasks.StatusCompleted {
+		t.Errorf("terminal = %v, want one completed status", terminal)
+	}
+}
+
+// TestProgressFlushDoesNotOutlastItsDeadline is the other half of the same decision. The
+// terminal status is the only thing that releases the job's paths, so a slow async-tasks
+// must not be able to hold them: the flush gives up and lets it through.
+func TestProgressFlushDoesNotOutlastItsDeadline(t *testing.T) {
+	// A full buffer at this rate is over a minute of draining, against a five-second bound.
+	tasks := &fakeTasks{slowProgress: time.Second}
+	runner := testRunner(tasks)
+
+	start := time.Now()
+	if err := runner.Start("/tasks/abc", "move", JobFunc(
+		func(_ context.Context, _ *asynctasks.Task, progress Progress) error {
+			for i := 0; i < progressBuffer; i++ {
+				progress("/a/path", "step")
+			}
+			return nil
+		},
+	)); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	// Waited for directly rather than through Shutdown, whose own budget is the same order
+	// as the flush deadline and would be what the test measured.
+	deadline := time.Now().Add(30 * time.Second)
+	for len(tasks.terminal()) == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("the terminal status never arrived; the flush deadline did not bound it")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	// The bound plus one post already in flight, with room to spare. Unbounded draining
+	// would be progressBuffer seconds.
+	if elapsed := time.Since(start); elapsed > progressFlushDeadline+5*time.Second {
+		t.Errorf("the terminal status took %s, want under %s", elapsed, progressFlushDeadline+5*time.Second)
+	}
+
+	// And the trail is not empty: the flush posts what it can before giving up.
+	if len(tasks.progress()) < 2 {
+		t.Errorf("progress = %d statuses, want the flush to have landed some", len(tasks.progress()))
+	}
 }

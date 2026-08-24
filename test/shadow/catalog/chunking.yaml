@@ -180,12 +180,18 @@ cases:
     query: {user: "{{.User}}", separator: ",", page: "1", size: "1000"}
     seed: {filename: table-ragged.csv, content: "a,b,c\nd\ne,f\n"}
 
+  # Cannot be run as a paired case. Fixtures are built through the reference so that a
+  # comparison never depends on the service under test being correct -- and the reference
+  # cannot create a zero-byte object at all (deferred fix 8), so the seed fails before the
+  # comparison starts. The Go side's handling of an empty file is covered by
+  # TestParseDelimited instead.
   - id: tabular-empty-file
     tier: write
     method: GET
     path: /data/{{.SeedID}}/chunks-tabular
     query: {user: "{{.User}}", separator: ",", page: "1", size: "1000"}
     seed: {filename: table-empty.csv, content: ""}
+    skip: the reference cannot upload a zero-byte file, so this fixture cannot be built
 
   - id: tabular-page-zero
     tier: write

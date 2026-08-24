@@ -265,22 +265,50 @@ func TestNoContentTypeMeansNoHeader(t *testing.T) {
 	}
 }
 
-// TestHeadCarriesTheContentType covers a HEAD, which has no body but still describes the one
-// it would have had.
-func TestHeadCarriesTheContentType(t *testing.T) {
-	e := newTestEcho()
-	e.HEAD("/x", func(echo.Context) error {
-		return New(ErrNotAUser).AsSchemaFailure().WithStatus(http.StatusUnprocessableEntity)
-	})
-
-	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, httptest.NewRequest(http.MethodHead, "/x", nil))
-
-	if got := rec.Header().Get(echo.HeaderContentType); got != JSONContentType {
-		t.Errorf("Content-Type = %q, want %q", got, JSONContentType)
+// TestHeadContentTypeDependsOnWhoRejected covers both halves of the HEAD contract.
+//
+// A request rejected before the handler is rendered by the validation middleware and carries
+// a content type; one the handler answers itself carries none, because id-entry returns
+// ring's bare not-found and unprocessable-entity. A shadow run reported each half in turn --
+// first setting no type at all, then setting it on both.
+func TestHeadContentTypeDependsOnWhoRejected(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{
+			name: "a request rejected by validation is labelled",
+			err:  New(ErrIllegalArgument).AsSchemaFailure().WithStatus(http.StatusBadRequest),
+			want: JSONContentType,
+		},
+		{
+			name: "an id the handler could not resolve is not",
+			err:  New(ErrDoesNotExist).WithStatus(http.StatusNotFound),
+			want: "",
+		},
+		{
+			name: "a user the handler could not resolve is not",
+			err:  New(ErrNotAUser).WithStatus(http.StatusUnprocessableEntity),
+			want: "",
+		},
 	}
-	if rec.Body.Len() != 0 {
-		t.Errorf("body = %q, want empty for a HEAD", rec.Body.String())
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := newTestEcho()
+			e.HEAD("/x", func(echo.Context) error { return tt.err })
+
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, httptest.NewRequest(http.MethodHead, "/x", nil))
+
+			if got := rec.Header().Get(echo.HeaderContentType); got != tt.want {
+				t.Errorf("Content-Type = %q, want %q", got, tt.want)
+			}
+			if rec.Body.Len() != 0 {
+				t.Errorf("body = %q, want empty for a HEAD", rec.Body.String())
+			}
+		})
 	}
 }
 

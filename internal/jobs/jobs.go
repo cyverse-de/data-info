@@ -60,6 +60,16 @@ const (
 	actionEnd      = "end"
 )
 
+// The pseudo-paths a multi-path job brackets its trail with. They sit in the path position
+// of a status detail, where a real path goes, because the reference puts them there: a
+// status reading "[instance] deleted paths: begin" is what a client sees before the first
+// path is touched. They are literal strings and not derived from anything, so they are
+// spelled here once.
+const (
+	pathsetDeleted = "deleted paths"
+	pathsetSeveral = "several paths"
+)
+
 // notify sends a completion notification, swallowing a failure.
 //
 // The operation is already done by the time this runs. Failing the job because the user could
