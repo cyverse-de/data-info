@@ -5,8 +5,6 @@ import (
 	_ "embed"
 	"fmt"
 	"strings"
-
-	"github.com/lib/pq"
 )
 
 //go:embed sql/paged_folder.sql
@@ -17,19 +15,15 @@ type SortColumn string
 
 // sortColumns maps the sort-field vocabulary onto catalog columns.
 //
-// Both spellings are accepted, matching resolve-sort-field: the API's names, and the raw
-// column names that clj-icat-direct also allowed through.
+// These five names and no others: the paging schema declares sort-field as an enum of them,
+// so a request naming a catalog column directly is rejected before the handler runs. Adding
+// the column names here would make this service accept a request the reference refuses.
 var sortColumns = map[string]SortColumn{
 	"datecreated":  "create_ts",
 	"datemodified": "modify_ts",
 	"name":         "base_name",
 	"path":         "full_path",
 	"size":         "data_size",
-	"create_ts":    "create_ts",
-	"modify_ts":    "modify_ts",
-	"base_name":    "base_name",
-	"full_path":    "full_path",
-	"data_size":    "data_size",
 }
 
 // EntityType selects what a listing contains.
@@ -83,15 +77,21 @@ func ResolveSortColumn(field string) (SortColumn, error) {
 	return "", fmt.Errorf("icat: %q is not a sortable field", field)
 }
 
-// ResolveSortDirection maps a sort-dir parameter onto a direction.
+// ResolveSortDirection maps a sort-dir parameter onto a direction, defaulting to ascending.
 //
-// An unrecognised value means ascending, silently. That is what resolve-sort-dir does -- its
-// case has a default -- and callers rely on lowercase asc working.
-func ResolveSortDirection(dir string) SortDirection {
-	if strings.EqualFold(strings.TrimSpace(dir), "desc") {
-		return SortDescending
+// The two accepted spellings are upper case and nothing else passes: the parameter is
+// declared as an enum of "ASC" and "DESC", so a lowercase "desc" fails coercion and is
+// answered as a bad request rather than read as a direction. Accepting it here would have
+// this service reverse a page where the reference refuses the request outright.
+func ResolveSortDirection(dir string) (SortDirection, error) {
+	switch SortDirection(dir) {
+	case "", SortAscending:
+		return SortAscending, nil
+	case SortDescending:
+		return SortDescending, nil
+	default:
+		return "", fmt.Errorf("icat: %q is not a sort direction", dir)
 	}
-	return SortAscending
 }
 
 // ListingQuery selects a page of a collection's children.
@@ -171,25 +171,6 @@ func pagedFolder(ctx context.Context, qr queryer, q ListingQuery) ([]ListingRow,
 		direction = SortAscending
 	}
 
-	var infoTypes any
-	if len(q.InfoTypes) > 0 {
-		lowered := make([]string, 0, len(q.InfoTypes))
-		for _, t := range q.InfoTypes {
-			lowered = append(lowered, strings.ToLower(t))
-		}
-		infoTypes = pq.Array(lowered)
-	}
-
-	var groupIDs any
-	if len(q.GroupIDs) > 0 {
-		groupIDs = pq.Array(q.GroupIDs)
-	}
-
-	attribute := q.InfoTypeAttribute
-	if attribute == "" {
-		attribute = DefaultInfoTypeAttribute
-	}
-
 	entityType := q.EntityType
 	if entityType == "" {
 		entityType = EntityAny
@@ -199,8 +180,9 @@ func pagedFolder(ctx context.Context, qr queryer, q ListingQuery) ([]ListingRow,
 
 	var rows []ListingRow
 	err := qr.SelectContext(ctx, &rows, statement,
-		strings.TrimRight(q.Path, "/"), q.User, q.Zone, groupIDs,
-		infoTypes, q.IncludeUnknownInfoType, limit, q.Offset, attribute, string(entityType))
+		strings.TrimRight(q.Path, "/"), q.User, q.Zone, groupIDArray(q.GroupIDs),
+		infoTypeArray(q.InfoTypes), q.IncludeUnknownInfoType, limit, q.Offset,
+		infoTypeAttributeOr(q.InfoTypeAttribute), string(entityType))
 	if err != nil {
 		return nil, fmt.Errorf("icat: listing %q: %w", q.Path, err)
 	}
@@ -238,14 +220,9 @@ func foldersInFolder(ctx context.Context, qr queryer, q ListingQuery) ([]Listing
 		return nil, fmt.Errorf("icat: a user and zone are required when resolving groups")
 	}
 
-	var groupIDs any
-	if len(q.GroupIDs) > 0 {
-		groupIDs = pq.Array(q.GroupIDs)
-	}
-
 	var rows []ListingRow
 	err := qr.SelectContext(ctx, &rows, sqlFoldersInFolder,
-		strings.TrimRight(q.Path, "/"), q.User, q.Zone, groupIDs)
+		strings.TrimRight(q.Path, "/"), q.User, q.Zone, groupIDArray(q.GroupIDs))
 	if err != nil {
 		return nil, fmt.Errorf("icat: listing subfolders of %q: %w", q.Path, err)
 	}

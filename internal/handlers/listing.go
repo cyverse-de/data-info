@@ -275,11 +275,16 @@ func (h *Listings) FolderListing(c echo.Context) error {
 
 	infoTypes, includeUnknown := infoTypeFilter(c)
 
+	direction, err := icat.ResolveSortDirection(c.QueryParam("sort-dir"))
+	if err != nil {
+		return schemaError(err.Error())
+	}
+
 	rows, err := scope.Listing(ctx, rods.ListingQuery{
 		Path:                   path,
 		EntityType:             entityType,
 		SortColumn:             column,
-		SortDirection:          icat.ResolveSortDirection(c.QueryParam("sort-dir")),
+		SortDirection:          direction,
 		Limit:                  limit,
 		Offset:                 offset,
 		InfoTypes:              infoTypes,

@@ -162,6 +162,7 @@ func registerDataRoutes(e *echo.Echo, cfg *config.Config, log *logrus.Entry, dep
 	ok := apierror.WithStyle(apierror.StyleOK)
 	e.POST("/stat-gatherer", stats.GatherPlain, ok)
 	e.POST("/path-info", stats.Gather, ok)
+	e.POST("/stat-lister", stats.Listing, ok)
 	e.POST("/existence-marker", reads.Existence, ok)
 	e.POST("/creatability-marker", reads.Creatability, ok)
 	e.GET("/navigation/root", listings.Root, ok)

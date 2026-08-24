@@ -41,9 +41,6 @@ var movedToInfoTyper = map[operation]string{
 // unreachable -- they are raised only by the tabular paging endpoints, which had not been
 // written.
 var notYetPorted = map[operation]string{
-	// Phase 5, read-only endpoints.
-	{"POST", "/stat-lister"}: "terrain clients/data_info/raw.clj paged stat by uuid",
-
 	// Phase 6, chunking and manifest. terrain calls all three by-id forms, which is what
 	// backs file preview in the DE.
 	{"GET", "/data/{data-id}/manifest"}:       "terrain routes/filesystem.clj GET /file/manifest",

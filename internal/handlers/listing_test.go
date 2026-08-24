@@ -86,7 +86,6 @@ func TestListingSortOrderIsPassedThrough(t *testing.T) {
 		{"descending by name", "sort-field=name&sort-dir=DESC", []string{"c.txt", "b.txt", "a.txt"}},
 		{"ascending by size", "sort-field=size&sort-dir=ASC", []string{"a.txt", "b.txt", "c.txt"}},
 		{"descending by size", "sort-field=size&sort-dir=DESC", []string{"c.txt", "b.txt", "a.txt"}},
-		{"lowercase direction is accepted", "sort-field=name&sort-dir=desc", []string{"c.txt", "b.txt", "a.txt"}},
 	}
 
 	for _, tt := range tests {
@@ -115,17 +114,34 @@ func TestListingSortOrderIsPassedThrough(t *testing.T) {
 	}
 }
 
-// TestListingRejectsUnsortableField is a deliberate improvement over the reference, which
-// lets the value reach a bare exception and answers 500 with no code.
-func TestListingRejectsUnsortableField(t *testing.T) {
+// TestListingRejectsBadSortParameters covers the values the paging schema declares as enums.
+// A sort-field outside the enum is a deliberate improvement over the reference, which lets
+// it reach a bare exception and answers 500 with no code; a sort-dir outside it is a plain
+// match, since ring-swagger rejects the request before the handler runs.
+func TestListingRejectsBadSortParameters(t *testing.T) {
 	deps, _ := testDeps(t)
 	listings := NewListings(deps)
 
-	rec := serveRoute(t, apierror.StyleTrap, http.MethodGet, "/data/path/:zone/*",
-		"/data/path/iplant/home/wregglej?user="+testUser+"&limit=50&sort-field=nonsense", listings.FolderListing)
+	tests := []struct {
+		name  string
+		query string
+	}{
+		{"unsortable field", "sort-field=nonsense"},
+		{"catalog column rather than the API name", "sort-field=base_name"},
+		{"lowercase direction", "sort-field=name&sort-dir=desc"},
+		{"unknown direction", "sort-field=name&sort-dir=sideways"},
+	}
 
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want 400 (%s)", rec.Code, rec.Body.String())
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := serveRoute(t, apierror.StyleTrap, http.MethodGet, "/data/path/:zone/*",
+				"/data/path/iplant/home/wregglej?user="+testUser+"&limit=50&"+tt.query,
+				listings.FolderListing)
+
+			if rec.Code != http.StatusBadRequest {
+				t.Errorf("status = %d, want 400 (%s)", rec.Code, rec.Body.String())
+			}
+		})
 	}
 }
 

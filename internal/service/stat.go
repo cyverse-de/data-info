@@ -162,6 +162,19 @@ func StatsOf(ctx context.Context, view rods.View, user string, paths []string, o
 		return nil, err
 	}
 
+	return StatsOfLoaded(ctx, view, user, paths, opts)
+}
+
+// StatsOfLoaded is StatsOf for paths the view has already resolved.
+//
+// A page of a listing arrives with its rows, so asking the catalog for them a second time
+// would be a round trip for something already in hand. Everything else -- the access lists
+// and child counts a decorated stat may need -- is still batched.
+func StatsOfLoaded(ctx context.Context, view rods.View, user string, paths []string, opts StatOptions) (map[string]Stat, error) {
+	if len(paths) == 0 {
+		return map[string]Stat{}, nil
+	}
+
 	// Access lists and child counts are only fetched when something asks for them, and
 	// then in one query rather than per path. Without the batch here each collection's
 	// counts would cost a query of their own, which for an unfiltered request over a

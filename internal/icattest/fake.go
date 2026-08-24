@@ -57,6 +57,8 @@ type Fake struct {
 	CountChildrenCalls   atomic.Int64
 	PagedFolderCalls     atomic.Int64
 	FoldersInFolderCalls atomic.Int64
+	PagedUUIDsCalls      atomic.Int64
+	CountUUIDsCalls      atomic.Int64
 	PathsPerGetItems     []int
 }
 
@@ -407,3 +409,71 @@ func (f *Fake) Ping(context.Context) error { return f.Err }
 
 // Close implements icat.Store.
 func (f *Fake) Close() error { return nil }
+
+// PagedUUIDs implements icat.Reader.
+//
+// Like PagedFolder it sorts and pages in memory, so a test can check the order and the page
+// boundary rather than only that something came back.
+func (f *Fake) PagedUUIDs(ctx context.Context, q icat.UUIDListingQuery) ([]icat.ListingRow, error) {
+	f.PagedUUIDsCalls.Add(1)
+
+	matched, err := f.rowsForUUIDs(ctx, q.UUIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	sort.SliceStable(matched, func(i, j int) bool {
+		if matched[i].Type != matched[j].Type {
+			return matched[i].Type == icat.ObjectTypeCollection
+		}
+		if q.SortDirection == icat.SortDescending {
+			return compareRows(matched[j], matched[i], q.SortColumn)
+		}
+		return compareRows(matched[i], matched[j], q.SortColumn)
+	})
+
+	if q.Offset >= len(matched) {
+		return nil, nil
+	}
+	end := min(q.Offset+q.Limit, len(matched))
+	return matched[q.Offset:end], nil
+}
+
+// CountUUIDs implements icat.Reader.
+func (f *Fake) CountUUIDs(ctx context.Context, q icat.UUIDListingQuery) (int64, error) {
+	f.CountUUIDsCalls.Add(1)
+
+	matched, err := f.rowsForUUIDs(ctx, q.UUIDs)
+	if err != nil {
+		return 0, err
+	}
+	return int64(len(matched)), nil
+}
+
+// rowsForUUIDs resolves data ids to the rows carrying them, skipping ids that name nothing.
+func (f *Fake) rowsForUUIDs(ctx context.Context, uuids []string) ([]icat.Row, error) {
+	if err := f.wait(ctx); err != nil {
+		return nil, err
+	}
+	if f.Err != nil {
+		return nil, f.Err
+	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	matched := make([]icat.Row, 0, len(uuids))
+	for _, id := range uuids {
+		p, ok := f.UUIDs[id]
+		if !ok {
+			continue
+		}
+		row, ok := f.Rows[p]
+		if !ok {
+			continue
+		}
+		row.UUID = sql.NullString{String: id, Valid: true}
+		matched = append(matched, row)
+	}
+	return matched, nil
+}

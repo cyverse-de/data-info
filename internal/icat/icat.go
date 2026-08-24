@@ -48,6 +48,15 @@ type Reader interface {
 	// FoldersInFolder returns every subfolder of a collection, unpaged.
 	FoldersInFolder(ctx context.Context, q ListingQuery) ([]ListingRow, error)
 
+	// PagedUUIDs returns a sorted page of the items carrying a set of data ids. It is the
+	// second query the iRODS protocol cannot express, for the same reasons as the paged
+	// folder listing: a union of two object types, sorted and paged together.
+	PagedUUIDs(ctx context.Context, q UUIDListingQuery) ([]ListingRow, error)
+
+	// CountUUIDs returns how many of a set of data ids name something the user can see,
+	// which is the total reported alongside a page from PagedUUIDs.
+	CountUUIDs(ctx context.Context, q UUIDListingQuery) (int64, error)
+
 	// LookupUser reports what kind of account a name refers to, or UserKindNone if the
 	// zone has no such account.
 	LookupUser(ctx context.Context, user, zone string) (UserKind, error)
