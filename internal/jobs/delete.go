@@ -99,8 +99,12 @@ func (d Delete) delete(
 			continue
 		}
 
-		if err := scope.Move(ctx, path, trashPath); err != nil {
-			return fmt.Errorf("moving %q to the trash: %w", path, err)
+		// Trashing is a move, and it reports one: the reference reaches it through the
+		// same function a rename does, so the trail carries begin, validated-path-lengths,
+		// did-rename and end for the path -- permission repair included, before the end --
+		// before anything specific to trashing appears.
+		if err := moveOne(ctx, scope, d.Deps, user, path, trashPath, progress); err != nil {
+			return err
 		}
 
 		// Recorded after the move, on the trashed object, so that restoring it can put it
@@ -115,18 +119,6 @@ func (d Delete) delete(
 			return fmt.Errorf("recording where %q came from: %w", trashPath, err)
 		}
 		progress(path, actionSetTrashOrigin)
-
-		err = service.RepairPermissions(ctx, scope, service.MoveContext{
-			Source:      path,
-			Destination: trashPath,
-			User:        user,
-			AdminUsers:  d.Deps.AdminUsers,
-			ProxyUser:   d.Deps.ProxyUser,
-			Layout:      d.Deps.Layout,
-		})
-		if err != nil {
-			return fmt.Errorf("repairing permissions after trashing %q: %w", path, err)
-		}
 
 		progress(path, actionEndDelete)
 	}

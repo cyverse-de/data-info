@@ -54,10 +54,13 @@ type Deps struct {
 // Progress action names. They appear in a task's status detail and someone reads them when a
 // job goes wrong, so they say what happened rather than which function ran.
 const (
-	actionBegin    = "begin"
-	actionValidate = "validated-path-lengths"
-	actionRenamed  = "did-rename"
-	actionEnd      = "end"
+	actionBegin = "begin"
+	// actionErrorDeleting marks a path that could not be removed. The job carries on: the
+	// reference collects the failures and reports them at the end rather than stopping.
+	actionErrorDeleting = "error-deleting"
+	actionValidate      = "validated-path-lengths"
+	actionRenamed       = "did-rename"
+	actionEnd           = "end"
 )
 
 // The pseudo-paths a multi-path job brackets its trail with. They sit in the path position
@@ -66,8 +69,12 @@ const (
 // path is touched. They are literal strings and not derived from anything, so they are
 // spelled here once.
 const (
+	// pathsetDeleted brackets both a delete and a restore. The same string for both is the
+	// reference's, not a copy-paste here: restore-paths-thread opens with "deleted paths"
+	// as well, and a client reading the trail sees it on either operation.
 	pathsetDeleted = "deleted paths"
 	pathsetSeveral = "several paths"
+	pathsetTrash   = "delete trash"
 )
 
 // notify sends a completion notification, swallowing a failure.
