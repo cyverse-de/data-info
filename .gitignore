@@ -1,4 +1,7 @@
 .idea/
+target/
+.lein-failures
+.clj-kondo/
 *.iml
 .DS_Store
 .env
