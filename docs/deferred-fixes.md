@@ -131,8 +131,8 @@ compojure-api's coercion of the multipart parameters rather than from any delibe
 
 **Not reproduced, by decision.** Go's multipart reader decodes the name and the upload
 succeeds. This is the one entry on this list that *widens* what the service accepts, and it
-was signed off as an improvement rather than a regression to reproduce: the reference's 400
-is an accident of its coercion layer, not a rule anybody wrote. The shadow case
+was signed off as an improvement rather than a regression to reproduce: the Clojure service's
+400 is an accident of its coercion layer, not a rule anybody wrote. The shadow case
 `upload-a-utf8-name` will keep reporting the difference until the Clojure service is gone,
 which is the intended outcome, not a defect to chase.
 
@@ -156,7 +156,7 @@ in view, not during the port.
 
 ## 11. Content type is read from the name only
 
-The reference detects from the name and then, whenever the name gives
+The Clojure service detects from the name and then, whenever the name gives
 `application/octet-stream` or `text/plain`, **opens the data object and reads its contents**
 (`util/irods.clj` `detect-media-type`). `services/stat.clj` calls that for every non-directory
 path whenever `content-type` is among the requested fields, which is the default — so a
@@ -165,12 +165,12 @@ path whenever `content-type` is among the requested fields, which is the default
 **Not reproduced,** deliberately: that is the round-trip-per-path cost the whole hybrid split
 exists to avoid (plan risk 12). The table closes the gap for every type whose name Tika finds
 decisive. What is left is a file whose name says nothing — most visibly one with no extension
-at all, which the reference reads and reports as `text/plain` where this reports
+at all, which the Clojure service reads and reports as `text/plain` where this reports
 `application/octet-stream`. Pinned by the shadow case `upload-with-no-extension`.
 
 The one place sniffing is free is the download path, where the stream is already open and the
-reference sniffs from it too (`services/entry.clj` `file-entry`). When that endpoint lands,
-detect there from the open stream rather than reaching back into the catalog.
+Clojure service sniffs from it too (`services/entry.clj` `file-entry`). When that endpoint
+lands, detect there from the open stream rather than reaching back into the catalog.
 
 ## 12. `POST /data/directories` with `"/"` crashes
 
@@ -184,7 +184,7 @@ nothing or matching a JVM exception message. Pinned by the shadow case
 
 ## 13. `POST /data/directories` acts on uncleaned paths
 
-The reference passes a requested path to iRODS exactly as written, so
+The Clojure service passes a requested path to iRODS exactly as written, so
 `/zone/home/me/a/../b` is checked and created as that literal string; in practice iRODS
 refuses it and the caller gets `ERR_NOT_WRITEABLE` with a 500.
 
@@ -264,14 +264,15 @@ reason. (The comments beside those clauses also describe them backwards — `sta
 asks whether *a* begins with *b*, so clause one finds ancestors of the locked path, not
 descendants.)
 
-**Not reproduced.** `internal/locks` uses `a == b || a starts with b+"/" || b starts with
-a+"/"`, which is what the comments meant. It is strictly more permissive than the reference
-— it can only allow pairs the reference refused spuriously, never allow one it refused for a
-real reason — but it is a behaviour change and is signed off as one here rather than slipped
-in. `TestConflicts` pins both the cases that must still collide and the ones that must not.
+**Not reproduced.** `internal/locks` uses
+`a == b || a starts with b+"/" || b starts with a+"/"`, which is what the comments meant. It
+is strictly more permissive than the Clojure service — it can only allow pairs the Clojure
+service refused spuriously, never allow one it refused for a real reason — but it is a
+behaviour change and is signed off as one here rather than slipped in. `TestConflicts` pins
+both the cases that must still collide and the ones that must not.
 
 
-## 16. A positional read is bounded, where the reference allocates whatever was asked for
+## 16. A positional read is bounded, where the Clojure service allocates whatever was asked for
 
 `read-at-position` allocates a `byte-array` of the requested size before reading anything, so
 `GET /data/{id}/chunks?size=2000000000` allocates two gigabytes. On the JVM that is an
@@ -335,11 +336,10 @@ blank lines of each span so that a newline inside a quoted field is not mistaken
 retried and whether it was eventually removed. `Writes.scheduleTempCleanup` does the same
 retrying in a goroutine and records it only in the log.
 
-**Not a lock difference:** `data-upload-cleanup` is not one of the five types
-`internal/locks` treats as holding a path, matching the reference, so nothing waits on it
-either way. What is lost is the operator's view of it. Registering the task needs no new
-machinery -- `Deps.Creator` is already wired -- so this is a small piece of work rather than
-a blocked one.
+**Not a lock difference:** `data-upload-cleanup` is not one of the five types `internal/locks`
+treats as holding a path, matching the Clojure service, so nothing waits on it either way.
+What is lost is the operator's view of it. Registering the task needs no new machinery --
+`Deps.Creator` is already wired -- so this is a small piece of work rather than a blocked one.
 
 ## 21. An upload's response reports no infoType
 

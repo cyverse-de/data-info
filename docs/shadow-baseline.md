@@ -48,8 +48,8 @@ Against QA on 2026-08-24, candidate at `port-remaining-endpoints`:
 
 | Case | Difference | Entry |
 |---|---|---|
-| `upload-an-empty-file` | reference 500, candidate 200 | 8 — the reference cannot upload a zero-byte file |
-| `upload-a-utf8-name` | reference 400, candidate 200 | 9 — the reference rejects a non-ASCII filename |
+| `upload-an-empty-file` | reference 500, candidate 200 | 8 — the Clojure service cannot upload a zero-byte file |
+| `upload-a-utf8-name` | reference 400, candidate 200 | 9 — the Clojure service rejects a non-ASCII filename |
 | `upload-a-csv` | `infoType` `"csv"` against `""` | 21 — file typing moved to info-typer |
 | `manifest-of-a-name-with-no-extension` | `text/plain` against `application/octet-stream` | 11 — content type from the name only |
 | `tabular-one-page-past-the-end` | reference 500, candidate 200 | 17 — reading past the end of a short file throws |
@@ -58,9 +58,9 @@ Against QA on 2026-08-24, candidate at `port-remaining-endpoints`:
 
 ## Cases that cannot be paired
 
-Three are skipped, and the reason is the same each time: fixtures are built **through the
-reference**, so that a comparison never depends on the service under test already being
-correct — and the reference cannot create these.
+Three are skipped, and the reason is the same each time: fixtures are built
+**through the Clojure service**, so that a comparison never depends on the service under test
+already being correct — and the Clojure service cannot create these.
 
 - `tabular-empty-file`, `download-an-empty-file` — a zero-byte object (entry 8).
 - `download-a-file-whose-name-is-not-ascii` — a non-ASCII filename (entry 9).
@@ -70,10 +70,10 @@ Each is covered by a unit test instead, named in the catalog beside the skip.
 ## Environmental noise, which is not the port
 
 Cases intermittently fail to be compared at all, with the harness reporting an `ERROR` rather
-than a difference. Every one seen so far is the same thing: `ResourceHierarchyException:
-HIERARCHY_ERROR` from iRODS when **reading a file that was just written**. It hits both
-services — the reference threw 92 of them during one run — and re-reading the same path
-afterwards succeeds every time.
+than a difference. Every one seen so far is the same thing:
+`ResourceHierarchyException: HIERARCHY_ERROR` from iRODS when
+**reading a file that was just written**. It hits both services — the Clojure service threw 92
+of them during one run — and re-reading the same path afterwards succeeds every time.
 
 That is a data-store problem rather than a service one, and it is worth resolving before the
 soak: it makes a fully clean run a matter of luck, and during a soak it would look like

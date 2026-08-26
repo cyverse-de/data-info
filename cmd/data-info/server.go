@@ -192,14 +192,13 @@ func registerDataRoutes(e *echo.Echo, cfg *config.Config, log *logrus.Entry, dep
 	e.GET("/data/by-path/chunks/*", chunks.ChunkByPath)
 	e.GET("/data/by-path/chunks-tabular/*", chunks.TabularChunkByPath)
 
-	// Trap-style, unlike its neighbour above: the data routes are wrapped in svc/trap in
-	// the reference, so their codes map through the status table rather than all
-	// answering 500. Verified against the running service, which answers a missing limit
-	// with a 400.
+	// Trap-style, unlike its neighbour above: the data routes are wrapped in svc/trap in the
+	// Clojure service, so their codes map through the status table rather than all answering
+	// 500. Verified against the running service, which answers a missing limit with a 400.
 	e.GET("/data/path/:zone/*", listings.FolderListing)
 
-	// The upload routes are trap-wrapped in the reference, but every error they can raise
-	// comes from the multipart middleware that stores the file, which sits outside the
+	// The upload routes are trap-wrapped in the Clojure service, but every error they can
+	// raise comes from the multipart middleware that stores the file, which sits outside the
 	// trap -- so those errors reach the default handler and answer 500 whatever their code.
 	// Verified against the running service, which answers a forbidden filename with a 500
 	// where the status table says 400.
@@ -233,7 +232,8 @@ func registerDataRoutes(e *echo.Echo, cfg *config.Config, log *logrus.Entry, dep
 	e.PUT("/data/:data-id/permissions/:share-with/:permission", writes.AddPermission)
 	e.DELETE("/data/:data-id/permissions/:unshare-with", writes.RemovePermission)
 
-	// Tickets. These are (ok ...) routes in the reference, so every error code answers 500.
+	// Tickets. These are (ok ...) routes in the Clojure service, so every error code answers
+	// 500.
 	tickets := handlers.NewTickets(hd)
 	e.POST("/tickets", tickets.Add, ok)
 	e.POST("/ticket-lister", tickets.List, ok)
