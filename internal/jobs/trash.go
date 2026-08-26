@@ -62,8 +62,8 @@ func (e EmptyTrash) Run(ctx context.Context, task *asynctasks.Task, progress wor
 			progress(path, actionErrorDeleting)
 		}
 
-		// Reported whether or not the delete worked. The reference puts this outside the
-		// try that catches the failure, so a path that could not be removed still gets an
+		// Reported whether or not the delete worked. The Clojure service puts this outside
+		// the try that catches the failure, so a path that could not be removed still gets an
 		// end-delete after its error-deleting.
 		progress(path, actionEndDelete)
 	}

@@ -136,8 +136,8 @@ func (p *Publisher) reconnect() error {
 		return fmt.Errorf("amqp: opening a channel: %w", err)
 	}
 
-	// Declared on every connect, as the reference does. It is idempotent, and it means a
-	// broker that has been rebuilt does not need this service restarted.
+	// Declared on every connect, as the Clojure service does. It is idempotent, and it means
+	// a broker that has been rebuilt does not need this service restarted.
 	err = channel.ExchangeDeclare(p.cfg.Exchange, "topic", p.cfg.Durable, p.cfg.AutoDelete, false, false, nil)
 	if err != nil {
 		channel.Close()    //nolint:errcheck // the connection is being abandoned

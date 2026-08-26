@@ -69,7 +69,7 @@ func (a *AVUs) Save(c echo.Context) error {
 		return err
 	}
 
-	// The singular validators throughout: that is the family the reference uses on this
+	// The singular validators throughout: that is the family the Clojure service uses on this
 	// route.
 	destDir := paths.Dir(dest)
 	if err := requirePathExists(ctx, scope, destDir); err != nil {
@@ -117,8 +117,9 @@ func (a *AVUs) Save(c echo.Context) error {
 // The visited count is carried through the walk and checked against the request limit. Each
 // item costs a stat, an access list and an HTTP call to the metadata service, so a recursive
 // export of a large collection would otherwise hold a request -- and an iRODS connection --
-// open for thousands of round trips. The reference counts what is under the folder before
-// starting; counting as it goes reaches the same limit without a second recursive query.
+// open for thousands of round trips. The Clojure service counts what is under the folder
+// before starting; counting as it goes reaches the same limit without a second recursive
+// query.
 func (a *AVUs) collect(
 	ctx context.Context,
 	scope *rods.Scope,
@@ -324,8 +325,8 @@ func (a *AVUs) readCSV(ctx context.Context, scope *rods.Scope, src string, separ
 //
 // Always a slice, never nil: the response declares an array and a nil one marshals to null,
 // which breaks a client counting the entries. A row with fewer values than the header has
-// attributes simply carries fewer AVUs -- that is not an error, and the reference zips the
-// two the same way.
+// attributes simply carries fewer AVUs -- that is not an error, and the Clojure service zips
+// the two the same way.
 func csvAVUs(attributes, values []string) []service.AVU {
 	out := make([]service.AVU, 0, len(attributes))
 
@@ -354,7 +355,7 @@ func csvSeparator(raw string) (rune, error) {
 	}
 
 	// Not decoded again. echo has already percent-decoded the query parameter, so a second
-	// pass would reject a literal percent sign -- which the reference accepts.
+	// pass would reject a literal percent sign -- which the Clojure service accepts.
 	runes := []rune(raw)
 	if len(runes) != 1 {
 		return 0, schemaError("separator must be a single character")
@@ -420,9 +421,9 @@ func (a *AVUs) SaveORE(c echo.Context) error {
 	// Both files are created before the resource map is built, even though the resource map
 	// is what is about to be written. It refers to itself and to the DataCite file by the
 	// identifiers iRODS assigns, and an object has no identifier until it exists -- so
-	// building first would produce a map naming itself as the empty string, and only a
-	// second save of the same data set would come out right. The reference creates them
-	// both up front for exactly this reason.
+	// building first would produce a map naming itself as the empty string, and only a second
+	// save of the same data set would come out right. The Clojure service creates them both
+	// up front for exactly this reason.
 	if _, err := scope.WriteFile(ctx, dataCitePath, strings.NewReader(document)); err != nil {
 		return err
 	}

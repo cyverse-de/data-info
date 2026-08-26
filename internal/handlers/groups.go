@@ -249,8 +249,8 @@ func (g *Groups) requireGroupAdmin(ctx context.Context, scope *rods.Scope, user 
 		return nil
 	}
 	// No status of its own. The routes document a 403, but they are written as (ok ...) in
-	// the reference, so the thrown code reaches the default handler and answers 500 -- which
-	// is what callers actually see. See docs/deferred-fixes.md.
+	// the Clojure service, so the thrown code reaches the default handler and answers 500 --
+	// which is what callers actually see. See docs/deferred-fixes.md.
 	return apierror.New(apierror.ErrForbidden)
 }
 

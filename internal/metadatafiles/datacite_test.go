@@ -8,11 +8,11 @@ import (
 	"testing"
 )
 
-// The golden files in testdata were produced by the reference implementation itself --
+// The golden files in testdata were produced by the Clojure service itself --
 // org.cyverse/metadata-files 2.1.2, the library the deployed service calls -- rather than
 // written by hand. These documents go into the data store and DataONE reads them, so the
-// comparison is byte for byte: a different namespace prefix, a different attribute order or
-// a differently escaped quotation mark is a different document.
+// comparison is byte for byte: a different namespace prefix, a different attribute order or a
+// differently escaped quotation mark is a different document.
 func golden(t *testing.T, name string) string {
 	t.Helper()
 
@@ -68,7 +68,7 @@ func TestBuildDataCiteMatchesTheReference(t *testing.T) {
 		{
 			// The escaping is where a Go port most easily diverges: the standard library's
 			// encoder escapes quotation marks, apostrophes, tabs and newlines that the
-			// reference leaves alone.
+			// Clojure service leaves alone.
 			name: "characters that need escaping",
 			avus: []AVU{
 				avu("Identifier", "10.5072/FK2<&>\"'"),
@@ -98,7 +98,7 @@ func TestBuildDataCiteMatchesTheReference(t *testing.T) {
 
 			want := golden(t, tc.golden)
 			if got != want {
-				t.Errorf("the document differs from the reference's.\n got: %s\nwant: %s\nfirst difference at byte %d",
+				t.Errorf("the document differs from the golden file.\n got: %s\nwant: %s\nfirst difference at byte %d",
 					got, want, firstDifference(got, want))
 			}
 		})
@@ -144,7 +144,7 @@ func TestBuildDataCiteReportsMissingAttributes(t *testing.T) {
 }
 
 // A blank value is not a value: an attribute recorded with an empty string is as good as
-// absent, which is how the reference decides what is missing.
+// absent, which is how the Clojure service decides what is missing.
 func TestABlankRequiredValueCountsAsMissing(t *testing.T) {
 	avus := minimalAVUs()
 	for i := range avus {

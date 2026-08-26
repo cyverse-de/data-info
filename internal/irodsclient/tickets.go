@@ -27,8 +27,8 @@ type Ticket struct {
 // ListTickets returns every ticket the connected account can see.
 //
 // iRODS has no way to ask for the tickets on one path, so callers that want those list
-// everything and filter. That is the same shape the reference's query had; what differs is
-// that this filters client-side.
+// everything and filter. That is the same shape the Clojure service's query had; what differs
+// is that this filters client-side.
 func ListTickets(ctx context.Context, s *Session) ([]Ticket, error) {
 	found, err := Do(ctx, s, func(fsys *irodsfs.FileSystem) ([]*types.IRODSTicket, error) {
 		return fsys.ListTickets()

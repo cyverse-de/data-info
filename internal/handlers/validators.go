@@ -13,7 +13,8 @@ import (
 //
 // The two disagree about the envelope for the same condition, they are both live on different
 // endpoints, and callers read the keys. Which family an endpoint uses is decided by which one
-// the reference reached for there, so it is recorded at each call site rather than chosen.
+// the Clojure service reached for there, so it is recorded at each call site rather than
+// chosen.
 
 // requireAllExist rejects a request naming anything that is not there, listing everything
 // missing rather than stopping at the first.
@@ -57,7 +58,7 @@ func requireNoneExist(ctx context.Context, scope *rods.Scope, requested []string
 // requirePathExists rejects one path that is not there, reporting it under the singular key.
 //
 // Its plural sibling above reports a list. Which of the two an endpoint uses is decided by
-// which validator the reference reached for there, and callers read the key.
+// which validator the Clojure service reached for there, and callers read the key.
 func requirePathExists(ctx context.Context, scope *rods.Scope, path string) error {
 	stat, err := scope.Stat(ctx, path).Get(ctx)
 	if err != nil {

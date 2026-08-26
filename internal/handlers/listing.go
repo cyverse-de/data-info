@@ -55,8 +55,8 @@ func (h *Listings) Navigation(c echo.Context) error {
 		return err
 	}
 
-	// Existence is asked as the service's own account so that a folder the caller cannot
-	// read is reported as unreadable rather than as absent. The reference checks the two
+	// Existence is asked as the service's own account so that a folder the caller cannot read
+	// is reported as unreadable rather than as absent. The Clojure service checks the two
 	// separately and the codes differ; asking both as the caller collapses them.
 	if err := h.requireExists(ctx, path); err != nil {
 		return err
@@ -182,11 +182,11 @@ func decodePathSegments(raw string) (string, error) {
 //
 // Defaulting it would be worse than it looks: a caller that forgot it would silently receive
 // the first page of an arbitrarily large folder and have no way to know more existed. The
-// reference raises ERR_MISSING_QUERY_PARAMETER for the same reason.
+// Clojure service raises ERR_MISSING_QUERY_PARAMETER for the same reason.
 func listingLimit(c echo.Context) (int, error) {
 	raw := c.QueryParam("limit")
 	if raw == "" {
-		// The key is "parameters", not "param": that is what the reference's
+		// The key is "parameters", not "param": that is what the Clojure service's
 		// missing-arg validator attaches, and callers read it.
 		return 0, apierror.New(apierror.ErrMissingQueryParam).With("parameters", "limit")
 	}
@@ -236,9 +236,9 @@ func (h *Listings) FolderListing(c echo.Context) error {
 	}
 	defer scope.Close()
 
-	// No caller check on this route. The reference validates the path as the requesting
-	// user and nothing else, so an unknown user is reported as the path not existing --
-	// which is literally true from that user's point of view, since they can see nothing.
+	// No caller check on this route. The Clojure service validates the path as the requesting
+	// user and nothing else, so an unknown user is reported as the path not existing -- which
+	// is literally true from that user's point of view, since they can see nothing.
 	stat, err := scope.Stat(ctx, path).Get(ctx)
 	if err != nil {
 		return err
@@ -261,8 +261,8 @@ func (h *Listings) FolderListing(c echo.Context) error {
 
 	column, err := icat.ResolveSortColumn(c.QueryParam("sort-field"))
 	if err != nil {
-		// The reference lets an unrecognised field reach a bare exception and answers 500
-		// without a code. Reporting it as a bad parameter is a deliberate improvement,
+		// The Clojure service lets an unrecognised field reach a bare exception and answers
+		// 500 without a code. Reporting it as a bad parameter is a deliberate improvement,
 		// recorded in docs/deferred-fixes.md.
 		return schemaError(err.Error())
 	}
@@ -326,9 +326,9 @@ func pathBase(p string) string { return paths.Base(p) }
 //
 // "unknown" means two things at once, and both are needed. It asks for objects that carry no
 // info type at all, and it stays in the list of values to match, because info-typer records
-// the literal string "unknown" on a file it could not identify. The reference does the same:
-// its condition is "the attribute is null OR it is one of these", with "unknown" left among
-// the values. Dropping it here made a folder of untyped files come back empty.
+// the literal string "unknown" on a file it could not identify. The Clojure service does the
+// same: its condition is "the attribute is null OR it is one of these", with "unknown" left
+// among the values. Dropping it here made a folder of untyped files come back empty.
 func infoTypeFilter(c echo.Context) (types []string, includeUnknown bool) {
 	for _, value := range c.QueryParams()["info-type"] {
 		for _, part := range strings.Split(value, ",") {
@@ -365,7 +365,7 @@ func badNameRule(c echo.Context) service.BadNameRule {
 }
 
 // splitAll flattens repeated parameters that may also be comma-separated, which is how the
-// reference accepted them.
+// Clojure service accepted them.
 func splitAll(values []string) []string {
 	var out []string
 	for _, value := range values {
@@ -478,9 +478,9 @@ func (h *Listings) Head(c echo.Context) error {
 
 // findReadme looks for a README directly under a folder, returning nil when there is none.
 //
-// The names are tried in a fixed order and the first that exists wins, matching the
-// reference. A folder that has one reports the whole entry rather than a flag, because the
-// UI renders it.
+// The names are tried in a fixed order and the first that exists wins, matching the Clojure
+// service. A folder that has one reports the whole entry rather than a flag, because the UI
+// renders it.
 //
 // The lookups are dispatched together and then awaited, so six probes cost one round of
 // concurrent work rather than six sequential ones.

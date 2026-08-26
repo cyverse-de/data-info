@@ -81,8 +81,8 @@ func (a *AVUs) get(c echo.Context, whom func(echo.Context) (string, error), incl
 	}
 
 	// The metadata service's view is the base and this service's additions are merged over
-	// it. That order is the reference's, and it means a key this service adds wins -- which
-	// only matters for "path", which the metadata service does not report.
+	// it. That order is the Clojure service's, and it means a key this service adds wins --
+	// which only matters for "path", which the metadata service does not report.
 	out, err := a.deps.Metadata.ListAVUs(ctx, user, service.MetadataTargetType(stat.Type), c.Param("data-id"))
 	if err != nil {
 		return err
@@ -136,7 +136,7 @@ func (a *AVUs) add(c echo.Context, whom func(echo.Context) (string, error), allo
 
 	// After the access checks, not before. A caller who can neither see the item nor write
 	// the AVU they sent is told about the item, which is the failure they can act on -- and
-	// which is the order the reference validates in.
+	// which is the order the Clojure service validates in.
 	if !allowReserved {
 		if err := requireNoReservedAVUs(body.IRODSAVUs); err != nil {
 			return err
@@ -389,8 +389,8 @@ func bindAVUChange(c echo.Context) (avuChangeRequest, error) {
 func requireNoReservedAVUs(avus []service.AVU) error {
 	for _, avu := range avus {
 		if service.IsReservedAVU(avu.Attribute) {
-			// The whole list, not the offending one: that is what the reference attaches,
-			// and a caller sending a batch gets its own request echoed back.
+			// The whole list, not the offending one: that is what the Clojure service
+			// attaches, and a caller sending a batch gets its own request echoed back.
 			return apierror.New(apierror.ErrNotAuthorized).With("avus", avus)
 		}
 	}

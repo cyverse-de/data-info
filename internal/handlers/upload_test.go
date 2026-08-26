@@ -63,7 +63,7 @@ func serveUpload(
 	e.HTTPErrorHandler = apierror.HTTPErrorHandler(nil)
 
 	// The service registers these routes StyleOK, because their errors are raised in the
-	// reference's multipart middleware rather than inside its trap.
+	// Clojure service's multipart middleware rather than inside its trap.
 	ok := apierror.WithStyle(apierror.StyleOK)
 	e.Add(method, "/data", handler, ok)
 	e.Add(method, "/data/:data-id", handler, ok)
@@ -108,9 +108,9 @@ func TestUploadRejectsRequestsBeforeWriting(t *testing.T) {
 		wantErr  string
 	}{
 		{
-			// Not a 400: the reference identifies the caller inside multipart middleware
-			// that runs before its parameters are coerced, so a missing user arrives as a
-			// nil username and is reported as an unknown one.
+			// Not a 400: the Clojure service identifies the caller inside multipart
+			// middleware that runs before its parameters are coerced, so a missing user
+			// arrives as a nil username and is reported as an unknown one.
 			name:     "missing user",
 			target:   "/data?dest=" + testHome,
 			parts:    oneFile("new.txt"),
@@ -290,8 +290,8 @@ func TestUploadPartRejectsANonMultipartRequest(t *testing.T) {
 }
 
 // The upload routes report a nil username and a nil path literally, because that is what the
-// reference's validators put in the envelope. Callers parse these keys, so the exact shape is
-// asserted rather than just the code.
+// Clojure service's validators put in the envelope. Callers parse these keys, so the exact
+// shape is asserted rather than just the code.
 func TestUploadReportsNilsTheWayTheReferenceDoes(t *testing.T) {
 	deps, fake := testDeps(t)
 	fake.SetUUID("11111111-1111-1111-1111-111111111111", testHome+"/a.txt")

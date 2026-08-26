@@ -7,7 +7,7 @@ import "testing"
 // wrong by default: which characters are escaped, and when an element is self-closed.
 func TestEmptyElementsMatchTheReference(t *testing.T) {
 	// An element given no content is self-closed; one given the empty string is not. Getting
-	// this backwards produced a resource map that differed from the reference on every
+	// this backwards produced a resource map that differed from the Clojure service on every
 	// rdf:type element.
 	got := Render(Elem("root", nil,
 		Elem("nochildren", []Attr{{Name: "a", Value: "1"}}),
@@ -23,7 +23,7 @@ func TestEmptyElementsMatchTheReference(t *testing.T) {
 }
 
 // The standard library escapes quotation marks, apostrophes, tabs and newlines that the
-// reference leaves alone, which is why encoding/xml cannot write these documents.
+// Clojure service leaves alone, which is why encoding/xml cannot write these documents.
 func TestEscapingMatchesTheReference(t *testing.T) {
 	const tricky = "amp& lt< gt> quote\" apos' tab\there nl\nthere cr\rthere"
 

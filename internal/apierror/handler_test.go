@@ -134,9 +134,9 @@ func TestCanceledRequestWritesNothing(t *testing.T) {
 // TestContentTypeMatchesTheReference pins the header every response carries.
 //
 // All three answers were measured against the running QA service on 2026-08-24 rather than
-// reasoned about, because two of them are surprising: an error that reaches the reference's
-// default exception handler carries no content type at all, and the unrecognised-path body
-// is labelled text/html despite being JSON.
+// reasoned about, because two of them are surprising: an error that reaches the Clojure
+// service's default exception handler carries no content type at all, and the
+// unrecognised-path body is labelled text/html despite being JSON.
 func TestContentTypeMatchesTheReference(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -233,8 +233,8 @@ func TestWrongMethodIsAnUnrecognizedPath(t *testing.T) {
 // saying there is none.
 //
 // net/http sniffs the bytes written and supplies one when the header is absent, so the
-// obvious implementation sent "text/plain; charset=utf-8" on every response the reference
-// sends bare. A shadow run against QA reported it on twenty-two cases.
+// obvious implementation sent "text/plain; charset=utf-8" on every response the Clojure
+// service sends bare. A shadow run against QA reported it on twenty-two cases.
 func TestNoContentTypeMeansNoHeader(t *testing.T) {
 	e := newTestEcho()
 	e.GET("/x", func(echo.Context) error { return New(ErrDoesNotExist) }, WithStyle(StyleOK))
@@ -313,7 +313,7 @@ func TestHeadContentTypeDependsOnWhoRejected(t *testing.T) {
 }
 
 // TestWrongMethodSendsNoAllowHeader completes the method-mismatch port. echo's router sets
-// Allow before the handler runs; the reference sends none, because it does not treat a
+// Allow before the handler runs; the Clojure service sends none, because it does not treat a
 // mismatched method as a method problem at all.
 func TestWrongMethodSendsNoAllowHeader(t *testing.T) {
 	e := newTestEcho()

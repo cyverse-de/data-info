@@ -2,8 +2,8 @@
 // finished, so the user sees it in the DE rather than having to watch a folder.
 //
 // The message bodies are user-visible text and the DE renders them verbatim, so the wording
-// here is copied from the reference rather than improved on. Only the notification agent
-// reads the payload, and it keys on the action.
+// here is copied from the Clojure service rather than improved on. Only the notification
+// agent reads the payload, and it keys on the action.
 package notifications
 
 import (
@@ -126,7 +126,7 @@ func Move(user string, sources, destinations []string, failed bool) Message {
 // Rename reports a completed rename.
 //
 // Both lists hold exactly one path, and the wording says so; the signature keeps the lists
-// because the reference's does, and because a rename is a move of one thing.
+// because the Clojure service's does, and because a rename is a move of one thing.
 func Rename(user string, sources, destinations []string, failed bool) Message {
 	source, destination := first(sources), first(destinations)
 

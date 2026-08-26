@@ -115,9 +115,9 @@ func TestListingSortOrderIsPassedThrough(t *testing.T) {
 }
 
 // TestListingRejectsBadSortParameters covers the values the paging schema declares as enums.
-// A sort-field outside the enum is a deliberate improvement over the reference, which lets
-// it reach a bare exception and answers 500 with no code; a sort-dir outside it is a plain
-// match, since ring-swagger rejects the request before the handler runs.
+// A sort-field outside the enum is a deliberate improvement over the Clojure service, which
+// lets it reach a bare exception and answers 500 with no code; a sort-dir outside it is a
+// plain match, since ring-swagger rejects the request before the handler runs.
 func TestListingRejectsBadSortParameters(t *testing.T) {
 	deps, _ := testDeps(t)
 	listings := NewListings(deps)
@@ -220,7 +220,8 @@ func TestHeadStatuses(t *testing.T) {
 		{"readable", "/data/11111111-2222-3333-4444-555555555555?user=" + testUser, http.StatusOK},
 		{"unknown id", "/data/99999999-8888-7777-6666-555555555555?user=" + testUser, http.StatusNotFound},
 		// A 400, not a 422: the path parameter is typed as a UUID, so an unparseable one
-		// fails schema coercion before the handler runs. Verified against the reference.
+		// fails schema coercion before the handler runs. Verified against the Clojure
+		// service.
 		{"not a uuid", "/data/not-a-uuid?user=" + testUser, http.StatusBadRequest},
 		{"unknown user", "/data/11111111-2222-3333-4444-555555555555?user=nobody", http.StatusUnprocessableEntity},
 		// A missing user is a schema failure, so a 400. The 422 above is for a user that
@@ -253,14 +254,14 @@ func TestUUIDForPath(t *testing.T) {
 	}
 }
 
-// TestListingRequiresLimit covers a parameter the reference makes mandatory. Defaulting it
-// would silently hand a caller the first page of an arbitrarily large folder with no way to
-// know more existed.
+// TestListingRequiresLimit covers a parameter the Clojure service makes mandatory. Defaulting
+// it would silently hand a caller the first page of an arbitrarily large folder with no way
+// to know more existed.
 func TestListingRequiresLimit(t *testing.T) {
 	deps, _ := testDeps(t)
 	listings := NewListings(deps)
 
-	// Trap-style, as the data routes are in the reference, so the status table applies.
+	// Trap-style, as the data routes are in the Clojure service, so the status table applies.
 	rec := serveRoute(t, apierror.StyleTrap, http.MethodGet, "/data/path/:zone/*",
 		"/data/path/iplant/home/wregglej?user="+testUser, listings.FolderListing)
 

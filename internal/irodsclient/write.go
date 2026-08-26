@@ -142,7 +142,7 @@ func RemoveFile(ctx context.Context, s *Session, path string, force bool) error 
 // Checksum asks iRODS for a data object's checksum, computing and recording it in the
 // catalog when there is not one already.
 //
-// This has to be asked for. The reference's client computed a checksum as part of every
+// This has to be asked for. The Clojure service's client computed a checksum as part of every
 // upload, and the stat endpoints read that value straight out of the catalog column, so an
 // object written without one reports an empty md5 for the rest of its life. The hashing
 // happens on the resource server, so the file's bytes do not cross the wire again.

@@ -337,8 +337,8 @@ func TestPermissionsReportsEveryMissingPath(t *testing.T) {
 	deps, _ := testDeps(t)
 	reads := NewReads(deps)
 
-	// The first path is readable but not owned, the rest are missing. The reference runs
-	// the existence check over the whole list first, so the missing ones win.
+	// The first path is readable but not owned, the rest are missing. The Clojure service
+	// runs the existence check over the whole list first, so the missing ones win.
 	body := `{"paths":["` + testHome + `/a.txt","` + testHome + `/gone1","` + testHome + `/gone2"]}`
 	rec := serve(t, apierror.StyleTrap, http.MethodPost, "/permissions-gatherer?user="+testUser, body, reads.Permissions)
 

@@ -5,10 +5,10 @@
 // here rather than marshalled from structs.
 //
 // encoding/xml cannot be used for this. It reorders attributes, it chooses its own namespace
-// prefixes, and it escapes more characters than the reference does -- a quotation mark in a
-// title would come out as &#34; where the deployed service emits it literally. The escaping
-// rules below were measured against clojure.data.xml, which is what wrote every one of these
-// files that already exists.
+// prefixes, and it escapes more characters than the Clojure service does -- a quotation mark
+// in a title would come out as &#34; where the deployed service emits it literally. The
+// escaping rules below were measured against clojure.data.xml, which is what wrote every one
+// of these files that already exists.
 package metadatafiles
 
 import (
@@ -53,7 +53,7 @@ func Elem(name string, attrs []Attr, children ...*Element) *Element {
 // Text builds an element containing text.
 //
 // Text always writes an open and a close tag, even for the empty string. Only an element
-// given no content at all is self-closed, which is the distinction the reference draws.
+// given no content at all is self-closed, which is the distinction the Clojure service draws.
 func Text(name string, attrs []Attr, text string) *Element {
 	return &Element{Name: name, Attrs: attrs, Text: text, hasText: true}
 }
@@ -107,7 +107,7 @@ func (x *writer) element(e *Element) {
 	}
 
 	// An element given no content at all is self-closed; one given the empty string is not.
-	// The reference draws exactly that line, and these documents are compared byte for
+	// The Clojure service draws exactly that line, and these documents are compared byte for
 	// byte, so it is drawn here too.
 	if !e.hasText && len(e.Children) == 0 {
 		x.write("/>")
@@ -126,7 +126,7 @@ func (x *writer) element(e *Element) {
 	x.write("</" + e.Name + ">")
 }
 
-// textEscapes are what the reference escapes in element content.
+// textEscapes are what the Clojure service escapes in element content.
 //
 // Notably absent: the quotation mark, the apostrophe, and the whitespace characters. Go's own
 // encoder escapes all of those, which is why it cannot be used here.
@@ -136,12 +136,12 @@ var textEscapes = strings.NewReplacer(
 	">", "&gt;",
 )
 
-// attrEscapes are what the reference escapes in an attribute value.
+// attrEscapes are what the Clojure service escapes in an attribute value.
 //
 // The quotation mark is escaped here and not in text, because it would otherwise close the
 // value. A literal newline or tab in an attribute value is left alone, which an XML parser
-// will normalise to a space on the way back in -- that is the reference's behaviour and these
-// files are compared as bytes, so it is reproduced rather than corrected.
+// will normalise to a space on the way back in -- that is the Clojure service's behaviour and
+// these files are compared as bytes, so it is reproduced rather than corrected.
 var attrEscapes = strings.NewReplacer(
 	"&", "&amp;",
 	"<", "&lt;",

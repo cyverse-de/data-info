@@ -114,7 +114,7 @@ func compilePattern(pattern string) (*regexp.Regexp, error) {
 		return nil, nil
 	}
 
-	// A partial match, not an anchored one: the reference uses re-find, so a pattern
+	// A partial match, not an anchored one: the Clojure service uses re-find, so a pattern
 	// matching anywhere in the name keeps the entry.
 	compiled, err := regexp.Compile(pattern)
 	if err != nil {

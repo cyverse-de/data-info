@@ -56,9 +56,9 @@ func (h *Reads) Existence(c echo.Context) error {
 		if err != nil {
 			return err
 		}
-		// Present *and* readable. The reference asks both questions, and they can differ:
-		// iRODS has access levels between none and read, and a user holding one of those
-		// can see the object in the catalog without being able to read it.
+		// Present *and* readable. The Clojure service asks both questions, and they can
+		// differ: iRODS has access levels between none and read, and a user holding one of
+		// those can see the object in the catalog without being able to read it.
 		out[p] = stat.Exists && rods.Permits(stat.Permission, rods.PermissionRead)
 	}
 
@@ -72,9 +72,10 @@ func (h *Reads) Existence(c echo.Context) error {
 // deepest ancestor that does exist: it has to be a folder the caller can write to.
 //
 // Existence is asked as the service's own account and writeability as the caller, because
-// that is what the reference does and the two differ. Walking the chain as the caller would
-// step straight past a folder that exists but is not shared with them, and report on its
-// parent instead -- which is how a path under someone else's home could be called creatable.
+// that is what the Clojure service does and the two differ. Walking the chain as the caller
+// would step straight past a folder that exists but is not shared with them, and report on
+// its parent instead -- which is how a path under someone else's home could be called
+// creatable.
 func (h *Reads) Creatability(c echo.Context) error {
 	ctx := c.Request().Context()
 
@@ -158,10 +159,10 @@ func (h *Reads) Creatability(c echo.Context) error {
 
 // ancestorsOf is a path followed by each of its ancestors, stopping at the zone root.
 //
-// It stops one short of the bare "/", which the reference's ancestors-of does reach. That is
-// not a collection -- the zone root below it is the topmost real one -- and the catalog
-// refuses it rather than answering, because a path that trims to nothing would otherwise
-// match the zone root and report it as though it were the thing asked about.
+// It stops one short of the bare "/", which the Clojure service's ancestors-of does reach.
+// That is not a collection -- the zone root below it is the topmost real one -- and the
+// catalog refuses it rather than answering, because a path that trims to nothing would
+// otherwise match the zone root and report it as though it were the thing asked about.
 //
 // The answer is unchanged by stopping early. Reaching "/" means every component including
 // the zone name was wrong, and nobody holds write access there, so both services report such
@@ -222,8 +223,8 @@ func (h *Reads) Permissions(c echo.Context) error {
 		return err
 	}
 
-	// Existence is checked across every path before ownership is considered, and each
-	// check reports all of its failures rather than the first. The reference runs the two
+	// Existence is checked across every path before ownership is considered, and each check
+	// reports all of its failures rather than the first. The Clojure service runs the two
 	// validators in that order over the whole list, so a request whose first path is not
 	// owned and whose second is missing reports the missing one.
 	var missing, notOwned []string
@@ -273,9 +274,9 @@ func (h *Reads) Permissions(c echo.Context) error {
 // PermissionsByID handles GET /data/{data-id}/permissions.
 //
 // Read access is enough here, where the bulk endpoint above demands ownership. That is what
-// the reference requires on each route, and the difference is real: this one names a single
-// item the caller already holds the id for, and the DE shows its sharing panel to anyone who
-// can open it.
+// the Clojure service requires on each route, and the difference is real: this one names a
+// single item the caller already holds the id for, and the DE shows its sharing panel to
+// anyone who can open it.
 func (h *Reads) PermissionsByID(c echo.Context) error {
 	ctx := c.Request().Context()
 
@@ -290,7 +291,7 @@ func (h *Reads) PermissionsByID(c echo.Context) error {
 	}
 	defer scope.Close()
 
-	// The id is resolved before the caller is checked, which is the order the reference
+	// The id is resolved before the caller is checked, which is the order the Clojure service
 	// evaluates them in: an unknown id reports itself even when the user is also unknown.
 	path, err := resolveID(ctx, scope, c.Param("data-id"))
 	if err != nil {

@@ -34,7 +34,7 @@ func (h *Listings) download(c echo.Context, ctx context.Context, scope *rods.Sco
 	response.Header().Set("Content-Disposition", contentDisposition(attachment, name))
 
 	// An empty file is answered without opening it. iRODS is content to open a zero-length
-	// object, but the reference short-circuits it and doing the same keeps a connection
+	// object, but the Clojure service short-circuits it and doing the same keeps a connection
 	// free for something that needs one.
 	if stat.Size == 0 {
 		return c.NoContent(http.StatusOK)
@@ -76,8 +76,8 @@ func contentDisposition(attachment bool, filename string) string {
 
 // rfc5987Encode percent-encodes a filename for an RFC 5987 filename* parameter.
 //
-// url.QueryEscape and then two fixes, which is what the reference does with URLEncoder: a
-// space has to be %20 rather than a plus, since this is not a form, and an asterisk has to
+// url.QueryEscape and then two fixes, which is what the Clojure service does with URLEncoder:
+// a space has to be %20 rather than a plus, since this is not a form, and an asterisk has to
 // be encoded because RFC 5987's grammar does not admit it unescaped.
 func rfc5987Encode(filename string) string {
 	encoded := url.QueryEscape(filename)

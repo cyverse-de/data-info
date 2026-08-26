@@ -39,9 +39,9 @@ func TestConflicts(t *testing.T) {
 		{"an empty path against a real one", "", "/z/home/u/a", false},
 		{"two empty paths", "", "", false},
 
-		// The reference compares against a path plus a slash without requiring the match
-		// to end on a component boundary, so it calls these conflicts. They are not: /ab
-		// is not inside /a, in either direction.
+		// The Clojure service compares against a path plus a slash without requiring the
+		// match to end on a component boundary, so it calls these conflicts. They are not:
+		// /ab is not inside /a, in either direction.
 		{"a sibling whose name extends the other", "/z/home/u/a", "/z/home/u/ab", false},
 		{"the same, reversed", "/z/home/u/ab", "/z/home/u/a", false},
 		{"a deep path under a same-prefixed sibling", "/z/home/u/ab/c", "/z/home/u/a", false},

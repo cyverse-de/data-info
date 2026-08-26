@@ -197,8 +197,8 @@ func TestParseDelimited(t *testing.T) {
 	}
 }
 
-// TestParseDelimitedNeedsASeparatorOnlyWhenThereIsSomethingToParse pins where the reference
-// puts that failure: read-csv short-circuits a blank chunk before reaching (.charAt
+// TestParseDelimitedNeedsASeparatorOnlyWhenThereIsSomethingToParse pins where the Clojure
+// service puts that failure: read-csv short-circuits a blank chunk before reaching (.charAt
 // separator 0), so an empty separator is not an error until there is a row to split.
 func TestParseDelimitedNeedsASeparatorOnlyWhenThereIsSomethingToParse(t *testing.T) {
 	if _, err := ParseDelimited("   ", ""); err != nil {

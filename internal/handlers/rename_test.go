@@ -230,8 +230,9 @@ func TestAMoveLocksItsSourcesAndDestinations(t *testing.T) {
 	}
 }
 
-// An empty list of sources is accepted rather than refused. The reference's schema allows it,
-// and a caller that built its list by filtering should get a no-op rather than an error.
+// An empty list of sources is accepted rather than refused. The Clojure service's schema
+// allows it, and a caller that built its list by filtering should get a no-op rather than an
+// error.
 func TestMovingNothingIsANoOpRatherThanAnError(t *testing.T) {
 	deps, fake, creator := moveDeps(t)
 	fake.AddCollection(testHome+"/dest", icat.AccessOwn)

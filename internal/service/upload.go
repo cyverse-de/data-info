@@ -5,9 +5,9 @@ import (
 	"github.com/google/uuid"
 )
 
-// TempUploadName is the marker in the name of an object an upload is still streaming into.
-// It is part of the contract with whoever sweeps up after an interrupted upload, so it is
-// spelled the way the reference spelled it.
+// TempUploadName is the marker in the name of an object an upload is still streaming into. It
+// is part of the contract with whoever sweeps up after an interrupted upload, so it is
+// spelled the way the Clojure service spelled it.
 const TempUploadName = ".partial-"
 
 // TempUploadPath returns a hidden path in a destination's own collection to stream an

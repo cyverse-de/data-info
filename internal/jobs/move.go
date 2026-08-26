@@ -17,9 +17,9 @@ type Move struct{ Deps Deps }
 // Run implements worker.Job.
 //
 // Paths are moved one at a time and the job stops at the first failure, leaving the ones
-// already moved where they now are. That is the reference's behaviour and it is the safer of
-// the two: unwinding would mean moving things back through the same permission repair that
-// just failed, on a tree somebody may already be looking at.
+// already moved where they now are. That is the Clojure service's behaviour and it is the
+// safer of the two: unwinding would mean moving things back through the same permission
+// repair that just failed, on a tree somebody may already be looking at.
 func (m Move) Run(ctx context.Context, task *asynctasks.Task, progress worker.Progress) error {
 	sources, err := stringsFrom(task.Data, "sources")
 	if err != nil {
@@ -41,10 +41,9 @@ func (m Move) Run(ctx context.Context, task *asynctasks.Task, progress worker.Pr
 	runErr := m.move(ctx, scope, task.Username, sources, destinations, progress)
 
 	// The notification names everything that was asked for, not everything that moved. A
-	// partial failure is reported as a failure over the whole list, which is what the
-	// reference does and what the DE renders; the task's status history is where the detail
-	// of how far it got lives.
-
+	// partial failure is reported as a failure over the whole list, which is what the Clojure
+	// service does and what the DE renders; the task's status history is where the detail of
+	// how far it got lives.
 	m.Deps.notify(ctx, notifications.Move(task.Username, sources, destinations, runErr != nil))
 	return runErr
 }
@@ -56,7 +55,7 @@ func (m Move) move(
 	sources, destinations []string,
 	progress worker.Progress,
 ) error {
-	// A multi-path move is bracketed the way the reference brackets it, and the length
+	// A multi-path move is bracketed the way the Clojure service brackets it, and the length
 	// validation it reports up front covers the whole list rather than each source.
 	progress(pathsetSeveral, actionBegin)
 	progress(pathsetSeveral, actionValidate)

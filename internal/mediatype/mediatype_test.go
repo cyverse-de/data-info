@@ -42,8 +42,8 @@ func TestOfNameMatchesTheReference(t *testing.T) {
 		{"/zone/home/u/reads.fastq", "text/plain"},
 		{"/zone/home/u/tree.newick", "text/plain"},
 
-		// A name Tika cannot read is where this diverges: the reference opens the object
-		// and finds text, and there is nothing in a name-only table that could.
+		// A name Tika cannot read is where this diverges: the Clojure service opens the
+		// object and finds text, and there is nothing in a name-only table that could.
 		{"/zone/home/u/README", Default},
 		{"/zone/home/u/data.unknownext", Default},
 

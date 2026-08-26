@@ -178,10 +178,10 @@ func TestCaseExpansion(t *testing.T) {
 	}
 }
 
-// TestSchemaReasonWithEscapedQuotes guards a harness bug. These reasons quote the value that
-// failed, so they routinely contain escaped quotes; a pattern that stopped at the first one
-// left a remainder that no longer parsed, and the case reported "not JSON" rather than
-// comparing.
+// TestSchemaReasonWithEscapedQuotes covers a schema reason quoting the value that failed, so
+// the reason itself contains escaped quotes. Normalisation has to consume the whole string:
+// stopping at the first escaped quote leaves a remainder that does not parse, and the case
+// is then reported as "not JSON" instead of being compared.
 func TestSchemaReasonWithEscapedQuotes(t *testing.T) {
 	n := NewNormalizer("RUN")
 

@@ -54,8 +54,8 @@ func (h *Writes) CreateDirectories(c echo.Context) error {
 		return err
 	}
 
-	// Duplicates in the request collapse, as they do in the reference, which works from a
-	// set of paths.
+	// Duplicates in the request collapse, as they do in the Clojure service, which works from
+	// a set of paths.
 	requested, err := uniquePaths(body.Paths)
 	if err != nil {
 		return err
@@ -66,9 +66,9 @@ func (h *Writes) CreateDirectories(c echo.Context) error {
 		if !goodPathname(path, h.deps.BadChars) {
 			return apierror.New(apierror.ErrBadOrMissingField).With("path", path)
 		}
-		// Before the existence walk, matching the reference: its first look at the path
-		// goes through a jargon call that validates the name lengths, so an over-long one
-		// is refused before anything is created.
+		// Before the existence walk, matching the Clojure service: its first look at the path
+		// goes through a jargon call that validates the name lengths, so an over-long one is
+		// refused before anything is created.
 		if err := checkPathLength(path); err != nil {
 			return err
 		}
@@ -205,9 +205,9 @@ func (h *Writes) planCreate(ctx context.Context, scope *rods.Scope, path string)
 // caller's own home while the collection appeared somewhere else. Cleaning first makes the
 // path that is validated the path that is created.
 //
-// A blank entry is rejected rather than skipped. The reference declares these as non-blank
-// strings and answers 400, and dropping one silently would report success for a request that
-// created nothing.
+// A blank entry is rejected rather than skipped. The Clojure service declares these as
+// non-blank strings and answers 400, and dropping one silently would report success for a
+// request that created nothing.
 func uniquePaths(in []string) ([]string, error) {
 	seen := make(map[string]bool, len(in))
 	out := make([]string, 0, len(in))

@@ -63,7 +63,7 @@ func (h *Writes) Move(c echo.Context) error {
 	if err := bindBody(c, &body); err != nil {
 		return err
 	}
-	// An empty list is allowed, and produces a task that moves nothing. The reference's
+	// An empty list is allowed, and produces a task that moves nothing. The Clojure service's
 	// schema accepts it, and refusing here would turn a harmless no-op into an error for a
 	// caller that built its list by filtering.
 	if strings.TrimSpace(body.Dest) == "" {

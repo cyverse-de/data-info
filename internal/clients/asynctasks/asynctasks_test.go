@@ -251,9 +251,9 @@ func TestNewRejectsAnUnusableBaseURL(t *testing.T) {
 	}
 }
 
-// The "complete" flag is what makes the stall timeout release a dead task's paths. Without
-// it the timeout records the stall and stops, leaving the end date null -- which is exactly
-// what holds the lock. The reference omits it; this asserts that we do not.
+// The "complete" flag is what makes the stall timeout release a dead task's paths. Without it
+// the timeout records the stall and stops, leaving the end date null -- which is exactly what
+// holds the lock. The Clojure service omits it; this asserts that we do not.
 func TestStallBehaviorCompletesTheTask(t *testing.T) {
 	behavior := StallBehavior()
 

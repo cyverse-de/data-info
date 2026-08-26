@@ -157,8 +157,8 @@ func (h *Writes) applyShare(
 //
 // Validated rather than passed through, and this is not a formality. An unrecognised level
 // maps to iRODS' null access, which *removes* the sharee's access -- so a typo in this field
-// would quietly unshare something and report success. The reference declares it as an enum,
-// so a bad value never reaches its handler.
+// would quietly unshare something and report success. The Clojure service declares it as an
+// enum, so a bad value never reaches its handler.
 func sharePermission(value string) (rods.Permission, error) {
 	switch rods.Permission(strings.TrimSpace(value)) {
 	case rods.PermissionRead:

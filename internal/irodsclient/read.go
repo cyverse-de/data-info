@@ -11,7 +11,7 @@ import (
 
 // MaxChunkSize bounds a single positional read.
 //
-// The reference allocates whatever the caller asked for, which on the JVM is an
+// The Clojure service allocates whatever the caller asked for, which on the JVM is an
 // OutOfMemoryError and a 500 for an absurd size. Here it would be an allocation the runtime
 // cannot recover from, so the request is refused instead. Callers narrow the length to what
 // the file actually holds before reaching this, so the bound is only ever met by a request

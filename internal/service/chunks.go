@@ -171,9 +171,9 @@ func TrimToWholeLines(chunk string, size int64, page TabularPage) string {
 // seekLineStart scans backwards from position for a line ending and returns the offset just
 // after it, or the start of the chunk when there is none.
 //
-// A position past the end of the chunk is a request the reference answers with an exception
-// and a 500. Here it is clamped to the last byte, which turns a page read past the end of a
-// short file into an empty page rather than a crash.
+// A position past the end of the chunk is a request the Clojure service answers with an
+// exception and a 500. Here it is clamped to the last byte, which turns a page read past the
+// end of a short file into an empty page rather than a crash.
 func seekLineStart(chunk string, position int64) int {
 	if position >= int64(len(chunk)) {
 		position = int64(len(chunk)) - 1
@@ -194,11 +194,11 @@ func seekLineStart(chunk string, position int64) int {
 //
 // The keys are the column indices as decimal strings, which is the wire format: the client
 // reads "0", "1" and so on. A blank chunk is one empty row rather than none, matching the
-// reference -- the client renders a row count and zero rows is not the same answer as one
-// empty one.
+// Clojure service -- the client renders a row count and zero rows is not the same answer as
+// one empty one.
 //
 // The separator is taken as a string rather than a rune, and an empty one is an error only
-// once there is something to parse. That is where the reference puts it too: read-csv
+// once there is something to parse. That is where the Clojure service puts it too: read-csv
 // short-circuits a blank chunk before it ever reaches (.charAt separator 0), so an empty
 // separator against an empty file is not a failure there and is not one here.
 func ParseDelimited(chunk, separator string) ([]map[string]string, error) {

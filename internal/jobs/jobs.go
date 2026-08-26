@@ -56,22 +56,22 @@ type Deps struct {
 const (
 	actionBegin = "begin"
 	// actionErrorDeleting marks a path that could not be removed. The job carries on: the
-	// reference collects the failures and reports them at the end rather than stopping.
+	// Clojure service collects the failures and reports them at the end rather than stopping.
 	actionErrorDeleting = "error-deleting"
 	actionValidate      = "validated-path-lengths"
 	actionRenamed       = "did-rename"
 	actionEnd           = "end"
 )
 
-// The pseudo-paths a multi-path job brackets its trail with. They sit in the path position
-// of a status detail, where a real path goes, because the reference puts them there: a
+// The pseudo-paths a multi-path job brackets its trail with. They sit in the path position of
+// a status detail, where a real path goes, because the Clojure service puts them there: a
 // status reading "[instance] deleted paths: begin" is what a client sees before the first
 // path is touched. They are literal strings and not derived from anything, so they are
 // spelled here once.
 const (
 	// pathsetDeleted brackets both a delete and a restore. The same string for both is the
-	// reference's, not a copy-paste here: restore-paths-thread opens with "deleted paths"
-	// as well, and a client reading the trail sees it on either operation.
+	// Clojure service's, not a copy-paste here: restore-paths-thread opens with "deleted
+	// paths" as well, and a client reading the trail sees it on either operation.
 	pathsetDeleted = "deleted paths"
 	pathsetSeveral = "several paths"
 	pathsetTrash   = "delete trash"
@@ -140,8 +140,8 @@ func (d Deps) scopeFor(ctx context.Context, task *asynctasks.Task) (*rods.Scope,
 
 // moveOne moves a single path and repairs the permissions afterwards, reporting each step.
 //
-// The steps are the reference's, and they are reported rather than merely performed because
-// a task's status history is the only record of how far a job got before it stopped.
+// The steps are the Clojure service's, and they are reported rather than merely performed
+// because a task's status history is the only record of how far a job got before it stopped.
 func moveOne(
 	ctx context.Context,
 	scope *rods.Scope,

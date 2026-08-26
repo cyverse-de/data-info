@@ -83,7 +83,7 @@ func TestUniquePaths(t *testing.T) {
 
 // Path lengths are refused before the collection is looked for, so a name iRODS could never
 // hold does not cost a catalog round trip -- and the code reports which limit was broken,
-// because the reference does.
+// because the Clojure service does.
 func TestCreateDirectoriesRejectsBadRequests(t *testing.T) {
 	deps, _ := testDeps(t)
 	writes := NewWrites(deps)

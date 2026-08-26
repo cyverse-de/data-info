@@ -9,9 +9,9 @@ const OREFormatID = "http://www.openarchives.org/ore/terms"
 // oreNamespaces are declared on the root element in exactly this order.
 //
 // The order is not meaningful to a parser and is meaningful to a byte comparison. It is the
-// order the reference emits, which comes from Clojure's hash-map iteration -- stable for a
-// given set of keys, and verified stable across runs, but not something to derive. It is
-// written out here instead.
+// order the Clojure service emits, which comes from Clojure's hash-map iteration -- stable
+// for a given set of keys, and verified stable across runs, but not something to derive. It
+// is written out here instead.
 var oreNamespaces = []Attr{
 	{Name: "xmlns:dc", Value: "http://purl.org/dc/elements/1.1/"},
 	{Name: "xmlns:owl", Value: "http://www.w3.org/2002/07/owl#"},
@@ -79,8 +79,8 @@ var dcTermsElement = map[string]string{
 //
 // A resource map says what a data set contains, which file describes it, and what the data
 // set is called. DataONE reads it to decide what to harvest, so the element order, the
-// namespace prefixes and the order of the descriptions are all reproduced from the reference
-// rather than chosen.
+// namespace prefixes and the order of the descriptions are all reproduced from the Clojure
+// service rather than chosen.
 func BuildORE(in OREInput) string {
 	descriptions := []*Element{
 		aggregation(in),

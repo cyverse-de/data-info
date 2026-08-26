@@ -8,8 +8,8 @@ import (
 )
 
 // The query-parameter readers every endpoint shares. Each reports a malformed value as a
-// schema failure, because that is where the reference rejects it: compojure-api coerces a
-// route's declared parameters before the handler runs, so a non-numeric page never reaches
+// schema failure, because that is where the Clojure service rejects it: compojure-api coerces
+// a route's declared parameters before the handler runs, so a non-numeric page never reaches
 // the code that would have used it.
 
 // boolParam reads a boolean query parameter.

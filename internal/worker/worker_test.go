@@ -360,7 +360,8 @@ func TestProgressIsSafeFromSeveralGoroutines(t *testing.T) {
 //
 // A fast job finishes before the background sender has posted anything, so discarding the
 // buffer at that point loses the whole trail. A shadow run against QA reported exactly that
-// -- a rename came back as "begin" then "completed", three statuses short of the reference.
+// -- a rename came back as "begin" then "completed", three statuses short of the Clojure
+// service.
 func TestProgressIsFlushedBeforeTheTerminalStatus(t *testing.T) {
 	tasks := &fakeTasks{}
 	runner := testRunner(tasks)

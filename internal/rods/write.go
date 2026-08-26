@@ -84,7 +84,7 @@ func (s *Scope) MakeDir(ctx context.Context, path string, recurse bool) error {
 // user, the grant is theirs to make and the ordinary call is right; acting as the service
 // account directly, the ordinary call is the one iRODS refuses.
 //
-// Recursion is the caller's to decide, and the two callers differ: the reference grants
+// Recursion is the caller's to decide, and the two callers differ: the Clojure service grants
 // recursively on a new collection, so that everything created beneath it in the same request
 // is covered, and non-recursively on a data object, where there is nothing beneath it.
 func (s *Scope) SetOwner(ctx context.Context, path, user string, recurse bool) error {
@@ -110,9 +110,9 @@ func (s *Scope) SetOwner(ctx context.Context, path, user string, recurse bool) e
 
 // WriteFile streams r into a new data object at path.
 //
-// No resource is named, so the object lands on the one the service authenticated with,
-// which is the deployment's configured default. That is the same resource the reference
-// wrote to, which took it from the same setting by way of its connection.
+// No resource is named, so the object lands on the one the service authenticated with, which
+// is the deployment's configured default. That is the same resource the Clojure service wrote
+// to, which took it from the same setting by way of its connection.
 func (s *Scope) WriteFile(ctx context.Context, path string, r io.Reader) (int64, error) {
 	path = normalizePath(path)
 
@@ -179,9 +179,9 @@ func (s *Scope) FileExists(ctx context.Context, path string) (bool, error) {
 
 // Checksum records a data object's checksum in the catalog.
 //
-// Every upload has to do this. The reference's client checksummed as it wrote, and the stat
-// endpoints report that catalog column verbatim, so an object created without one answers
-// with an empty md5 until something else computes it.
+// Every upload has to do this. The Clojure service's client checksummed as it wrote, and the
+// stat endpoints report that catalog column verbatim, so an object created without one
+// answers with an empty md5 until something else computes it.
 func (s *Scope) Checksum(ctx context.Context, path string) (string, error) {
 	path = normalizePath(path)
 
@@ -383,8 +383,8 @@ func (s *Scope) SetAVU(ctx context.Context, path string, avu AVU) error {
 //
 // iRODS allows duplicates, and adding one that is already there would leave two rows a caller
 // then has to delete twice. The unit is deliberately not part of the comparison: that is what
-// the reference compares on, so re-adding an AVU with a different unit is a no-op rather than
-// a change.
+// the Clojure service compares on, so re-adding an AVU with a different unit is a no-op
+// rather than a change.
 func (s *Scope) AddAVUIfAbsent(ctx context.Context, path string, avu AVU) error {
 	path = normalizePath(path)
 
@@ -413,9 +413,9 @@ func (s *Scope) AddAVUIfAbsent(ctx context.Context, path string, avu AVU) error 
 
 // DeleteAVU removes a metadata triple, matching on attribute and value.
 //
-// The unit is not compared, for the same reason it is not compared when adding: the reference
-// deletes by attribute and value, so an AVU whose unit has drifted is still removed rather
-// than left behind.
+// The unit is not compared, for the same reason it is not compared when adding: the Clojure
+// service deletes by attribute and value, so an AVU whose unit has drifted is still removed
+// rather than left behind.
 func (s *Scope) DeleteAVU(ctx context.Context, path string, avu AVU) error {
 	path = normalizePath(path)
 

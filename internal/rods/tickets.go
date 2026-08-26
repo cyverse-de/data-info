@@ -36,7 +36,7 @@ func (s *Scope) TicketsForPath(ctx context.Context, path string) ([]Ticket, erro
 //
 // For deletion only. Removing a collection takes its contents with it, so a ticket on
 // something inside is left pointing at nothing -- iRODS does not clean those up and the
-// reference does not either. Including them here is a deliberate improvement on that.
+// Clojure service does not either. Including them here is a deliberate improvement on that.
 func (s *Scope) TicketsUnderPath(ctx context.Context, path string) ([]Ticket, error) {
 	return s.ticketsMatching(ctx, path, true)
 }

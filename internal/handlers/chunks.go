@@ -18,8 +18,8 @@ import (
 // the DE's file preview is built on.
 //
 // Each has two routes -- one naming a data id and one naming a path -- that differ only in
-// how the path is found. Everything after that is shared, which is also how the reference
-// is arranged.
+// how the path is found. Everything after that is shared, which is also how the Clojure
+// service is arranged.
 type Chunks struct {
 	deps Deps
 }
@@ -42,8 +42,8 @@ type manifestURL struct {
 
 // chunkResponse is a span of a file's bytes.
 //
-// Every number is a string. That is the wire contract and not an oversight on this side:
-// the reference stringifies each of them, and the client parses them back.
+// Every number is a string. That is the wire contract and not an oversight on this side: the
+// Clojure service stringifies each of them, and the client parses them back.
 type chunkResponse struct {
 	Path      string `json:"path"`
 	User      string `json:"user"`
@@ -97,12 +97,12 @@ func (h *Chunks) TabularChunkByPath(c echo.Context) error {
 
 // serveTabular reads and checks the paging parameters before anything else runs.
 //
-// The order matters and is not the obvious one. The reference puts these two checks in a
-// pre-hook on read-csv-chunk, which fires ahead of the function body -- so they happen
+// The order matters and is not the obvious one. The Clojure service puts these two checks in
+// a pre-hook on read-csv-chunk, which fires ahead of the function body -- so they happen
 // before the caller is validated and before the path is even resolved. A request naming a
 // missing path with page=0 answers ERR_PAGE_NOT_POS, not ERR_DOES_NOT_EXIST. Running them
-// after the validators, as the other four routes here do with their parameters, would
-// report a different error_code for the same request.
+// after the validators, as the other four routes here do with their parameters, would report
+// a different error_code for the same request.
 func (h *Chunks) serveTabular(
 	c echo.Context,
 	resolve func(echo.Context, context.Context, *rods.Scope) (string, error),
@@ -119,17 +119,17 @@ func (h *Chunks) serveTabular(
 
 // tabularRequest carries the parameters a tabular chunk request was made with.
 type tabularRequest struct {
-	// Separator is url-decoded a second time, as the reference does: ring has already
-	// decoded the query string once, and do-read-csv-chunk decodes what it is handed
-	// again. It may be empty, which is not rejected here -- see ParseDelimited.
+	// Separator is url-decoded a second time, as the Clojure service does: ring has already
+	// decoded the query string once, and do-read-csv-chunk decodes what it is handed again.
+	// It may be empty, which is not rejected here -- see ParseDelimited.
 	Separator string
 
 	Page int64
 	Size int64
 }
 
-// tabularParams reads the paging parameters and applies the two checks the reference makes
-// before it does anything else.
+// tabularParams reads the paging parameters and applies the two checks the Clojure service
+// makes before it does anything else.
 func tabularParams(c echo.Context) (tabularRequest, error) {
 	separator, err := presentParam(c, "separator")
 	if err != nil {
@@ -150,7 +150,7 @@ func tabularParams(c echo.Context) (tabularRequest, error) {
 	}
 
 	// Each carries its own code, and the page one reports the number as a number where the
-	// chunk size is reported as a string. That asymmetry is the reference's.
+	// chunk size is reported as a string. That asymmetry is the Clojure service's.
 	if page <= 0 {
 		return tabularRequest{}, apierror.New(apierror.ErrPageNotPos).With("page", page)
 	}
@@ -288,7 +288,8 @@ func (h *Chunks) chunk(c echo.Context, ctx context.Context, scope *rods.Scope, u
 	}
 
 	// start and chunk-size echo what was asked for, not what was read. A caller that asked
-	// for a megabyte of a short file is told a megabyte, and the reference says the same.
+	// for a megabyte of a short file is told a megabyte, and the Clojure service says the
+	// same.
 	return writeJSONOK(c, chunkResponse{
 		Path:      path,
 		User:      user,
@@ -315,9 +316,9 @@ func (h *Chunks) tabularChunk(
 	}
 
 	plan := service.PlanTabularPage(req.Page, req.Size, stat.Size)
-	// The bound is inclusive, so a request for one page past the end is accepted and
-	// answers with an empty page. That is the reference's arithmetic, and the page it
-	// reports here is the zero-based one while the response reports the one-based one.
+	// The bound is inclusive, so a request for one page past the end is accepted and answers
+	// with an empty page. That is the Clojure service's arithmetic, and the page it reports
+	// here is the zero-based one while the response reports the one-based one.
 	if plan.Page > plan.Pages {
 		return apierror.New(apierror.ErrInvalidPage).
 			With("page", strconv.FormatInt(plan.Page, 10)).
@@ -332,9 +333,9 @@ func (h *Chunks) tabularChunk(
 	chunk := service.TrimToWholeLines(raw, req.Size, plan)
 	rows, err := service.ParseDelimited(chunk, req.Separator)
 	if err != nil {
-		// Not an error code of its own: the reference lets the parser's exception reach
-		// the default handler, which answers 500 with ERR_UNCHECKED_EXCEPTION. Naming it
-		// here would report a 400 for a file the reference calls a server fault.
+		// Not an error code of its own: the Clojure service lets the parser's exception reach
+		// the default handler, which answers 500 with ERR_UNCHECKED_EXCEPTION. Naming it here
+		// would report a 400 for a file the Clojure service calls a server fault.
 		return fmt.Errorf("parsing %q as delimited text: %w", path, err)
 	}
 
@@ -352,7 +353,7 @@ func (h *Chunks) tabularChunk(
 
 // read fetches a span of a file, decoded as UTF-8 with its partial edge characters dropped.
 //
-// The length is narrowed to what the file actually holds before the read. The reference
+// The length is narrowed to what the file actually holds before the read. The Clojure service
 // allocates whatever was asked for and reads what it finds, which gives the same answer;
 // doing it this way means a caller asking for a gigabyte of a small file allocates the small
 // file rather than the gigabyte.

@@ -149,8 +149,8 @@ func TestChunkingRejectsWhatItCannotRead(t *testing.T) {
 			handler: chunks.TabularChunk, wantCode: apierror.ErrIllegalArgument,
 		},
 		// The paging checks run before the caller and the path are validated, because the
-		// reference puts them in a pre-hook that fires ahead of the function body. Both of
-		// these would report the validator's code if the order were the other way round.
+		// Clojure service puts them in a pre-hook that fires ahead of the function body. Both
+		// of these would report the validator's code if the order were the other way round.
 		{
 			name: "page zero against a path that is not there", pattern: "/data/by-path/chunks-tabular/*",
 			target: "/data/by-path/chunks-tabular/iplant/home/wregglej/missing.csv?user=" + testUser +
@@ -186,9 +186,9 @@ func TestChunkingRejectsWhatItCannotRead(t *testing.T) {
 
 // TestTabularSeparatorMayBeWhitespace is the regression test for a tab-delimited preview.
 //
-// echo percent-decodes a query value before a handler sees it, so ?separator=%09 arrives as
-// a tab. Reading it through a helper that rejects blank strings turned every TSV and every
-// space-delimited file into a 400, where the reference serves them: the parameter is
+// echo percent-decodes a query value before a handler sees it, so ?separator=%09 arrives as a
+// tab. Reading it through a helper that rejects blank strings turned every TSV and every
+// space-delimited file into a 400, where the Clojure service serves them: the parameter is
 // declared s/Str, not NonBlankString, and the endpoint's own documentation names %09 as the
 // value to send for a tab.
 //
@@ -207,7 +207,7 @@ func TestTabularSeparatorMayBeWhitespace(t *testing.T) {
 		{"a tab, which is what a TSV preview sends", "%09"},
 		{"a space", "%20"},
 		{"a comma, the ordinary case", "%2C"},
-		{"a doubly-encoded tab, which decodes twice as the reference does", "%2509"},
+		{"a doubly-encoded tab, which decodes twice as the Clojure service does", "%2509"},
 	}
 
 	for _, tt := range tests {

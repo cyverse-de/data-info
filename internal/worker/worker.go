@@ -116,7 +116,7 @@ func NewRunner(tasks Tasks, log *logrus.Entry, instance string) *Runner {
 	}
 }
 
-// InstanceID names this process the way the reference names it: by hostname, which in a
+// InstanceID names this process the way the Clojure service names it: by hostname, which in a
 // cluster is the pod name.
 func InstanceID() string {
 	if host, err := os.Hostname(); err == nil && host != "" {
@@ -205,13 +205,13 @@ func (r *Runner) run(taskID, name string, job Job) {
 // progressReporter returns a Progress that posts in the background, and a function that
 // stops it and waits, briefly, for what is already buffered.
 //
-// The wait is bounded rather than absent or unlimited, and the bound is the whole design.
-// The status trail is contract -- terrain's move poller reads it to show progress -- so
+// The wait is bounded rather than absent or unlimited, and the bound is the whole design. The
+// status trail is contract -- terrain's move poller reads it to show progress -- so
 // discarding the buffer outright loses it: a fast job finishes before the sender has posted
-// anything, and a rename came back with "begin" followed by "completed", three statuses
-// short of what the reference reports. Waiting without a bound is the other failure: the
-// terminal status is the only thing that releases the job's paths, so a degraded
-// async-tasks would hold them for as long as it stayed degraded.
+// anything, and a rename came back with "begin" followed by "completed", three statuses short
+// of what the Clojure service reports. Waiting without a bound is the other failure: the
+// terminal status is the only thing that releases the job's paths, so a degraded async-tasks
+// would hold them for as long as it stayed degraded.
 //
 // So: drain until progressFlushDeadline, then give up and let the terminal status through.
 // A healthy async-tasks accepts these in milliseconds, which is the case that matters.

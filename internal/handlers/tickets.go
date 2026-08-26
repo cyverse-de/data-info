@@ -106,8 +106,9 @@ func (t *Tickets) Add(c echo.Context) error {
 	// The tickets themselves are issued by the service's own account, not by the caller.
 	// iRODS scopes a ticket listing to whoever holds the connection, and these endpoints
 	// decide who may see a ticket from the permissions on its path -- so a ticket owned by
-	// one user would be invisible to another who can write to the same path, and invisible
-	// to the deletion cleanup, which also runs as the service. The reference does the same.
+	// one user would be invisible to another who can write to the same path, and invisible to
+	// the deletion cleanup, which also runs as the service. The Clojure service does the
+	// same.
 	proxy, err := t.deps.OpenProxyScope(ctx)
 	if err != nil {
 		return err
@@ -134,8 +135,8 @@ func (t *Tickets) create(
 	public bool,
 	limits rods.TicketLimits,
 ) (ticketView, error) {
-	// Upper case, as the reference generates them. The value ends up in a URL people paste
-	// around, and the two services must agree on the shape.
+	// Upper case, as the Clojure service generates them. The value ends up in a URL people
+	// paste around, and the two services must agree on the shape.
 	name := strings.ToUpper(uuid.NewString())
 
 	if err := scope.CreateTicket(ctx, name, mode, path); err != nil {
@@ -330,8 +331,8 @@ var templatePlaceholder = regexp.MustCompile(`\{\{([^}]+)\}\}`)
 // renderTemplate fills in a configured template.
 //
 // A placeholder naming something not supplied is left exactly as it was rather than becoming
-// an empty string. That is what the reference's renderer does, and it means a template with a
-// typo in it produces a visibly wrong URL rather than a subtly wrong one.
+// an empty string. That is what the Clojure service's renderer does, and it means a template
+// with a typo in it produces a visibly wrong URL rather than a subtly wrong one.
 func renderTemplate(template string, values map[string]string) string {
 	return templatePlaceholder.ReplaceAllStringFunc(template, func(match string) string {
 		key := strings.TrimSuffix(strings.TrimPrefix(match, "{{"), "}}")

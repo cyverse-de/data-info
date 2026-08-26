@@ -44,9 +44,9 @@ type Deps struct {
 	// does not supply its own set.
 	BadChars string
 
-	// ProxyUser is the account the service authenticates as. It is not the caller: it is
-	// used where the reference implementation asks whether something exists at all,
-	// independently of whether the caller can see it.
+	// ProxyUser is the account the service authenticates as. It is not the caller: it is used
+	// where the Clojure service asks whether something exists at all, independently of
+	// whether the caller can see it.
 	ProxyUser string
 
 	// Tasks records work that outlives the request which asked for it, and Worker runs it.
@@ -95,10 +95,10 @@ type Deps struct {
 
 // OpenProxyScope returns a view acting as the service's own account.
 //
-// Existence and visibility are separate questions, and the reference implementation asks
-// them separately: it checks that a path exists using its own account, then quietly drops
-// the ones the caller cannot see. Asking both as the caller would turn "this is not shared
-// with you" into "this does not exist", which fails the request instead of omitting a row.
+// Existence and visibility are separate questions, and the Clojure service asks them
+// separately: it checks that a path exists using its own account, then quietly drops the ones
+// the caller cannot see. Asking both as the caller would turn "this is not shared with you"
+// into "this does not exist", which fails the request instead of omitting a row.
 func (d Deps) OpenProxyScope(ctx context.Context) (*rods.Scope, error) {
 	return d.OpenScope(ctx, d.ProxyUser)
 }
@@ -240,8 +240,7 @@ func schemaError(reason string) error {
 		With("reason", reason)
 }
 
-// bindBody decodes a request body, reporting a malformed one the way the reference stack
-// does.
+// bindBody decodes a request body, reporting a malformed one the way the Clojure stack does.
 //
 // A body that will not parse is a schema failure, so it answers ERR_ILLEGAL_ARGUMENT with a
 // 400 on every route whatever its error style. Reporting a code of our own would answer 500

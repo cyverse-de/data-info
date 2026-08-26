@@ -69,8 +69,8 @@ func TestParseFieldSet(t *testing.T) {
 }
 
 // TestFieldsAreEmittedOnlyWhenRequested covers the filtering. A catalog row already carries
-// the type and the permission, so unlike the reference implementation nothing here has to be
-// computed and then dropped -- the only question is whether a field is written out.
+// the type and the permission, so unlike the Clojure service nothing here has to be computed
+// and then dropped -- the only question is whether a field is written out.
 func TestFieldsAreEmittedOnlyWhenRequested(t *testing.T) {
 	tests := []struct {
 		name    string

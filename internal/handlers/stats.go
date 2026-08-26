@@ -44,9 +44,9 @@ func (h *Stats) Gather(c echo.Context) error {
 //
 // The two endpoints share an implementation because they shared one in the Clojure service,
 // but not a parameter set: /stat-gatherer's schema declares validation-behavior and nothing
-// else, so filter-include, filter-exclude, ignore-missing and ignore-inaccessible are not
-// its to honour. Reading them on both routes would make /stat-gatherer quietly accept a
-// request the reference rejects.
+// else, so filter-include, filter-exclude, ignore-missing and ignore-inaccessible are not its
+// to honour. Reading them on both routes would make /stat-gatherer quietly accept a request
+// the Clojure service rejects.
 func (h *Stats) GatherPlain(c echo.Context) error {
 	return h.gather(c, false)
 }
@@ -160,7 +160,7 @@ func (h *Stats) gather(c echo.Context, filtered bool) error {
 // An id that resolves to nothing is reported by id, never by path. Resolution is not scoped
 // to the caller -- it is a catalog lookup -- so an id belonging to someone else resolves
 // successfully; echoing its path in an error would disclose a path the caller is not allowed
-// to see. The reference reports only the id for the same reason.
+// to see. The Clojure service reports only the id for the same reason.
 func (h *Stats) resolveIDs(ctx context.Context, scope *rods.Scope, ids []string, ignoreMissing bool) (map[string]string, error) {
 	if len(ids) == 0 {
 		return nil, nil
@@ -260,9 +260,9 @@ func (h *Stats) filterVisible(
 
 // insufficientPermission names the failure for the permission level that was required.
 //
-// The reference picks a different validator per validation-behavior, and each throws its own
-// code, so a request asking for own on a merely-readable path reports ERR_NOT_OWNER rather
-// than ERR_NOT_READABLE.
+// The Clojure service picks a different validator per validation-behavior, and each throws
+// its own code, so a request asking for own on a merely-readable path reports ERR_NOT_OWNER
+// rather than ERR_NOT_READABLE.
 func insufficientPermission(required rods.Permission) *apierror.Error {
 	switch required {
 	case rods.PermissionOwn:

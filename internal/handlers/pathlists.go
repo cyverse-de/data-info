@@ -264,9 +264,9 @@ func (p *PathLists) recordType(ctx context.Context, dest, listType string) error
 	}
 	defer proxy.Close()
 
-	// The unit is the one info-typer and the reference both write. A file carrying a
-	// different one would be typed as far as this service is concerned and untyped as far
-	// as anything reading the unit is.
+	// The unit is the one info-typer and the Clojure service both write. A file carrying a
+	// different one would be typed as far as this service is concerned and untyped as far as
+	// anything reading the unit is.
 	return proxy.SetAVU(ctx, dest, rods.AVU{
 		Attribute: p.deps.InfoTypeAttribute,
 		Value:     listType,

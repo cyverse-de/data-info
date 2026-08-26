@@ -28,7 +28,7 @@ func TestBuildOREMatchesTheReference(t *testing.T) {
 
 	want := golden(t, "ore.xml")
 	if got != want {
-		t.Errorf("the resource map differs from the reference's.\n got: %s\nwant: %s\nfirst difference at byte %d",
+		t.Errorf("the resource map differs from the golden file.\n got: %s\nwant: %s\nfirst difference at byte %d",
 			got, want, firstDifference(got, want))
 	}
 }

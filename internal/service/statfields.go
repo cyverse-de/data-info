@@ -95,10 +95,10 @@ func (fs FieldSet) Has(f StatField) bool { return fs[f] }
 // It exists for the fields whose computation costs a query: a directory's child counts are
 // only worth fetching if at least one of them is being reported.
 //
-// There is no separate notion of a field being computed but not emitted. The reference
-// implementation has one, because it decides what to gather before it gathers it; here a
-// catalog row already carries the type and the permission, so those are always available and
-// the only question is whether they are written out.
+// There is no separate notion of a field being computed but not emitted. The Clojure service
+// has one, because it decides what to gather before it gathers it; here a catalog row already
+// carries the type and the permission, so those are always available and the only question is
+// whether they are written out.
 func (fs FieldSet) HasAny(fields ...StatField) bool {
 	for _, f := range fields {
 		if fs[f] {

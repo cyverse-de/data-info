@@ -17,7 +17,7 @@ type SortColumn string
 //
 // These five names and no others: the paging schema declares sort-field as an enum of them,
 // so a request naming a catalog column directly is rejected before the handler runs. Adding
-// the column names here would make this service accept a request the reference refuses.
+// the column names here would make this service accept a request the Clojure service refuses.
 var sortColumns = map[string]SortColumn{
 	"datecreated":  "create_ts",
 	"datemodified": "modify_ts",
@@ -64,7 +64,7 @@ const (
 
 // ResolveSortColumn maps a sort-field parameter onto a column.
 //
-// An unrecognised value is an error rather than a silent default. The reference lets it
+// An unrecognised value is an error rather than a silent default. The Clojure service lets it
 // reach a bare exception and answers 500, which is recorded as a deferred fix; reporting it
 // here lets the caller decide which to produce.
 func ResolveSortColumn(field string) (SortColumn, error) {
@@ -82,7 +82,7 @@ func ResolveSortColumn(field string) (SortColumn, error) {
 // The two accepted spellings are upper case and nothing else passes: the parameter is
 // declared as an enum of "ASC" and "DESC", so a lowercase "desc" fails coercion and is
 // answered as a bad request rather than read as a direction. Accepting it here would have
-// this service reverse a page where the reference refuses the request outright.
+// this service reverse a page where the Clojure service refuses the request outright.
 func ResolveSortDirection(dir string) (SortDirection, error) {
 	switch SortDirection(dir) {
 	case "", SortAscending:
@@ -106,9 +106,9 @@ type ListingQuery struct {
 	InfoTypes []string
 
 	// IncludeUnknownInfoType keeps objects that have no info type. It is independent of
-	// InfoTypes: asking for only untyped objects is a real request, spelled in the
-	// reference by naming "unknown" and nothing else, and it must not be read as no
-	// filtering at all.
+	// InfoTypes: asking for only untyped objects is a real request, spelled in the Clojure
+	// service by naming "unknown" and nothing else, and it must not be read as no filtering
+	// at all.
 	IncludeUnknownInfoType bool
 
 	// EntityType selects what the listing contains.

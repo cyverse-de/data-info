@@ -15,13 +15,13 @@ const (
 	ReservedUnit = "ipc-reserved-unit"
 	SystemUnit   = "ipc-system-avu"
 
-	// InfoTypeUnit is what an info-type AVU carries. It is not SystemUnit: info-typer and
-	// the reference both write this one, and every typed file in the data store has it.
+	// InfoTypeUnit is what an info-type AVU carries. It is not SystemUnit: info-typer and the
+	// Clojure service both write this one, and every typed file in the data store has it.
 	InfoTypeUnit = "ipc-data-info"
 )
 
 // reservedAttributePrefix marks an attribute as the DE's rather than a user's. Matched
-// without regard to case, which is what the reference's pattern does.
+// without regard to case, which is what the Clojure service's pattern does.
 const reservedAttributePrefix = "ipc"
 
 // AVU is one metadata triple as the API reports it.

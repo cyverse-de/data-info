@@ -15,7 +15,7 @@ import (
 const rootFields = "id,label,path,date-created,date-modified,permission"
 
 // basePaths is where a user's own collections live. The keys are underscored where the rest
-// of the API hyphenates, which is what the reference emits.
+// of the API hyphenates, which is what the Clojure service emits.
 type basePaths struct {
 	UserHome  string `json:"user_home_path"`
 	UserTrash string `json:"user_trash_path"`
@@ -71,8 +71,8 @@ func (h *Listings) Home(c echo.Context) error {
 // the collection other people's shares appear under, and the user's trash -- with the base
 // paths alongside.
 //
-// Each is validated as it is built, in order, so a caller who cannot read community data
-// gets that failure and not one naming every root at once. The reference builds the vector
+// Each is validated as it is built, in order, so a caller who cannot read community data gets
+// that failure and not one naming every root at once. The Clojure service builds the vector
 // element by element and the first to throw wins; reporting them together would change what
 // the client is told.
 func (h *Listings) Root(c echo.Context) error {
@@ -99,8 +99,8 @@ func (h *Listings) Root(c echo.Context) error {
 	community := strings.TrimRight(layout.CommunityData, "/")
 	sharing := strings.TrimRight(layout.Home, "/")
 
-	// One query for all four before any of them is examined, so the four roots cost one
-	// round trip rather than four. The reference warms the same set for the same reason.
+	// One query for all four before any of them is examined, so the four roots cost one round
+	// trip rather than four. The Clojure service warms the same set for the same reason.
 	if _, err := scope.Stats(ctx, []string{home, community, sharing, trash}).Get(ctx); err != nil {
 		return err
 	}
@@ -140,8 +140,8 @@ func (h *Listings) Root(c echo.Context) error {
 
 // rootEntry describes one root, refusing to describe one the caller cannot read.
 func (h *Listings) rootEntry(ctx context.Context, scope *rods.Scope, user, path string) (service.Stat, error) {
-	// Readability rather than existence: a root that is not there reads as unreadable,
-	// which is the answer the reference gives for both. CORE-7638 -- without this check a
+	// Readability rather than existence: a root that is not there reads as unreadable, which
+	// is the answer the Clojure service gives for both. CORE-7638 -- without this check a
 	// null permission reaches the response and the client mishandles it.
 	if err := requireRodsReadable(ctx, scope, user, path); err != nil {
 		return service.Stat{}, err

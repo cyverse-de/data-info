@@ -27,7 +27,7 @@ type Delete struct{ Deps Deps }
 // This runs as the service's own account rather than as the user. Tickets belong to whoever
 // issued them and a user cannot delete another's, but a path being deleted must not leave
 // tickets behind that still point at it -- so the deletion is done with the account that can
-// see them all. The reference does the same, and for the same reason.
+// see them all. The Clojure service does the same, and for the same reason.
 func (d Delete) Run(ctx context.Context, task *asynctasks.Task, progress worker.Progress) error {
 	requested, err := stringsFrom(task.Data, "paths")
 	if err != nil {
@@ -99,7 +99,7 @@ func (d Delete) delete(
 			continue
 		}
 
-		// Trashing is a move, and it reports one: the reference reaches it through the
+		// Trashing is a move, and it reports one: the Clojure service reaches it through the
 		// same function a rename does, so the trail carries begin, validated-path-lengths,
 		// did-rename and end for the path -- permission repair included, before the end --
 		// before anything specific to trashing appears.
@@ -131,7 +131,7 @@ func (d Delete) delete(
 //
 // A ticket outliving the thing it grants access to is a dangling grant, and iRODS does not
 // clean them up on delete. There is no way to ask for the tickets on one path, so this lists
-// them and filters -- which is what the reference's query amounted to as well.
+// them and filters -- which is what the Clojure service's query amounted to as well.
 func (d Delete) deleteTickets(ctx context.Context, scope *rods.Scope, path string) error {
 	tickets, err := scope.TicketsUnderPath(ctx, path)
 	if err != nil {

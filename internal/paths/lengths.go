@@ -30,8 +30,8 @@ const (
 
 // CheckLength reports the first limit a path exceeds.
 //
-// The order is the reference's: the whole path first, then the collection, then the last
-// component. A path can break more than one, and which one is reported is part of what
+// The order is the Clojure service's: the whole path first, then the collection, then the
+// last component. A path can break more than one, and which one is reported is part of what
 // callers see.
 func CheckLength(p string) LengthViolation {
 	switch {

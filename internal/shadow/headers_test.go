@@ -99,8 +99,8 @@ func TestHeaderComparison(t *testing.T) {
 	}
 }
 
-// TestCompareReportsHeaderAndBodyTogether matters because a download's body is compared as
-// bytes on a path that used to return early, and a header difference there must not be lost.
+// TestCompareReportsHeaderAndBodyTogether pins that a non-JSON body, which is compared as
+// raw bytes, does not cost the response its header comparison.
 func TestCompareReportsHeaderAndBodyTogether(t *testing.T) {
 	n := NewNormalizer("run")
 

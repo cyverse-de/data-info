@@ -102,8 +102,8 @@ func HTTPErrorHandler(logErr func(echo.Context, *Error, error)) echo.HTTPErrorHa
 			return
 		}
 
-		// No content type at all, which is not an oversight: an error reaching the
-		// reference's default exception handler is written without one.
+		// No content type at all, which is not an oversight: an error reaching the Clojure
+		// service's default exception handler is written without one.
 		c.Response().WriteHeader(status)
 		_, writeErr := c.Response().Write([]byte(raw))
 		report(logErr, c, apiErr, writeErr)
@@ -198,7 +198,8 @@ func messageOf(he *echo.HTTPError) string {
 // ring emits, and the header is compared exactly against it.
 const JSONContentType = "application/json;charset=utf-8"
 
-// unrecognizedPathContentType is what the reference labels its unrecognised-path body with.
+// unrecognizedPathContentType is what the Clojure service labels its unrecognised-path body
+// with.
 //
 // It is text/html for a body that is plainly JSON, because the body comes from
 // compojure's route/not-found and nothing overrides the default. Callers see this on every
@@ -211,8 +212,8 @@ const unrecognizedPathContentType = "text/html;charset=utf-8"
 // reasoned about:
 //
 //   - An unrecognised path, or a request with the wrong method, is labelled text/html.
-//   - An error that reached the reference's default exception handler -- a thrown code on a
-//     route written as (ok ...) -- carries no content type at all.
+//   - An error that reached the Clojure service's default exception handler -- a thrown
+//     code on a route written as (ok ...) -- carries no content type at all.
 //   - Everything else, including a schema failure on one of those same routes, is JSON.
 //
 // The middle case is why Error carries Schema: on an ok-style route the two are told apart
@@ -231,12 +232,12 @@ func contentTypeFor(apiErr *Error, raw string) string {
 //
 // The suppression is the part that needs saying. net/http sniffs the first bytes written and
 // adds a Content-Type of its own when the header is absent, so simply not setting one
-// produced "text/plain; charset=utf-8" on every response the reference sends bare -- twenty-
-// two of them in a shadow run. Assigning nil to the map key is what net/http documents as
-// the way to mean "no content type", as opposed to not mentioning one.
+// produced "text/plain; charset=utf-8" on every response the Clojure service sends bare --
+// twenty- two of them in a shadow run. Assigning nil to the map key is what net/http
+// documents as the way to mean "no content type", as opposed to not mentioning one.
 //
 // It also removes anything echo put there first. echo's router sets Allow on a
-// method-mismatch, and the reference sends no such header because it does not treat a
+// method-mismatch, and the Clojure service sends no such header because it does not treat a
 // mismatch as a method problem at all -- see the StatusMethodNotAllowed case above.
 func setContentType(c echo.Context, contentType string) {
 	header := c.Response().Header()

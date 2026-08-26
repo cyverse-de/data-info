@@ -11,9 +11,7 @@ import (
 type ObjectType string
 
 const (
-	// ObjectTypeCollection is a collection.
 	ObjectTypeCollection ObjectType = "collection"
-	// ObjectTypeDataObject is a data object.
 	ObjectTypeDataObject ObjectType = "dataobject"
 )
 

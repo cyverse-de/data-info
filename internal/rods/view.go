@@ -510,9 +510,9 @@ func (s *Scope) Listing(_ context.Context, q ListingQuery) *lazy.Value[[]icat.Li
 // Subfolders returns every subfolder of a collection.
 //
 // This is a separate query rather than a filtered listing. The paged listing builds its
-// intermediate results over every data object in the collection before deciding what to
-// keep, so using it for a tree view would make a hot endpoint far more expensive on a folder
-// holding many files. It is also unpaged, as the reference is, so a folder with many
+// intermediate results over every data object in the collection before deciding what to keep,
+// so using it for a tree view would make a hot endpoint far more expensive on a folder
+// holding many files. It is also unpaged, as the Clojure service is, so a folder with many
 // subfolders is not silently truncated.
 func (s *Scope) Subfolders(_ context.Context, path string) *lazy.Value[[]icat.ListingRow] {
 	path = normalizePath(path)

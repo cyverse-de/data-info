@@ -40,16 +40,17 @@ type Listing struct {
 	// page. It is null when it was not computed.
 	Total *int64 `json:"total"`
 
-	// TotalBad is always zero. The reference computes nothing for it and reports it
+	// TotalBad is always zero. The Clojure service computes nothing for it and reports it
 	// regardless, so it is carried rather than dropped.
 	TotalBad int64 `json:"totalBad"`
 
 	// Readme is the README under this folder, or false when there is none. The field is
-	// deliberately untyped: the reference emits an entry object or the boolean false.
+	// deliberately untyped: the Clojure service emits an entry object or the boolean false.
 	Readme any `json:"readme"`
 }
 
-// ReadmeNames are the files a listing looks for, in the order the reference checks them.
+// ReadmeNames are the files a listing looks for, in the order the Clojure service checks
+// them.
 var ReadmeNames = []string{"README.md", "README.txt", "README", "readme.md", "readme.txt", "readme"}
 
 // BadNameRule decides which entries a client should flag as unrenderable.
@@ -88,8 +89,8 @@ func (r BadNameRule) Matches(path, name string) bool {
 
 // EntryOf converts a catalog row into a listing entry.
 func EntryOf(row icat.ListingRow, rule BadNameRule) ListingEntry {
-	// Null rather than an empty string when there is no info type: the reference reports
-	// the catalog column, which is null for a folder and for a file that has none.
+	// Null rather than an empty string when there is no info type: the Clojure service
+	// reports the catalog column, which is null for a folder and for a file that has none.
 	var infoType any
 	if row.InfoType.Valid && row.InfoType.String != "" {
 		infoType = row.InfoType.String
@@ -132,9 +133,9 @@ func ListingOf(self ListingEntry, rows []icat.ListingRow, rule BadNameRule) List
 			out.Files = append(out.Files, entry)
 		}
 
-		// COUNT(*) OVER () rides along on every row, so it is the same on all of them. A
-		// page with no rows carries no count, and the total is reported as null -- which
-		// is what the reference does for an empty folder.
+		// COUNT(*) OVER () rides along on every row, so it is the same on all of them. A page
+		// with no rows carries no count, and the total is reported as null -- which is what
+		// the Clojure service does for an empty folder.
 		if row.TotalCount.Valid {
 			total := row.TotalCount.Int64
 			out.Total = &total

@@ -53,8 +53,8 @@ func (t *pgTx) PagedUUIDs(ctx context.Context, q UUIDListingQuery) ([]ListingRow
 }
 
 func pagedUUIDs(ctx context.Context, qr queryer, q UUIDListingQuery) ([]ListingRow, error) {
-	// An empty set is answered without a query, as the reference does. The statement would
-	// return nothing anyway, but only after the catalog had built the union.
+	// An empty set is answered without a query, as the Clojure service does. The statement
+	// would return nothing anyway, but only after the catalog had built the union.
 	if len(q.UUIDs) == 0 {
 		return nil, nil
 	}

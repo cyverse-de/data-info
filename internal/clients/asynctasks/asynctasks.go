@@ -54,9 +54,9 @@ const StatusStalled = "detected-stalled"
 
 // StallBehavior is the rule every task that holds a lock is created with.
 //
-// The "complete" flag is the whole point of it, and the reference omits it. Without the flag
-// the timeout records that a task has stalled and stops there, leaving its end date null --
-// and since an absent end date is exactly what holds the lock, a task whose process died
+// The "complete" flag is the whole point of it, and the Clojure service omits it. Without the
+// flag the timeout records that a task has stalled and stops there, leaving its end date null
+// -- and since an absent end date is exactly what holds the lock, a task whose process died
 // locks its paths for good rather than for ten minutes. With the flag the same timeout
 // completes the task, which releases them.
 //
@@ -154,8 +154,8 @@ func NormalizeID(id string) string { return taskPath.ReplaceAllString(id, "") }
 
 // Create records a new task and returns the id minted for it.
 //
-// The value returned is the Location header verbatim, because that is what the reference
-// returns and what callers see in an async-task-id field.
+// The value returned is the Location header verbatim, because that is what the Clojure
+// service returns and what callers see in an async-task-id field.
 func (c *Client) Create(ctx context.Context, task Task) (string, error) {
 	body, err := json.Marshal(task)
 	if err != nil {

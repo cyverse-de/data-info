@@ -29,10 +29,10 @@ type Error struct {
 	Status int // when non-zero, overrides the status implied by Code and Style
 	Cause  error
 
-	// Schema marks a request that failed the shape its endpoint declares, as opposed to
-	// one whose handler threw. The reference renders the two through different middleware
-	// and they answer with different headers, so the distinction has to survive to the
-	// point the response is written. See contentTypeFor.
+	// Schema marks a request that failed the shape its endpoint declares, as opposed to one
+	// whose handler threw. The Clojure service renders the two through different middleware
+	// and they answer with different headers, so the distinction has to survive to the point
+	// the response is written. See contentTypeFor.
 	Schema bool
 }
 

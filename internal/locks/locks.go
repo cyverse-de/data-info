@@ -3,8 +3,8 @@
 // There is no lock table. A path is "locked" when some async task that has not finished yet
 // names it, so the whole mechanism is a query plus a comparison -- which means it is
 // advisory, shared with every replica and with the Clojure service, and racy between the
-// check and the task that follows it. The reference has the same race; an in-process mutex
-// would narrow it without closing it, because the other replica is a different process.
+// check and the task that follows it. The Clojure service has the same race; an in-process
+// mutex would narrow it without closing it, because the other replica is a different process.
 package locks
 
 import (
@@ -162,12 +162,12 @@ func conflictsAny(path string, locked []string) bool {
 // collection while something inside it is being moved separately leaves both operations
 // working on a tree that is changing underneath them.
 //
-// This is deliberately not what the reference computes. Its two prefix tests compare a path
-// against another path plus a slash without requiring the match to end on a component
+// This is deliberately not what the Clojure service computes. Its two prefix tests compare a
+// path against another path plus a slash without requiring the match to end on a component
 // boundary, so "/a" collides with a locked "/ab" and refuses a request it should allow. The
-// version here is strictly more permissive than the reference, never less, so it cannot
-// allow a pair the reference would have refused for a real reason -- but it is a behaviour
-// change and is recorded as one in docs/deferred-fixes.md.
+// version here is strictly more permissive than the Clojure service, never less, so it cannot
+// allow a pair the Clojure service would have refused for a real reason -- but it is a
+// behaviour change and is recorded as one in docs/deferred-fixes.md.
 func Conflicts(a, b string) bool {
 	a, b = strings.TrimRight(a, "/"), strings.TrimRight(b, "/")
 

@@ -19,7 +19,7 @@ const TrashOriginAttribute = "ipc-trash-origin"
 // with the same name deleted from different collections would otherwise collide.
 const trashSuffixLength = 7
 
-// trashSuffixAlphabet is what those characters are drawn from. The reference uses the
+// trashSuffixAlphabet is what those characters are drawn from. The Clojure service uses the
 // alphanumerics and nothing else, and the value ends up in a path, so it stays that way.
 const trashSuffixAlphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
@@ -139,7 +139,7 @@ func firstFreeName(ctx context.Context, store RestoreStore, path string) (string
 		return path, nil
 	}
 
-	// Unbounded in the reference too. A collection holding thousands of restores of the
+	// Unbounded in the Clojure service too. A collection holding thousands of restores of the
 	// same name would be pathological, and stopping early would mean failing a restore that
 	// could have succeeded.
 	for attempt := 0; ; attempt++ {

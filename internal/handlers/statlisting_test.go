@@ -93,7 +93,7 @@ func TestStatListerSplitsAndPages(t *testing.T) {
 }
 
 // TestStatListerEmitsEmptyArrays matters because the client indexes into them: a null where
-// an empty array belongs is a different shape, and the reference never emits one.
+// an empty array belongs is a different shape, and the Clojure service never emits one.
 func TestStatListerEmitsEmptyArrays(t *testing.T) {
 	deps, _ := testDeps(t)
 	stats := NewStats(deps)
@@ -110,7 +110,7 @@ func TestStatListerEmitsEmptyArrays(t *testing.T) {
 }
 
 // TestStatListerRequiresItsParameters covers the ones the schema declares as required, which
-// the reference rejects before the handler runs.
+// the Clojure service rejects before the handler runs.
 func TestStatListerRequiresItsParameters(t *testing.T) {
 	deps, _ := testDeps(t)
 	stats := NewStats(deps)
