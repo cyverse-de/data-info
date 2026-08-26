@@ -1,0 +1,141 @@
+group: writes
+cases:
+  # Each of these gets its own copy of the fixture per service, so the two never contend for
+  # the same object. Both the response and what the write left behind are compared.
+  - id: create-one-directory
+    tier: write
+    method: POST
+    path: /data/directories
+    query: {user: "{{.User}}"}
+    body: {paths: ["{{.Root}}/one"]}
+
+  - id: create-nested-directories
+    tier: write
+    method: POST
+    path: /data/directories
+    query: {user: "{{.User}}"}
+    body: {paths: ["{{.Root}}/a/b/c"]}
+
+  - id: create-several-directories
+    tier: write
+    method: POST
+    path: /data/directories
+    query: {user: "{{.User}}"}
+    body: {paths: ["{{.Root}}/x", "{{.Root}}/y", "{{.Root}}/z"]}
+
+  - id: create-overlapping-directories
+    tier: write
+    method: POST
+    path: /data/directories
+    query: {user: "{{.User}}"}
+    body: {paths: ["{{.Root}}/p/q", "{{.Root}}/p/q/r"]}
+
+  - id: create-duplicate-paths
+    tier: write
+    method: POST
+    path: /data/directories
+    query: {user: "{{.User}}"}
+    body: {paths: ["{{.Root}}/dup", "{{.Root}}/dup"]}
+
+  - id: create-directory-that-exists
+    tier: write
+    method: POST
+    path: /data/directories
+    query: {user: "{{.User}}"}
+    body: {paths: ["{{.Root}}"]}
+
+  - id: create-directory-with-a-bad-name
+    tier: write
+    method: POST
+    path: /data/directories
+    query: {user: "{{.User}}"}
+    body: {paths: ["{{.Root}}/has'quote"]}
+
+  - id: create-directory-unknown-user
+    tier: write
+    method: POST
+    path: /data/directories
+    query: {user: nosuchuser}
+    body: {paths: ["{{.Root}}/nope"]}
+
+  - id: create-directory-no-paths
+    tier: write
+    method: POST
+    path: /data/directories
+    query: {user: "{{.User}}"}
+    body: {paths: []}
+
+  - id: create-directory-under-a-missing-parent
+    tier: write
+    method: POST
+    path: /data/directories
+    query: {user: "{{.User}}"}
+    body: {paths: ["/definitely/not/a/zone/x"]}
+
+  - id: create-a-blank-path
+    tier: write
+    method: POST
+    path: /data/directories
+    query: {user: "{{.User}}"}
+    body: {paths: [""]}
+
+  - id: create-a-blank-path-beside-a-real-one
+    tier: write
+    method: POST
+    path: /data/directories
+    query: {user: "{{.User}}"}
+    body: {paths: ["{{.Root}}/real", ""]}
+
+  # The reference dies inside ft/dirname here and answers ERR_UNCHECKED_EXCEPTION with a 500.
+  # This service refuses it as a schema failure instead, so the case is expected to differ.
+  # See deferred-fixes entry 12.
+  - id: create-the-zone-root
+    tier: write
+    method: POST
+    path: /data/directories
+    query: {user: "{{.User}}"}
+    body: {paths: ["/"]}
+
+  - id: create-a-directory-with-too-long-a-name
+    tier: write
+    method: POST
+    path: /data/directories
+    query: {user: "{{.User}}"}
+    body:
+      paths:
+        - "{{.Root}}/nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn"
+
+  # The reference hands the literal path to iRODS, which refuses it; this service cleans it
+  # first and creates the collection, because the client cleans before acting and validating
+  # the uncleaned form would check one collection and create another. Expected to differ; see
+  # deferred-fixes entry 13.
+  - id: create-through-a-parent-reference
+    tier: write
+    method: POST
+    path: /data/directories
+    query: {user: "{{.User}}"}
+    body: {paths: ["{{.Root}}/a/../b"]}
+
+
+  # Read-only, but by data id, so it needs a seeded fixture to have an id to name. It sits
+  # here rather than in reads.yaml because that file's cases share one fixture and cannot
+  # seed.
+  - id: permissions-by-id
+    tier: write
+    method: GET
+    path: /data/{{.SeedID}}/permissions
+    query: {user: "{{.User}}"}
+    seed: {filename: perms.txt, content: "a file whose sharing is reported\n"}
+
+  - id: permissions-by-id-that-names-nothing
+    tier: write
+    method: GET
+    path: /data/00000000-0000-0000-0000-000000000000/permissions
+    query: {user: "{{.User}}"}
+
+  - id: permissions-by-id-unknown-user
+    tier: write
+    method: GET
+    path: /data/{{.SeedID}}/permissions
+    query: {user: nosuchuser}
+    seed: {filename: perms-unknown-user.txt, content: "a file\n"}

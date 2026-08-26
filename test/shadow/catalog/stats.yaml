@@ -1,0 +1,182 @@
+group: stats
+cases:
+  - id: stat-gatherer-home
+    tier: read
+    method: POST
+    path: /stat-gatherer
+    query: {user: "{{.User}}"}
+    body: {paths: ["{{.Root}}"]}
+
+  - id: stat-gatherer-missing-path
+    tier: read
+    method: POST
+    path: /stat-gatherer
+    query: {user: "{{.User}}"}
+    body: {paths: ["{{.Root}}/definitely-not-here"]}
+
+  - id: path-info-home
+    tier: read
+    method: POST
+    path: /path-info
+    query: {user: "{{.User}}"}
+    body: {paths: ["{{.Root}}"]}
+
+  - id: path-info-ignore-missing
+    tier: read
+    method: POST
+    path: /path-info
+    query: {user: "{{.User}}", ignore-missing: "true"}
+    body: {paths: ["{{.Root}}", "{{.Root}}/definitely-not-here"]}
+
+  - id: path-info-filter-include-path
+    tier: read
+    method: POST
+    path: /path-info
+    query: {user: "{{.User}}", filter-include: "path"}
+    body: {paths: ["{{.Root}}"]}
+
+  - id: path-info-filter-include-several
+    tier: read
+    method: POST
+    path: /path-info
+    query: {user: "{{.User}}", filter-include: "id,path,type,label"}
+    body: {paths: ["{{.Root}}"]}
+
+  - id: path-info-filter-exclude-md5
+    tier: read
+    method: POST
+    path: /path-info
+    query: {user: "{{.User}}", filter-exclude: "md5,share-count"}
+    body: {paths: ["{{.Root}}"]}
+
+  - id: path-info-empty-body
+    tier: read
+    method: POST
+    path: /path-info
+    query: {user: "{{.User}}"}
+    body: {}
+
+  - id: stat-gatherer-no-user
+    tier: read
+    method: POST
+    path: /stat-gatherer
+    body: {paths: ["{{.Root}}"]}
+
+  # The gaps a review found that the first catalog did not cover.
+  - id: stat-gatherer-unknown-user
+    tier: read
+    method: POST
+    path: /stat-gatherer
+    query: {user: nosuchuser}
+    body: {paths: ["{{.Root}}"]}
+
+  - id: path-info-unknown-user
+    tier: read
+    method: POST
+    path: /path-info
+    query: {user: nosuchuser}
+    body: {paths: ["{{.Root}}"]}
+
+  - id: path-info-validation-behavior-own
+    tier: read
+    method: POST
+    path: /path-info
+    query: {user: "{{.User}}", validation-behavior: own}
+    body: {paths: ["{{.Root}}"]}
+
+  - id: path-info-validation-behavior-write
+    tier: read
+    method: POST
+    path: /path-info
+    query: {user: "{{.User}}", validation-behavior: write}
+    body: {paths: ["{{.Root}}"]}
+
+  - id: path-info-bad-boolean
+    tier: read
+    method: POST
+    path: /path-info
+    query: {user: "{{.User}}", ignore-missing: yes}
+    body: {paths: ["{{.Root}}"]}
+
+  - id: path-info-malformed-body
+    tier: read
+    method: POST
+    path: /path-info
+    query: {user: "{{.User}}"}
+    body: "not an object"
+
+  - id: path-info-unknown-id
+    tier: read
+    method: POST
+    path: /path-info
+    query: {user: "{{.User}}"}
+    body: {ids: ["00000000-0000-0000-0000-000000000000"]}
+
+  # /stat-lister names data ids rather than paths, so it needs a fixture of its own to have
+  # an id to name. Nothing is written; the tier is what provides the seed.
+  - id: stat-lister-one-id
+    tier: write
+    method: POST
+    path: /stat-lister
+    query: {user: "{{.User}}", limit: "50", offset: "0"}
+    body: {ids: ["{{.SeedID}}"]}
+    seed: {filename: listed.txt, content: "a file to list\n"}
+
+  - id: stat-lister-no-ids
+    tier: write
+    method: POST
+    path: /stat-lister
+    query: {user: "{{.User}}", limit: "50", offset: "0"}
+    body: {ids: []}
+
+  - id: stat-lister-an-id-that-names-nothing
+    tier: write
+    method: POST
+    path: /stat-lister
+    query: {user: "{{.User}}", limit: "50", offset: "0"}
+    body: {ids: ["00000000-0000-0000-0000-000000000000"]}
+
+  - id: stat-lister-sorted-descending
+    tier: write
+    method: POST
+    path: /stat-lister
+    query: {user: "{{.User}}", limit: "50", offset: "0", sort-field: name, sort-dir: DESC}
+    body: {ids: ["{{.SeedID}}"]}
+    seed: {filename: listed-sorted.txt, content: "a file to list\n"}
+
+  - id: stat-lister-offset-beyond-the-end
+    tier: write
+    method: POST
+    path: /stat-lister
+    query: {user: "{{.User}}", limit: "50", offset: "1000"}
+    body: {ids: ["{{.SeedID}}"]}
+    seed: {filename: listed-offset.txt, content: "a file to list\n"}
+
+  - id: stat-lister-filtered-fields
+    tier: write
+    method: POST
+    path: /stat-lister
+    query: {user: "{{.User}}", limit: "50", offset: "0", filter-include: "id,path,type,label"}
+    body: {ids: ["{{.SeedID}}"]}
+    seed: {filename: listed-filtered.txt, content: "a file to list\n"}
+
+  - id: stat-lister-no-limit
+    tier: write
+    method: POST
+    path: /stat-lister
+    query: {user: "{{.User}}", offset: "0"}
+    body: {ids: []}
+
+  - id: stat-lister-no-offset
+    tier: write
+    method: POST
+    path: /stat-lister
+    query: {user: "{{.User}}", limit: "50"}
+    body: {ids: []}
+
+  - id: stat-lister-unknown-user
+    tier: write
+    method: POST
+    path: /stat-lister
+    query: {user: nosuchuser, limit: "50", offset: "0"}
+    body: {ids: []}

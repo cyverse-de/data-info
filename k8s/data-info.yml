@@ -15,41 +15,46 @@ spec:
       labels:
         de-app: data-info
     spec:
-      affinity:
-        podAntiAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            - labelSelector:
-                matchExpressions:
-                  - key: de-app
-                    operator: In
-                    values:
-                      - data-info
-              topologyKey: kubernetes.io/hostname
       restartPolicy: Always
+      # Well above the default 30s. On SIGTERM the service stops accepting requests, then
+      # cancels its async jobs and waits for each to post a terminal status -- and that post
+      # is what carries the end date that releases the job's path lock. A SIGKILL in the
+      # middle of it leaves those paths locked for every later request, so the drain is given
+      # room to finish: 5s preStop plus the binary's own 30s server drain and 60s job drain.
+      terminationGracePeriodSeconds: 120
       volumes:
-        - name: service-configs
+        - name: data-info-configs
           secret:
-            secretName: service-configs
+            secretName: data-info-configs
             items:
-              - key: data-info.properties
-                path: data-info.properties
+              - key: data-info.yml
+                path: data-info.yml
       containers:
         - name: data-info
           image: harbor.cyverse.org/de/data-info
+          # A quarter of the Clojure service's memory and a tenth of its CPU floor. The JVM
+          # numbers were sized around a heap and a JIT; this process has neither.
           resources:
             requests:
-              cpu: "160m"
-              memory: "1Gi"
-              ephemeral-storage: "1Gi"
+              cpu: "100m"
+              memory: "128Mi"
+              ephemeral-storage: "128Mi"
             limits:
-              cpu: "4000m"
-              memory: "3Gi"
-              ephemeral-storage: "1Gi"
+              cpu: "2000m"
+              memory: "1Gi"
+              ephemeral-storage: "128Mi"
           args:
             - --config
-            - /etc/iplant/de/data-info.properties
+            - /etc/iplant/de/data-info.yml
+          lifecycle:
+            # Endpoint removal and SIGTERM race, so hold still long enough for kube-proxy to
+            # drop this pod before the server stops accepting. Kubernetes' own sleep handler
+            # rather than an exec: the image is distroless and has no shell to run one with.
+            preStop:
+              sleep:
+                seconds: 5
           volumeMounts:
-            - name: service-configs
+            - name: data-info-configs
               mountPath: /etc/iplant/de
               readOnly: true
           env:
@@ -58,11 +63,6 @@ spec:
                 configMapKeyRef:
                   name: timezone
                   key: timezone
-            - name: JAVA_TOOL_OPTIONS
-              valueFrom:
-                configMapKeyRef:
-                  name: java-tool-options
-                  key: high
             - name: OTEL_TRACES_EXPORTER
               valueFrom:
                 secretKeyRef:
@@ -76,26 +76,27 @@ spec:
           ports:
             - name: listen-port
               containerPort: 60000
+          # /healthz answers from memory, so liveness and the startup gate can poll it freely.
+          # Readiness is the one that checks iRODS and the catalog, which is why it alone runs
+          # on a 20s period -- the same steady-state load on the data store the Clojure service
+          # puts there with its GET / probes.
           livenessProbe:
             httpGet:
-              path: /
+              path: /healthz
               port: 60000
-            initialDelaySeconds: 60
-            periodSeconds: 20
-            timeoutSeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
           startupProbe:
             httpGet:
-              path: /
+              path: /healthz
               port: 60000
-            initialDelaySeconds: 60
-            periodSeconds: 20
-            timeoutSeconds: 10
-            failureThreshold: 30
+            periodSeconds: 3
+            timeoutSeconds: 5
+            failureThreshold: 100
           readinessProbe:
             httpGet:
-              path: /
+              path: /readyz
               port: 60000
-            initialDelaySeconds: 60
             periodSeconds: 20
             timeoutSeconds: 10
 ---

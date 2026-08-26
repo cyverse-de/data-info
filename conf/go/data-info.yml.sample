@@ -1,0 +1,116 @@
+# Sample data-info configuration.
+#
+# Precedence is this file < the dotenv file < the environment. Every key segment is a
+# single lowercase word so that any setting can be overridden from the environment: the
+# env name is the key path uppercased with dots replaced by underscores, prefixed with
+# DISCOENV_. So irods.password is DISCOENV_IRODS_PASSWORD.
+#
+# Secrets belong in the environment or the dotenv file, not here. The two passwords below
+# are required: unlike the Clojure service, which defaulted both to "notprod", this service
+# refuses to start without them. anonfiles.baseurl, anonfiles.mappings and
+# kifshare.externalurl are required too, matching the Clojure service.
+
+port: 60000
+
+# Idle budgets. upload applies only to POST /data and PUT /data/{data-id}, which stream
+# whole files; everything else gets request.
+timeouts:
+  request: 200s
+  upload: 1h
+
+# Accounts stripped from permission listings and share counts.
+permsfilter:
+  - rods
+  - rodsadmin
+
+communitydata: /iplant/home/shared
+
+# Characters rejected in new file and folder names: grave accent, apostrophe, newline, tab.
+badchars: "`'\n\t"
+
+# Bulk requests carrying more paths than this are refused with ERR_TOO_MANY_RESULTS.
+maxpaths: 1000
+
+# The iRODS account POST /anonymizer grants read to.
+anonuser: anonymous
+
+anonfiles:
+  baseurl: https://example.org/anon-files/
+  # iRODS path prefix -> anon-files URL fragment. The longest matching prefix wins.
+  mappings:
+    /iplant/home/shared/: cyverse/projects/
+    /iplant/home/: cyverse/home/
+
+kifshare:
+  externalurl: https://example.org/dl
+  downloadtemplate: "{{url}}/d/{{ticket-id}}/{{filename}}"
+
+services:
+  asynctasks: http://async-tasks:60000
+  metadata: http://metadata:60000
+  notificationagent: http://notification-agent:60000
+
+irods:
+  host: irods
+  port: 1247
+  zone: iplant
+  # The proxy account. Per-request work runs as the calling user on top of it.
+  user: rods
+  password: CHANGE_ME  # prefer DISCOENV_IRODS_PASSWORD
+  home: /iplant/home
+  # Empty means the server's default resource.
+  resource: ""
+  maxretries: 10
+  retrysleep: 1s
+  usetrash: true
+  # Exempt from inherit-bit removal when unsharing.
+  adminusers:
+    - rods
+    - rodsadmin
+  # maxsessions x maxconnections is the ceiling on iRODS agents one replica can occupy.
+  # Tune it against the server's agent limit before raising either.
+  maxsessions: 32
+  maxconnections: 4
+  sessionidletimeout: 5m
+  # Socket deadlines. They bound how long an abandoned call holds a connection, so keep
+  # them tight; listing and bulk calls run under the long one.
+  operationtimeout: 1m
+  longoperationtimeout: 5m
+
+icat:
+  host: irods
+  port: 5432
+  user: rods
+  password: CHANGE_ME  # prefer DISCOENV_ICAT_PASSWORD
+  database: ICAT
+  # libpq sslmode. "disable" is what the DE deploys today; raise it to require or
+  # verify-full where the catalog is reachable over an untrusted network.
+  sslmode: disable
+
+# The AVU attribute holding a data object's info type. Detection itself belongs to
+# info-typer; data-info only reads and writes the attribute.
+typedetect:
+  attribute: ipc-filetype
+
+pathlists:
+  ht:
+    identifier: "# application/vnd.de.path-list+csv; version=1"
+    infotype: ht-analysis-path-list
+  multiinput:
+    identifier: "# application/vnd.de.multi-input-path-list+csv; version=1"
+    infotype: multi-input-path-list
+
+amqp:
+  # Carries a password in its userinfo; prefer DISCOENV_AMQP_URI.
+  uri: amqp://guest:guest@rabbit:5672/
+  exchange:
+    name: de
+    durable: true
+    autodelete: false
+
+dataone:
+  membernodebase: https://de.cyverse.org/dataone-node/rest/mn
+  oreattr: ipc-oai-ore
+  formatidattr: ipc-d1-format-id
+  metadatadirname: curated_metadata
+  metadatadirpathattr: ipc-d1-dirpath

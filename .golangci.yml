@@ -1,0 +1,23 @@
+version: "2"
+run:
+  timeout: 5m
+linters:
+  settings:
+    errcheck:
+      # Also flag `_ = someFunc()` where the discarded value is an error. The default
+      # treats an explicit blank assignment as deliberate suppression, which is exactly
+      # the pattern that hides swallowed errors. Handle it, log it, or annotate the site
+      # with //nolint:errcheck and a reason.
+      check-blank: true
+    staticcheck:
+      checks:
+        - all
+        - -ST1000 # package comments are required only on the packages that earn one
+        - -ST1003 # initialisms in ported identifiers follow the Clojure names
+  exclusions:
+    rules:
+      # Tests write literal bodies and tear down fixtures; a failure there means the
+      # harness is broken, not the code under test.
+      - path: _test\.go$
+        linters:
+          - errcheck

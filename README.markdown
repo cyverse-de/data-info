@@ -1,49 +1,46 @@
 # data-info
 
-data-info is a RESTful frontend for getting information about and manipulating
-information in an iRODS data store.
+data-info is the Discovery Environment's HTTP API for the iRODS data store:
+stat and listing, uploads and downloads, permissions and sharing, tickets,
+metadata and AVUs, and the asynchronous move, delete and restore jobs.
+
+This branch holds the Go rewrite. The Clojure service it replaces is on `main`
+and stays there until cutover — see `docs/` for what the port preserves
+deliberately and what it changes.
 
 ## Building and running
 
-data-info can be built with Leiningen: `lein do clean, uberjar`, and then run as a standard jar file `target/data-info-standalone.jar`. For development, you may also use `lein run` to compile and run at once.
+```
+go build ./cmd/data-info
+./data-info --config /etc/iplant/de/data-info.yml
+```
+
+`go test ./...` runs the unit and golden-fixture suites; they need no iRODS or
+catalog. The integration suites are behind a build tag and refuse to run
+without an explicitly scratch-marked root — see `internal/irodsit`.
 
 ## Configuration
 
-data-info uses a properties-style configuration file, passed in via the `--config` command-line option or found by default at `/etc/iplant/de/data-info.properties`. An example configuration file:
+A YAML file, given with `--config` and defaulting to
+`/etc/iplant/de/data-info.yml`. `conf/go/data-info.yml.sample` is a complete,
+commented example, and a test asserts it still loads.
 
-```properties
-data-info.anon-files-base-url        = https://example.org/anon-files/
-data-info.anon-user                  = anonymous
-data-info.bad-chars                  = \u0060\u0027\u000A\u0009
-data-info.community-data             = /iplant/home/shared
-data-info.copy-key                   = copy-from
-data-info.kifshare-download-template = \{\{url\}\}/d/\{\{ticket-id\}\}/\{\{filename\}\}
-data-info.max-paths-in-request       = 1000
-data-info.metadata.base-url          = http://example.org:31331
-data-info.perms-filter               = rodsadmin_acl,rodsBoot,rodsadmin,admin_proxy
-data-info.port                       = 60000
-data-info.commons.base               = http://datacommons.example.org/
+Values are resolved as yaml < dotenv < environment, so every setting has a
+`DISCOENV_`-prefixed override and no secret has to be written to a file:
+`DISCOENV_IRODS_PASSWORD`, `DISCOENV_ICAT_PASSWORD` and `DISCOENV_AMQP_URI`
+are the ones that matter.
 
-# ICAT configuration
-data-info.icat.host           = irods.example.org
-data-info.icat.port           = 31398
-data-info.icat.user           = irods
-data-info.icat.password       = rods-and-cones
-data-info.icat.db             = ICAT
+`GET /admin/config` reports the resolved configuration under the flat
+`data-info.*` property names the Clojure service used, with the same masking,
+so the two can be diffed.
 
-# iRODS configuration
-data-info.irods.host          = irods.example.org
-data-info.irods.port          = 1247
-data-info.irods.user          = rods
-data-info.irods.password      = rods-and-cones
-data-info.irods.home          = /iplant/home
-data-info.irods.zone          = iplant
-data-info.irods.resc          =
-data-info.irods.max-retries   = 10
-data-info.irods.retry-sleep   = 1000
-data-info.irods.use-trash     = true
-data-info.irods.admin-users   = rods,rodsadmin_acl,rodsBoot,rodsadmin,admin_proxy
+## API documentation
 
-# file typing configuration
-data-info.type-detect.type-attribute       = ipc-filetype
-```
+Swagger UI at `/docs`, and the raw document at `/swagger.json`.
+
+## Shadow harness
+
+`cmd/dishadow` sends the same request to this service and to the Clojure one
+and diffs both the responses and the resulting state. Its catalog is in
+`test/shadow/catalog/`. It ships in this image, so an in-cluster run exercises
+the same binary the build produced.

@@ -1,0 +1,119 @@
+group: uploads
+cases:
+  # An id naming a collection rather than a file is not covered here: seeding only produces
+  # data objects, so no case can name the fixture root by id. TestOverwriteRejectsRequests-
+  # BeforeWriting covers it instead.
+  #
+  # Every case here writes, so each side gets its own fixture and both the response and what
+  # the write left behind are compared. The upload's contents are chosen so that the size and
+  # the checksum in the response are pinned by the case rather than asserted separately.
+  # md5 is part of what these compare: the reference checksums as it writes, so an upload
+  # that does not record one reports an empty md5 for the rest of the object's life.
+  - id: upload-a-text-file
+    tier: write
+    method: POST
+    path: /data
+    query: {user: "{{.User}}", dest: "{{.Root}}"}
+    upload: {filename: hello.txt, content: "hello, data store\n"}
+
+  - id: upload-an-empty-file
+    tier: write
+    method: POST
+    path: /data
+    query: {user: "{{.User}}", dest: "{{.Root}}"}
+    upload: {filename: empty.txt, content: ""}
+
+  # A name that is not ASCII. The reference refuses these with a 400 from its coercion
+  # layer and this service accepts them, which was signed off as an improvement -- so this
+  # case is expected to differ for as long as both services run. See deferred-fixes entry 9.
+  - id: upload-a-utf8-name
+    tier: write
+    method: POST
+    path: /data
+    query: {user: "{{.User}}", dest: "{{.Root}}"}
+    upload: {filename: "ünïcödé — file.txt", content: "unicode name\n"}
+
+  # The extension decides the reported content type, which is where the name-only detection
+  # in the Go service is most likely to diverge from Tika.
+  - id: upload-a-csv
+    tier: write
+    method: POST
+    path: /data
+    query: {user: "{{.User}}", dest: "{{.Root}}"}
+    upload: {filename: table.csv, content: "a,b,c\n1,2,3\n"}
+
+  - id: upload-with-no-extension
+    tier: write
+    method: POST
+    path: /data
+    query: {user: "{{.User}}", dest: "{{.Root}}"}
+    upload: {filename: README, content: "no extension here\n"}
+
+  - id: upload-over-an-existing-file
+    tier: write
+    method: POST
+    path: /data
+    query: {user: "{{.User}}", dest: "{{.Root}}"}
+    seed: {filename: taken.txt, content: "already here\n"}
+    upload: {filename: taken.txt, content: "replacement\n"}
+
+  - id: upload-to-a-missing-directory
+    tier: write
+    method: POST
+    path: /data
+    query: {user: "{{.User}}", dest: "{{.Root}}/nowhere"}
+    upload: {filename: hello.txt, content: "hello\n"}
+
+  - id: upload-with-a-bad-name
+    tier: write
+    method: POST
+    path: /data
+    query: {user: "{{.User}}", dest: "{{.Root}}"}
+    upload: {filename: "has'quote.txt", content: "bad name\n"}
+
+  - id: upload-unknown-user
+    tier: write
+    method: POST
+    path: /data
+    query: {user: nosuchuser, dest: "{{.Root}}"}
+    upload: {filename: hello.txt, content: "hello\n"}
+
+  - id: upload-with-no-destination
+    tier: write
+    method: POST
+    path: /data
+    query: {user: "{{.User}}"}
+    upload: {filename: hello.txt, content: "hello\n"}
+
+  - id: overwrite-a-file
+    tier: write
+    method: PUT
+    path: /data/{{.SeedID}}
+    query: {user: "{{.User}}"}
+    seed: {filename: target.txt, content: "the original contents\n"}
+    upload: {filename: target.txt, content: "the replacement contents, which are longer\n"}
+
+  # The contents shrink, which is what catches a write that appends to the old object
+  # rather than replacing it.
+  - id: overwrite-a-file-with-less
+    tier: write
+    method: PUT
+    path: /data/{{.SeedID}}
+    query: {user: "{{.User}}"}
+    seed: {filename: shrink.txt, content: "a long original that the replacement is shorter than\n"}
+    upload: {filename: shrink.txt, content: "short\n"}
+
+  - id: overwrite-an-unknown-id
+    tier: write
+    method: PUT
+    path: /data/00000000-0000-0000-0000-000000000000
+    query: {user: "{{.User}}"}
+    upload: {filename: hello.txt, content: "hello\n"}
+
+  - id: overwrite-unknown-user
+    tier: write
+    method: PUT
+    path: /data/{{.SeedID}}
+    query: {user: nosuchuser}
+    seed: {filename: target.txt, content: "the original contents\n"}
+    upload: {filename: hello.txt, content: "hello\n"}

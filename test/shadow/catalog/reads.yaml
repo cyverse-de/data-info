@@ -1,0 +1,203 @@
+group: reads
+cases:
+  - id: existence-marker-present-and-absent
+    tier: read
+    method: POST
+    path: /existence-marker
+    query: {user: "{{.User}}"}
+    body: {paths: ["{{.Root}}", "{{.Root}}/definitely-not-here"]}
+
+  - id: existence-marker-no-paths
+    tier: read
+    method: POST
+    path: /existence-marker
+    query: {user: "{{.User}}"}
+    body: {paths: []}
+
+  - id: permissions-gatherer-home
+    tier: read
+    method: POST
+    path: /permissions-gatherer
+    query: {user: "{{.User}}"}
+    body: {paths: ["{{.Root}}"]}
+
+  - id: permissions-gatherer-missing-path
+    tier: read
+    method: POST
+    path: /permissions-gatherer
+    query: {user: "{{.User}}"}
+    body: {paths: ["{{.Root}}/definitely-not-here"]}
+
+  - id: navigation-base-paths
+    tier: read
+    method: GET
+    path: /navigation/base-paths
+    query: {user: "{{.User}}"}
+
+  - id: user-groups
+    tier: read
+    method: GET
+    path: /users/{{.User}}/groups
+    query: {user: "{{.User}}"}
+
+  - id: user-groups-unknown-user
+    tier: read
+    method: GET
+    path: /users/definitely-not-a-user/groups
+    query: {user: "{{.User}}"}
+
+  - id: service-info
+    tier: read
+    method: GET
+    path: /
+    # Not comparable between two builds. The version field reports each service's own
+    # build, and the iRODS field reports whether a health check could get a connection --
+    # which, on a zone that grants this account very few, depends on what else is running
+    # rather than on either service being correct. The fields that are contract are covered
+    # by the unit tests instead.
+    skip: reports build-specific and connection-dependent values
+
+  - id: unrecognised-path
+    tier: read
+    method: GET
+    path: /no/such/endpoint
+
+  - id: existence-marker-unknown-user
+    tier: read
+    method: POST
+    path: /existence-marker
+    query: {user: nosuchuser}
+    body: {paths: ["{{.Root}}"]}
+
+  - id: permissions-gatherer-unknown-user
+    tier: read
+    method: POST
+    path: /permissions-gatherer
+    query: {user: nosuchuser}
+    body: {paths: ["{{.Root}}"]}
+
+  - id: permissions-gatherer-several-missing
+    tier: read
+    method: POST
+    path: /permissions-gatherer
+    query: {user: "{{.User}}"}
+    body: {paths: ["{{.Root}}/gone-one", "{{.Root}}/gone-two"]}
+
+  - id: navigation-base-paths-unknown-user
+    tier: read
+    method: GET
+    path: /navigation/base-paths
+    query: {user: nosuchuser}
+
+  - id: existence-marker-trailing-slash
+    tier: read
+    method: POST
+    path: /existence-marker
+    query: {user: "{{.User}}"}
+    body: {paths: ["{{.Root}}/"]}
+
+  # Creatability walks a path's ancestors for the deepest one that exists and asks whether
+  # the caller can write to it, so the interesting cases are the ones several levels deep.
+  - id: creatability-marker-in-an-existing-folder
+    tier: read
+    method: POST
+    path: /creatability-marker
+    query: {user: "{{.User}}"}
+    body: {paths: ["{{.Root}}/a-new-folder"]}
+
+  - id: creatability-marker-several-levels-deep
+    tier: read
+    method: POST
+    path: /creatability-marker
+    query: {user: "{{.User}}"}
+    body: {paths: ["{{.Root}}/one/two/three"]}
+
+  - id: creatability-marker-under-someone-elses-tree
+    tier: read
+    method: POST
+    path: /creatability-marker
+    query: {user: "{{.User}}"}
+    body: {paths: ["/definitely-not-a-zone/nowhere/new-folder"]}
+
+  - id: creatability-marker-a-path-that-already-exists
+    tier: read
+    method: POST
+    path: /creatability-marker
+    query: {user: "{{.User}}"}
+    body: {paths: ["{{.Root}}"]}
+
+  - id: creatability-marker-no-paths
+    tier: read
+    method: POST
+    path: /creatability-marker
+    query: {user: "{{.User}}"}
+    body: {paths: []}
+
+  - id: creatability-marker-unknown-user
+    tier: read
+    method: POST
+    path: /creatability-marker
+    query: {user: nosuchuser}
+    body: {paths: ["{{.Root}}/a-new-folder"]}
+
+  # The root and home listings create the collection they report when it is missing. Running
+  # them against a user who already has both is the only safe shape here -- the scratch
+  # guard covers the fixture tree, not a user's home.
+  - id: navigation-root
+    tier: read
+    method: GET
+    path: /navigation/root
+    query: {user: "{{.User}}"}
+
+  - id: navigation-root-unknown-user
+    tier: read
+    method: GET
+    path: /navigation/root
+    query: {user: nosuchuser}
+
+  - id: navigation-home
+    tier: read
+    method: GET
+    path: /navigation/home
+    query: {user: "{{.User}}"}
+
+  - id: navigation-home-unknown-user
+    tier: read
+    method: GET
+    path: /navigation/home
+    query: {user: nosuchuser}
+
+  # compojure matches a route on its method and path together, so the wrong method is not a
+  # 405 -- it simply does not match and falls through to the unrecognised-path body. The
+  # catalog had no case for this, which is why the difference went unseen.
+  - id: wrong-method-on-a-real-route
+    tier: read
+    method: DELETE
+    path: /navigation/base-paths
+    query: {user: "{{.User}}"}
+
+  - id: wrong-method-on-a-bulk-route
+    tier: read
+    method: GET
+    path: /stat-gatherer
+    query: {user: "{{.User}}"}
+
+  # A body that is not JSON at all, on a trap-style route. stats.yaml covers the same shape
+  # on an ok-style one, and the pair is deliberate: a schema failure is rendered by different
+  # middleware from a thrown code, so the two styles are the axis this varies along rather
+  # than the endpoint.
+  - id: permissions-gatherer-malformed-body
+    tier: read
+    method: POST
+    path: /permissions-gatherer
+    query: {user: "{{.User}}"}
+    body: "not an object"
+
+  # A required body omitted entirely, which is what a client sends when it builds a request
+  # from a template and the template is wrong.
+  - id: permissions-gatherer-empty-body
+    tier: read
+    method: POST
+    path: /permissions-gatherer
+    query: {user: "{{.User}}"}
+    body: {}
