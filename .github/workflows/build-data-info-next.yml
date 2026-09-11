@@ -1,0 +1,32 @@
+# Builds the data-info-next image on demand.
+#
+# data-info-next is the Go rewrite deployed beside the Clojure service for shadow diffing.
+# It is built from a branch rather than a tag, so skaffold-build.yml -- which fires on
+# release tags and builds whatever service role shares this repo's name -- never produces it.
+# Run this by hand instead: Actions -> Build data-info-next -> Run workflow, selecting the
+# branch holding the code to build (golang, until cutover).
+#
+# It lives on main rather than beside the Go tree because GitHub only offers workflow_dispatch
+# for workflows present on the default branch. A copy on golang alone would never appear.
+# Nothing here runs on its own -- there is no push or schedule trigger -- so carrying it on
+# main costs nothing.
+#
+# It pushes to Harbor and commits the updated descriptor to the deployments repo, exactly as
+# the release path does. Nothing deploys as a result; bringing the image up is a separate
+# deploy_it.yml --tags data-info-next run, and that is gated on data_info_next_enabled.
+name: Build data-info-next
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    uses: cyverse-de/github-workflows/.github/workflows/skaffold-build.yml@v0.4.0
+    with:
+      # Without this the shared workflow derives the role name from the repository and
+      # would build the Clojure service's role instead.
+      service-name: data-info-next
+    secrets:
+      harbor-username: ${{ secrets.HARBOR_USERNAME }}
+      harbor-password: ${{ secrets.HARBOR_PASSWORD }}
+      releases-repo-push-token: ${{ secrets.GH_DE_RELEASES_PUSH_TOKEN }}
