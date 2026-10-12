@@ -587,3 +587,43 @@ func TestFixturesRemove(t *testing.T) {
 		})
 	}
 }
+
+// TestTrashSuffixesAreNormalised covers both places a trash path's random suffix appears: as a
+// JSON value, and inside a task's status detail, where the action follows it.
+func TestTrashSuffixesAreNormalised(t *testing.T) {
+	tests := []struct {
+		name      string
+		reference string
+		candidate string
+		wantSame  bool
+	}{
+		{
+			"as a value",
+			`{"p":"/zone/trash/home/u/a.txt.fbumbi7"}`,
+			`{"p":"/zone/trash/home/u/a.txt.a5UXHxs"}`,
+			true,
+		},
+		{
+			"in a status detail",
+			`{"detail":"[pod] /zone/trash/home/u/a.txt.fbumbi7: begin-restore"}`,
+			`{"detail":"[pod] /zone/trash/home/u/a.txt.a5UXHxs: begin-restore"}`,
+			true,
+		},
+		{
+			"an ordinary extension outside the trash",
+			`{"p":"/zone/home/u/a.txt.fbumbi7"}`,
+			`{"p":"/zone/home/u/a.txt.a5UXHxs"}`,
+			false,
+		},
+	}
+
+	n := NewNormalizer("RUN")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			diffs := n.Compare(Response{Status: 200, Body: []byte(tt.reference)}, Response{Status: 200, Body: []byte(tt.candidate)})
+			if same := len(diffs) == 0; same != tt.wantSame {
+				t.Errorf("same = %t, want %t: %+v", same, tt.wantSame, diffs)
+			}
+		})
+	}
+}

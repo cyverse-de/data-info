@@ -65,10 +65,10 @@ var (
 	instancePattern = regexp.MustCompile(`\[data-info[a-z-]*-[a-z0-9]+-[a-z0-9]+\]`)
 
 	// trashSuffixPattern matches the random suffix appended when something is moved to the
-	// trash, keeping the path in front of it. Anchored to a trash path and to the closing
-	// quote so it cannot rewrite an ordinary filename that happens to end in a short
-	// extension.
-	trashSuffixPattern = regexp.MustCompile(`(/trash/[^"]*)\.[A-Za-z0-9]{7}"`)
+	// trash, keeping the path in front of it. Anchored to a trash path, and to the closing
+	// quote or the ": " a status detail puts before its action, so it cannot rewrite an
+	// ordinary filename that happens to end in a short extension.
+	trashSuffixPattern = regexp.MustCompile(`(/trash/[^"]*)\.[A-Za-z0-9]{7}("|: )`)
 
 	// schemaReasonPattern matches the reason attached to a schema-validation failure,
 	// whether it is rendered as a string or as a nested object.
@@ -135,7 +135,7 @@ func NewNormalizer(runID string) *Normalizer {
 				// Moving something to the trash appends a random suffix so that two
 				// deletes of the same name do not collide. It differs per call by design,
 				// on one service as much as between two.
-				Replacement{trashSuffixPattern, `${1}.{TRASHSUFFIX}"`},
+				Replacement{trashSuffixPattern, `${1}.{TRASHSUFFIX}${2}`},
 			)...,
 		),
 		// Arrays whose order is the answer rather than incidental. A listing's order is
