@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/cyverse-de/data-info/internal/apierror"
+	"github.com/cyverse-de/data-info/internal/panics"
 	"github.com/labstack/echo/v4"
 	"github.com/sirupsen/logrus"
 	logtest "github.com/sirupsen/logrus/hooks/test"
@@ -28,6 +29,9 @@ func loggedServer(log *logrus.Entry) *echo.Echo {
 	e.GET("/missing", func(echo.Context) error { return apierror.New(apierror.ErrDoesNotExist) })
 	e.GET("/unavailable", func(echo.Context) error { return apierror.New(apierror.ErrUnavailable) })
 	e.GET("/panic", func(echo.Context) error { panic("boom") })
+	e.GET("/background-panic", func(echo.Context) error {
+		return &panics.Error{Value: "boom", Stack: []byte("goroutine 7 [running]:")}
+	})
 	return e
 }
 
@@ -43,6 +47,7 @@ func TestRequestLogging(t *testing.T) {
 		route         string
 		wantLines     []line
 		wantErrorCode string
+		wantStack     bool
 	}{
 		{
 			name:      "a passing probe is logged only at debug",
@@ -94,6 +99,16 @@ func TestRequestLogging(t *testing.T) {
 			},
 			wantErrorCode: string(apierror.ErrUncheckedException),
 		},
+		{
+			name:   "a panic recovered off the handler's goroutine is logged with its stack",
+			target: "/background-panic",
+			wantLines: []line{
+				{logrus.ErrorLevel, "request failed"},
+				{logrus.InfoLevel, "request"},
+			},
+			wantErrorCode: string(apierror.ErrUncheckedException),
+			wantStack:     true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -112,6 +127,12 @@ func TestRequestLogging(t *testing.T) {
 				if entries[i].Level != want.level || entries[i].Message != want.message {
 					t.Errorf("line %d = %s %q, want %s %q",
 						i, entries[i].Level, entries[i].Message, want.level, want.message)
+				}
+			}
+
+			if tt.wantStack {
+				if _, ok := entries[0].Data["stack"]; !ok {
+					t.Errorf("the failure was logged without its stack: %v", entries[0].Data)
 				}
 			}
 

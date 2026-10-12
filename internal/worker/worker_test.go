@@ -104,10 +104,14 @@ func TestRunnerReportsOutcomes(t *testing.T) {
 	cases := []struct {
 		name       string
 		jobErr     error
+		panics     bool
 		wantStatus string
 	}{
 		{name: "a job that succeeds", wantStatus: asynctasks.StatusCompleted},
 		{name: "a job that fails", jobErr: errors.New("iRODS said no"), wantStatus: asynctasks.StatusFailed},
+		// Without a recover the process would exit, leaving the paths locked until
+		// async-tasks gave up on the task.
+		{name: "a job that panics", panics: true, wantStatus: asynctasks.StatusFailed},
 	}
 
 	for _, tc := range cases {
@@ -116,7 +120,12 @@ func TestRunnerReportsOutcomes(t *testing.T) {
 			runner := testRunner(tasks)
 
 			if err := runner.Start("/tasks/abc", "move", JobFunc(
-				func(context.Context, *asynctasks.Task, Progress) error { return tc.jobErr },
+				func(context.Context, *asynctasks.Task, Progress) error {
+					if tc.panics {
+						panic("a bug")
+					}
+					return tc.jobErr
+				},
 			)); err != nil {
 				t.Fatalf("Start: %v", err)
 			}
@@ -135,6 +144,27 @@ func TestRunnerReportsOutcomes(t *testing.T) {
 				t.Errorf("first status = %+v, want %q", progress, asynctasks.StatusStarted)
 			}
 		})
+	}
+}
+
+// panickingNotifier is a job that succeeds and then panics while telling its user so.
+type panickingNotifier struct{ JobFunc }
+
+func (panickingNotifier) Notify(context.Context, *asynctasks.Task, bool) { panic("a bug") }
+
+func TestANotificationPanicIsContained(t *testing.T) {
+	tasks := &fakeTasks{}
+	runner := testRunner(tasks)
+
+	job := panickingNotifier{JobFunc(func(context.Context, *asynctasks.Task, Progress) error { return nil })}
+	if err := runner.Start("/tasks/abc", "move", job); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	shutdown(t, runner)
+
+	terminal := tasks.terminal()
+	if len(terminal) != 1 || terminal[0].Status != asynctasks.StatusCompleted {
+		t.Errorf("terminal statuses = %+v, want one %q", terminal, asynctasks.StatusCompleted)
 	}
 }
 

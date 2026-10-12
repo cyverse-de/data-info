@@ -2,8 +2,10 @@ package irodsclient
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 
+	"github.com/cyverse-de/data-info/internal/panics"
 	irodsfs "github.com/cyverse/go-irodsclient/fs"
 )
 
@@ -80,12 +82,23 @@ func DoPath[T any](ctx context.Context, s *Session, path string, fn func(*irodsf
 	done := make(chan result, 1)
 
 	go func() {
+		defer func() {
+			if p := panics.From(recover()); p != nil {
+				done <- result{err: p}
+			}
+		}()
 		value, err := fn(s.fs)
 		done <- result{value, err}
 	}()
 
 	select {
 	case r := <-done:
+		// A panic may have left the connection part way through a request.
+		var panicked *panics.Error
+		if errors.As(r.err, &panicked) {
+			s.poisoned.Store(true)
+			return zero, r.err
+		}
 		if r.err != nil {
 			err := Translate(r.err, path, s.clientUser)
 
@@ -95,9 +108,9 @@ func DoPath[T any](ctx context.Context, s *Session, path string, fn func(*irodsf
 			//
 			// It also sidesteps the mutex leak that upstream v0.20.1 and v0.21.0 have on
 			// that path, where AcquireConnection returns while still holding the session
-			// mutex and wedges every later caller with no socket to time out. go.mod
-			// points at a fork carrying the fix; this stays because a connection that has
-			// already failed is not worth handing to the next request either way.
+			// mutex and wedges every later caller with no socket to time out. v0.21.4
+			// fixes it; this stays because a connection that has already failed is not
+			// worth handing to the next request either way.
 			if IsUnavailable(err) {
 				s.poisoned.Store(true)
 			}

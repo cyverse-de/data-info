@@ -9,6 +9,7 @@ import (
 
 	"github.com/cyverse-de/data-info/internal/apierror"
 	"github.com/cyverse-de/data-info/internal/handlers"
+	"github.com/cyverse-de/data-info/internal/panics"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/sirupsen/logrus"
@@ -146,6 +147,12 @@ func errorLogger(log *logrus.Entry) func(echo.Context, *apierror.Error, error) {
 			"error_code": string(apiErr.Code),
 			"status":     apiErr.HTTPStatus(),
 		}).WithError(err)
+
+		// A panic recovered off the handler's goroutine, in a lookup or an iRODS call.
+		var panicked *panics.Error
+		if errors.As(err, &panicked) {
+			entry = entry.WithField("stack", string(panicked.Stack))
+		}
 
 		if apiErr.Code.IsServerFault() {
 			entry.Error("request failed")

@@ -10,6 +10,8 @@ package lazy
 
 import (
 	"context"
+
+	"github.com/cyverse-de/data-info/internal/panics"
 )
 
 // Value is a computation started at construction and awaited later.
@@ -34,6 +36,11 @@ func Go[T any](ctx context.Context, sem Semaphore, fn func(context.Context) (T, 
 
 	go func() {
 		defer close(v.done)
+		defer func() {
+			if p := panics.From(recover()); p != nil {
+				v.err = p
+			}
+		}()
 
 		if sem != nil {
 			if err := sem.Acquire(ctx, 1); err != nil {

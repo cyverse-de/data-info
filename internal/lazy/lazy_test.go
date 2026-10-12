@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cyverse-de/data-info/internal/panics"
 	"golang.org/x/sync/semaphore"
 )
 
@@ -184,5 +185,22 @@ func TestAwaitReturnsFirstError(t *testing.T) {
 
 	if err := Await(context.Background(), Wait(first), Wait(third)); err != nil {
 		t.Errorf("err = %v, want nil", err)
+	}
+}
+
+// TestGoRecoversAPanic covers the computation's own goroutine, which no handler's recover
+// can reach: a panic there would end the process. It also has to release the semaphore, or
+// every later lookup would wait on a slot nobody returns.
+func TestGoRecoversAPanic(t *testing.T) {
+	sem := semaphore.NewWeighted(1)
+
+	v := Go(context.Background(), sem, func(context.Context) (int, error) { panic("a bug") })
+
+	var panicked *panics.Error
+	if _, err := v.Get(context.Background()); !errors.As(err, &panicked) {
+		t.Fatalf("Get = %v, want the panic as an error", err)
+	}
+	if !sem.TryAcquire(1) {
+		t.Error("the semaphore slot was not released")
 	}
 }

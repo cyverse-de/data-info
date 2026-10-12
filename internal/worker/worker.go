@@ -13,12 +13,14 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"sync"
 	"time"
 
 	"github.com/cyverse-de/data-info/internal/clients/asynctasks"
+	"github.com/cyverse-de/data-info/internal/panics"
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 )
@@ -186,7 +188,7 @@ func (r *Runner) run(taskID, name string, job Job) {
 
 	progress, done := r.progressReporter(log, taskID)
 
-	runErr := job.Run(r.ctx, task, progress)
+	runErr := runJob(r.ctx, job, task, progress)
 
 	// Stop accepting progress before the terminal status, so the history cannot end with a
 	// "running" line posted after the job finished, and give what is already buffered a
@@ -194,7 +196,12 @@ func (r *Runner) run(taskID, name string, job Job) {
 	done()
 
 	if runErr != nil {
-		log.WithError(runErr).Error("the job failed; its paths are being released")
+		entry := log.WithError(runErr)
+		var panicked *panics.Error
+		if errors.As(runErr, &panicked) {
+			entry = entry.WithField("stack", string(panicked.Stack))
+		}
+		entry.Error("the job failed; its paths are being released")
 		r.post(log, taskID, asynctasks.Status{
 			Status: asynctasks.StatusFailed,
 			Detail: fmt.Sprintf("[%s] %v", r.instance, runErr),
@@ -209,8 +216,30 @@ func (r *Runner) run(taskID, name string, job Job) {
 
 	// Not r.ctx, which Shutdown cancels: the work is done and the user should still hear so.
 	if n, ok := job.(Notifying); ok {
-		n.Notify(context.WithoutCancel(r.ctx), task, runErr != nil)
+		notify(context.WithoutCancel(r.ctx), log, n, task, runErr != nil)
 	}
+}
+
+// runJob runs a job, turning a panic into its error so that the task is still recorded as
+// failed and its paths released.
+func runJob(ctx context.Context, job Job, task *asynctasks.Task, progress Progress) (err error) {
+	defer func() {
+		if p := panics.From(recover()); p != nil {
+			err = p
+		}
+	}()
+	return job.Run(ctx, task, progress)
+}
+
+// notify sends a job's notification. A panic in it is logged rather than allowed to end the
+// process, which would take every other job in flight with it.
+func notify(ctx context.Context, log *logrus.Entry, n Notifying, task *asynctasks.Task, failed bool) {
+	defer func() {
+		if p := panics.From(recover()); p != nil {
+			log.WithError(p).WithField("stack", string(p.Stack)).Error("sending the job's notification panicked")
+		}
+	}()
+	n.Notify(ctx, task, failed)
 }
 
 // progressReporter returns a Progress that posts in the background, and a function that
