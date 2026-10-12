@@ -181,6 +181,22 @@ func (r *Runner) runAsync(ctx context.Context, c Case) Result {
 		return r.withStateDiffs(ctx, c, paired, diffs)
 	}
 
+	// Only one side did. That is a difference in its own right, and waiting on the other's
+	// absent task would ask async-tasks for an empty id, which answers with a list and hid
+	// the difference behind a decoding error. The task that exists is still waited for, so
+	// the state comparison does not race it.
+	if referenceID == "" || candidateID == "" {
+		started, id := "candidate", candidateID
+		if candidateID == "" {
+			started, id = "reference", referenceID
+		}
+		if _, err := r.awaitTask(ctx, id); err != nil {
+			return Result{Case: c, Err: fmt.Errorf("waiting for the %s's task: %w", started, err)}
+		}
+		diffs = append(diffs, Diff{Kind: "task", Detail: "only the " + started + " started a task"})
+		return r.withStateDiffs(ctx, c, paired, diffs)
+	}
+
 	referenceTask, err := r.awaitTask(ctx, referenceID)
 	if err != nil {
 		return Result{Case: c, Err: fmt.Errorf("waiting for the reference's task: %w", err)}
@@ -306,6 +322,14 @@ func (r *Runner) runSteps(ctx context.Context, steps []Step, base, root string, 
 			return fmt.Errorf("step %d (%s): status %d: %s", i+1, step.describe(), resp.Status, resp.Body)
 		}
 
+		if step.CaptureTrashPath {
+			trashPath, err := trashPathFrom(resp.Body)
+			if err != nil {
+				return fmt.Errorf("step %d (%s): %w", i+1, step.describe(), err)
+			}
+			vars["TrashPath"] = trashPath
+		}
+
 		if !step.Await {
 			continue
 		}
@@ -323,6 +347,23 @@ func (r *Runner) runSteps(ctx context.Context, steps []Step, base, root string, 
 		}
 	}
 	return nil
+}
+
+// trashPathFrom reads the one trash path a delete's response names.
+func trashPathFrom(body []byte) (string, error) {
+	var envelope struct {
+		TrashPaths map[string]string `json:"trash-paths"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return "", fmt.Errorf("reading trash-paths: %w", err)
+	}
+	if len(envelope.TrashPaths) != 1 {
+		return "", fmt.Errorf("capturing a trash path needs exactly one under trash-paths, got %d", len(envelope.TrashPaths))
+	}
+	for _, trashPath := range envelope.TrashPaths {
+		return trashPath, nil
+	}
+	return "", nil
 }
 
 // withStateDiffs reads back both subtrees and appends what differs.

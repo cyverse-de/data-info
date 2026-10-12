@@ -122,7 +122,8 @@ cases:
 
   # Restoring needs the object to be in the trash, so these delete it first and wait. The
   # setup runs against each service separately, which is what makes the comparison honest:
-  # each restores from wherever its own delete put things.
+  # each restores from wherever its own delete put things. The request names the trash path,
+  # which is what /restorer takes; naming the original path restores whatever is there now.
   - id: restore-a-deleted-file
     tier: async
     seed: {filename: restorable.txt, content: "put me back\n"}
@@ -132,16 +133,18 @@ cases:
         query: {user: "{{.User}}"}
         body: {paths: ["{{.SeedPath}}"]}
         await: true
+        capture-trash-path: true
     method: POST
     path: /restorer
     query: {user: "{{.User}}"}
-    body: {paths: ["{{.Root}}/restorable.txt"]}
+    body: {paths: ["{{.TrashPath}}"]}
 
   # The case the state probe exists for. After the delete, a different file is put back at
   # the original path, so the restore cannot use it and has to rename. Both services append
   # .0, so the outcome is comparable rather than merely present -- and a response saying
   # "restored" while the original was clobbered is exactly what reading only the response
-  # would miss.
+  # would miss. It names the trash path: naming the original one "restores" the replacement,
+  # which has no trash origin, into the user's home, where both sides collide.
   - id: restore-onto-an-occupied-path
     tier: async
     seed: {filename: contested.txt, content: "the original\n"}
@@ -151,11 +154,12 @@ cases:
         query: {user: "{{.User}}"}
         body: {paths: ["{{.SeedPath}}"]}
         await: true
+        capture-trash-path: true
       - seed: {filename: contested.txt, content: "the replacement\n"}
     method: POST
     path: /restorer
     query: {user: "{{.User}}"}
-    body: {paths: ["{{.Root}}/contested.txt"]}
+    body: {paths: ["{{.TrashPath}}"]}
 
   - id: restore-an-empty-selection
     tier: write

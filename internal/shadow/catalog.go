@@ -79,6 +79,11 @@ type Step struct {
 	// step whose work happens in the background would still be running when the case's
 	// own request arrives, which is the race the async tier exists to remove.
 	Await bool `yaml:"await"`
+
+	// CaptureTrashPath binds {{.TrashPath}}, for the steps and the request that follow, to
+	// the one trash path the step's response names under "trash-paths". It is how a case
+	// names something a delete put in the trash, whose name ends in a random suffix.
+	CaptureTrashPath bool `yaml:"capture-trash-path"`
 }
 
 // describe names a step in an error, since steps have no ids of their own.
@@ -179,6 +184,8 @@ func LoadCatalog(dir string) (*Catalog, error) {
 					// Seeding is synchronous, so awaiting one would wait for a task
 					// that is never created and fail the case after the timeout.
 					return nil, fmt.Errorf("%s: case %q step %d awaits a seed, which creates no task", path, c.ID, i+1)
+				case step.Seed != nil && step.CaptureTrashPath:
+					return nil, fmt.Errorf("%s: case %q step %d captures a trash path from a seed, which has no response", path, c.ID, i+1)
 				}
 			}
 		}
