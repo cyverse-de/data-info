@@ -168,3 +168,39 @@ func TestNewLogger(t *testing.T) {
 		})
 	}
 }
+
+func TestConfigureLibraryLogger(t *testing.T) {
+	tests := []struct {
+		service logrus.Level
+		want    logrus.Level
+	}{
+		{logrus.DebugLevel, logrus.DebugLevel},
+		{logrus.InfoLevel, logrus.WarnLevel},
+		{logrus.WarnLevel, logrus.WarnLevel},
+		{logrus.ErrorLevel, logrus.ErrorLevel},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.service.String(), func(t *testing.T) {
+			lib := logrus.New()
+			configureLibraryLogger(lib, tt.service)
+			if got := lib.GetLevel(); got != tt.want {
+				t.Errorf("level = %v, want %v", got, tt.want)
+			}
+
+			var buf bytes.Buffer
+			lib.SetOutput(&buf)
+			lib.WithField("service", "kept").Error("from the library")
+
+			var got map[string]any
+			if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+				t.Fatalf("log line is not JSON: %v (%s)", err, buf.String())
+			}
+			for key, want := range map[string]any{"msg": "from the library", "project": "discoenv", "service": "kept"} {
+				if got[key] != want {
+					t.Errorf("%s = %v, want %v", key, got[key], want)
+				}
+			}
+		})
+	}
+}

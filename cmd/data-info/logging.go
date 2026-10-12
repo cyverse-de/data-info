@@ -36,10 +36,43 @@ func newLogger(level string) (*logrus.Entry, error) {
 	logger.SetLevel(lvl)
 	logger.SetFormatter(&logrus.JSONFormatter{TimestampFormat: time.RFC3339Nano})
 
-	return logger.WithFields(logrus.Fields{
+	return logger.WithFields(serviceFields()), nil
+}
+
+func serviceFields() logrus.Fields {
+	return logrus.Fields{
 		"project": "discoenv",
 		"service": handlers.ServiceName,
-	}), nil
+	}
+}
+
+// configureLibraryLogger makes logrus's global logger, which go-irodsclient writes to, log
+// JSON lines carrying the service's fields. At the service's default level of info it logs
+// only warnings and worse, because go-irodsclient logs routine events for every pooled
+// connection at info.
+func configureLibraryLogger(logger *logrus.Logger, serviceLevel logrus.Level) {
+	level := serviceLevel
+	if level == logrus.InfoLevel {
+		level = logrus.WarnLevel
+	}
+
+	logger.SetLevel(level)
+	logger.SetFormatter(&logrus.JSONFormatter{TimestampFormat: time.RFC3339Nano})
+	logger.AddHook(fieldsHook(serviceFields()))
+}
+
+// fieldsHook adds fixed fields to every entry that does not already set them.
+type fieldsHook logrus.Fields
+
+func (fieldsHook) Levels() []logrus.Level { return logrus.AllLevels }
+
+func (h fieldsHook) Fire(entry *logrus.Entry) error {
+	for key, value := range h {
+		if _, ok := entry.Data[key]; !ok {
+			entry.Data[key] = value
+		}
+	}
+	return nil
 }
 
 // requestLogger writes one line per request, without bodies.
