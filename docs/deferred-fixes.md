@@ -382,3 +382,31 @@ clj-jargon.permissions/paths-writeable?`.
 
 **Not reproduced.** No rows means nothing to apply, so this answers 200 with
 `{"path-metadata": []}`. Pinned by the shadow case `metadata-csv-with-only-a-header`.
+
+## 24. An unreachable async-tasks answers ERR_UNAVAILABLE
+
+When async-tasks cannot be reached -- for the lock check every move, rename, delete and
+restore makes, or to record the task itself -- the Clojure service lets the exception reach
+trap's catch-all: `ERR_UNCHECKED_EXCEPTION`, with the exception's message, such as
+`Connection refused`.
+
+**Not reproduced.** `locks.Validate` and `handlers.startTask` answer `ERR_UNAVAILABLE` with a
+reason that says what could not be done, and keep the underlying error, which names
+async-tasks' address, as the logged cause rather than the response. A job this instance
+refuses to start, because it is shutting down, answers the same way. The HTTP status is 500
+either way, so a caller branching on status sees no change; one branching on `error_code`
+sees the more accurate code. Found by running both services against a Data Store with no
+async-tasks.
+
+## 25. Unknown query parameters are ignored, not refused
+
+The Clojure service validates every route's query string against a closed schema, so any
+parameter it does not name -- a misspelling such as `sort-col` for `sort-field`, or anything
+else -- answers 400 `ERR_ILLEGAL_ARGUMENT` with `{"reason": {"<name>": "disallowed-key"}}`.
+This service ignores parameters it does not use.
+
+**Not reproduced, deliberately.** No working caller can depend on the refusal, since every
+request it would refuse already fails against the Clojure service, so accepting them breaks
+nothing. Matching it would mean an allowed-parameter list on each of the ported routes, kept
+in step by hand. The cost of leniency is that a misspelled parameter is silently ignored
+rather than reported. Pinned by the shadow case `unknown-query-parameter`.

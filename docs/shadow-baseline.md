@@ -60,6 +60,10 @@ between runs.
 | `create-through-a-parent-reference`    | reference 500, candidate 200                       | 13 — acts on uncleaned paths
 | `tabular-one-page-past-the-end`        | reference 500, candidate 200                       | 17 — reading past the end of a short file throws
 | `metadata-csv-with-only-a-header`      | reference 500, candidate 200                       | 23 — a metadata CSV with no rows throws
+| `unknown-query-parameter`              | reference 400, candidate 200                       | 25 — unknown query parameters are ignored, not refused
+
+`unknown-query-parameter` was added after the QA run above and has been seen only locally, so
+the next QA run should show 9 deliberate differences, one of them in reads.
 
 `upload-a-csv` differs in some runs and not others: `infoType` `"csv"` against `"unknown"`
 (entry 21). The Clojure service reports whatever type info-typer has set by the time it

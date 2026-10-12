@@ -169,6 +169,14 @@ cases:
     path: /navigation/home
     query: {user: "{{.User}}"}
 
+  # The Clojure service refuses any query parameter its schema does not name; this service
+  # ignores it (deferred fix 25).
+  - id: unknown-query-parameter
+    tier: read
+    method: GET
+    path: /navigation/home
+    query: {user: "{{.User}}", bogus: "1"}
+
   - id: navigation-home-unknown-user
     tier: read
     method: GET
