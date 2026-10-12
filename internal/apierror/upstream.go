@@ -7,8 +7,9 @@ import (
 )
 
 // UpstreamError is an error response from another DE service, relayed to the caller as it was
-// received. clojure-commons' trap returns a clj-http error response as the ring response
-// itself, so on a StyleTrap route the caller sees the other service's status and body.
+// received. clojure-commons returns a clj-http error response as the ring response itself, from
+// trap and from the default exception handler alike, so the caller sees the other service's
+// status and body.
 type UpstreamError struct {
 	Service     string
 	Status      int

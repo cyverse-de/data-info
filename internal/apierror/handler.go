@@ -53,10 +53,10 @@ func HTTPErrorHandler(logErr func(echo.Context, *Error, error)) echo.HTTPErrorHa
 			return
 		}
 
-		// Only trap relays an upstream response; on a StyleOK route it reaches the default
-		// handler like any other exception, which toAPIError reproduces.
+		// Both of the Clojure service's error paths relay an upstream response: trap's
+		// clj-http-error? clause and the default handler's.
 		var upstream *UpstreamError
-		if errors.As(err, &upstream) && styleOf(c) == StyleTrap {
+		if errors.As(err, &upstream) {
 			relay(logErr, c, upstream, err)
 			return
 		}
@@ -198,9 +198,14 @@ func toAPIError(err error, style Style) (*Error, string) {
 		}
 	}
 
-	// clojure-commons' unchecked-handler shape: a 500 naming the underlying failure.
+	// A 500 naming the underlying failure. trap's catch-all calls it "message"; the default
+	// handler that StyleOK routes reach calls it "reason".
+	key := "message"
+	if style == StyleOK {
+		key = "reason"
+	}
 	return New(ErrUncheckedException).WithStatus(http.StatusInternalServerError).
-		With("reason", err.Error()).WithCause(err), ""
+		With(key, err.Error()).WithCause(err), ""
 }
 
 func messageOf(he *echo.HTTPError) string {

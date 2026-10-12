@@ -69,6 +69,15 @@ func TestHTTPErrorHandler(t *testing.T) {
 			path:       "/deleter",
 			handler:    func(echo.Context) error { return errors.New("boom") },
 			wantStatus: http.StatusInternalServerError,
+			wantBody:   `{"error_code":"ERR_UNCHECKED_EXCEPTION","message":"boom"}`,
+		},
+		{
+			name:       "ok route reports an unexpected error under reason",
+			method:     http.MethodPost,
+			path:       "/path-info",
+			style:      StyleOK,
+			handler:    func(echo.Context) error { return errors.New("boom") },
+			wantStatus: http.StatusInternalServerError,
 			wantBody:   `{"error_code":"ERR_UNCHECKED_EXCEPTION","reason":"boom"}`,
 		},
 		{
@@ -90,14 +99,13 @@ func TestHTTPErrorHandler(t *testing.T) {
 			wantBody:   `{"error_code":"ERR_EXISTS","reason":"duplicate"}`,
 		},
 		{
-			name:       "ok route treats an upstream error like any other exception",
+			name:       "ok route relays an upstream error as received too",
 			method:     http.MethodPost,
 			path:       "/path-info",
 			style:      StyleOK,
 			handler:    func(echo.Context) error { return testUpstream },
-			wantStatus: http.StatusInternalServerError,
-			wantBody: `{"error_code":"ERR_UNCHECKED_EXCEPTION","reason":` +
-				`"metadata answered 400: {\"error_code\":\"ERR_EXISTS\",\"reason\":\"duplicate\"}"}`,
+			wantStatus: http.StatusBadRequest,
+			wantBody:   `{"error_code":"ERR_EXISTS","reason":"duplicate"}`,
 		},
 		{
 			name:       "HEAD answers with a bare status",
