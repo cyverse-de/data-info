@@ -141,6 +141,3 @@ Four things the harness cannot catch, learned by it failing to:
 - **A `preStop` sleep plus 30s server drain plus 60s job drain fit inside the manifest's
   120s grace period.** They are coupled: changing one without the other risks a SIGKILL
   mid-drain, which is what leaves paths locked forever.
-- `go-irodsclient` is pinned to a fork (`johnworth/go-irodsclient`, branch
-  `fix-acquireconnection-mutex-leak`) for a session-mutex leak. Swap back when upstream
-  releases the fix.

@@ -7,17 +7,17 @@ require (
 	github.com/cyverse-de/go-mod/cfg v0.0.3
 	github.com/cyverse-de/go-mod/logging v0.0.4
 	github.com/cyverse-de/go-mod/otelutils v0.0.6
-	github.com/cyverse/go-irodsclient v0.20.1
+	github.com/cyverse/go-irodsclient v0.21.4
 	github.com/google/uuid v1.6.0
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/knadh/koanf v1.5.0
-	github.com/labstack/echo/v4 v4.15.4
+	github.com/labstack/echo/v4 v4.16.0
 	github.com/lib/pq v1.12.3
 	github.com/mitchellh/mapstructure v1.5.0
-	github.com/rabbitmq/amqp091-go v1.13.0
-	github.com/sirupsen/logrus v1.10.1
+	github.com/rabbitmq/amqp091-go v1.15.0
+	github.com/sirupsen/logrus v1.10.2
 	go.opentelemetry.io/contrib/instrumentation/github.com/labstack/echo/otelecho v0.70.0
-	golang.org/x/sync v0.22.0
+	golang.org/x/sync v0.24.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -78,15 +78,3 @@ require (
 	google.golang.org/grpc v1.79.3 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 )
-
-// The upstream v0.20.1 leaks the session mutex when AcquireConnection returns on the
-// pending-error path, wedging the FileSystem permanently -- no socket is involved, so no
-// timeout unwinds it, and Release deadlocks on the same mutex.
-//
-// The fix, plus a regression test that deadlocks without it, is on
-// github.com/johnworth/go-irodsclient branch fix-acquireconnection-mutex-leak
-// (irods/session/session.go). It has not been sent upstream yet; doing so, and dropping this
-// replace for the release that carries it, is the exit from this arrangement. Until then the
-// build depends on a personal fork staying reachable -- go.sum pins the content, but not its
-// availability.
-replace github.com/cyverse/go-irodsclient => github.com/johnworth/go-irodsclient v0.21.1-0.20260820215636-0093e8d1d906
