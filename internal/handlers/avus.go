@@ -111,7 +111,7 @@ func (a *AVUs) add(c echo.Context, whom func(echo.Context) (string, error), allo
 		return err
 	}
 
-	body, err := bindAVUChange(c)
+	body, err := bindAVUChange(c, false)
 	if err != nil {
 		return err
 	}
@@ -175,7 +175,7 @@ func (a *AVUs) Set(c echo.Context) error {
 		return err
 	}
 
-	body, err := bindAVUChange(c)
+	body, err := bindAVUChange(c, true)
 	if err != nil {
 		return err
 	}
@@ -339,8 +339,9 @@ func (a *AVUs) readableItem(ctx context.Context, scope *rods.Scope, user, id str
 func (a *AVUs) proxyUser(echo.Context) (string, error) { return a.deps.ProxyUser, nil }
 
 // bindAVUChange decodes an AVU change, keeping what belongs to the metadata service separate
-// from what belongs to iRODS.
-func bindAVUChange(c echo.Context) (avuChangeRequest, error) {
+// from what belongs to iRODS. avusRequired is true on the set route, where a missing list
+// would otherwise mean "remove every AVU".
+func bindAVUChange(c echo.Context, avusRequired bool) (avuChangeRequest, error) {
 	var raw map[string]any
 	if err := decodeBody(c, &raw); err != nil {
 		return avuChangeRequest{}, err
@@ -354,15 +355,15 @@ func bindAVUChange(c echo.Context) (avuChangeRequest, error) {
 	}
 
 	present, given := raw["irods-avus"]
-	if !given || present == nil {
+	if !given {
+		if avusRequired {
+			return avuChangeRequest{}, schemaError("irods-avus is required")
+		}
 		return out, nil
 	}
 
 	list, ok := present.([]any)
 	if !ok {
-		// Not "no AVUs". On the set route those are indistinguishable in effect -- an empty
-		// list removes every AVU the caller can see -- so a body this cannot read is
-		// refused rather than obeyed.
 		return avuChangeRequest{}, schemaError("irods-avus must be a list")
 	}
 
@@ -372,12 +373,15 @@ func bindAVUChange(c echo.Context) (avuChangeRequest, error) {
 			return avuChangeRequest{}, schemaError("each entry of irods-avus must be an object")
 		}
 
-		attribute, _ := object["attr"].(string)
-		if strings.TrimSpace(attribute) == "" {
+		attribute, attrOK := object["attr"].(string)
+		if !attrOK || strings.TrimSpace(attribute) == "" {
 			return avuChangeRequest{}, schemaError("each entry of irods-avus needs a non-blank attr")
 		}
-		value, _ := object["value"].(string)
-		unit, _ := object["unit"].(string)
+		value, valueOK := object["value"].(string)
+		unit, unitOK := object["unit"].(string)
+		if !valueOK || !unitOK {
+			return avuChangeRequest{}, schemaError("each entry of irods-avus needs a string value and unit")
+		}
 
 		out.IRODSAVUs = append(out.IRODSAVUs, service.AVU{Attribute: attribute, Value: value, Unit: unit})
 	}

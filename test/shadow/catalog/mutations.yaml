@@ -294,6 +294,30 @@ cases:
     seed: {filename: tagged.txt, content: "tag me\n"}
     body: {irods-avus: []}
 
+  - id: set-avus-without-irods-avus
+    tier: write
+    method: PUT
+    path: /data/{{.SeedID}}/metadata
+    query: {user: "{{.User}}"}
+    seed: {filename: tagged.txt, content: "tag me\n"}
+    body: {avus: []}
+
+  - id: set-avus-to-null
+    tier: write
+    method: PUT
+    path: /data/{{.SeedID}}/metadata
+    query: {user: "{{.User}}"}
+    seed: {filename: tagged.txt, content: "tag me\n"}
+    body: {irods-avus: null}
+
+  - id: add-an-avu-without-a-unit
+    tier: write
+    method: PATCH
+    path: /data/{{.SeedID}}/metadata
+    query: {user: "{{.User}}"}
+    seed: {filename: tagged.txt, content: "tag me\n"}
+    body: {irods-avus: [{attr: "harness-attr", value: "harness-value"}]}
+
   - id: metadata-save-to-a-missing-directory
     tier: write
     method: POST
