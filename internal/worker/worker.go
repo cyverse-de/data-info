@@ -403,12 +403,14 @@ func (r *Runner) send(
 	updates <-chan asynctasks.Status,
 	state func() (closing, discard bool),
 ) {
-	ticker := time.NewTicker(r.heartbeatInterval)
-	defer ticker.Stop()
+	// A timer reset after every post, not a ticker: a ticker checking "silent for an
+	// interval" on its own cadence narrowly misses and waits a whole extra tick, which
+	// spaced heartbeats two intervals apart.
+	quiet := time.NewTimer(r.heartbeatInterval)
+	defer quiet.Stop()
 
 	// The "started" status has just been posted, which is where both clocks begin.
-	lastPosted := time.Now()
-	lastReported := lastPosted
+	lastReported := time.Now()
 	lastDetail := "starting"
 	gaveUp := false
 
@@ -423,11 +425,13 @@ func (r *Runner) send(
 				continue
 			}
 			r.post(log, taskID, status, false, progressRetries)
-			lastPosted, lastReported = time.Now(), time.Now()
+			lastReported = time.Now()
 			lastDetail = strings.TrimPrefix(status.Detail, "["+r.instance+"] ")
+			quiet.Reset(r.heartbeatInterval)
 
-		case <-ticker.C:
-			if closing, _ := state(); closing || time.Since(lastPosted) < r.heartbeatInterval {
+		case <-quiet.C:
+			quiet.Reset(r.heartbeatInterval)
+			if closing, _ := state(); closing {
 				continue
 			}
 			if time.Since(lastReported) > r.heartbeatMaxSilence {
@@ -439,15 +443,13 @@ func (r *Runner) send(
 				}
 				continue
 			}
-			if r.heartbeat(log, taskID, lastDetail) {
-				lastPosted = time.Now()
-			}
+			r.heartbeat(log, taskID, lastDetail)
 		}
 	}
 }
 
-// heartbeat reports a silent job as still running, once, and says whether that was recorded.
-func (r *Runner) heartbeat(log *logrus.Entry, taskID, lastDetail string) bool {
+// heartbeat reports a silent job as still running, once.
+func (r *Runner) heartbeat(log *logrus.Entry, taskID, lastDetail string) {
 	ctx, cancel := context.WithTimeout(r.ctx, heartbeatTimeout)
 	defer cancel()
 
@@ -458,9 +460,7 @@ func (r *Runner) heartbeat(log *logrus.Entry, taskID, lastDetail string) bool {
 	if err != nil {
 		log.WithError(err).Warn("could not post a heartbeat; the next one will try again, " +
 			"and the task is released only if several in a row fail")
-		return false
 	}
-	return true
 }
 
 // post records a status, retrying.

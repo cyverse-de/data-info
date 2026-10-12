@@ -704,3 +704,39 @@ func TestAShutdownSaysTheJobWasInterrupted(t *testing.T) {
 		t.Errorf("terminal statuses = %+v, want one saying the job was interrupted by shutdown", terminal)
 	}
 }
+
+// TestHeartbeatsAreOneIntervalApart pins the spacing. A ticker checking for silence on its own
+// cadence spaced them two intervals apart, which halves the margin under the stall timeout.
+func TestHeartbeatsAreOneIntervalApart(t *testing.T) {
+	const interval = 40 * time.Millisecond
+
+	tasks := &fakeTasks{}
+	discard := logrus.New()
+	discard.SetOutput(io.Discard)
+	runner := NewRunner(tasks, logrus.NewEntry(discard), "test-instance", WithHeartbeat(interval, time.Hour))
+
+	if err := runner.Start("/tasks/abc", "delete", JobFunc(
+		func(_ context.Context, _ *asynctasks.Task, _ Progress) error {
+			time.Sleep(10 * interval)
+			return nil
+		},
+	)); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	shutdown(t, runner)
+
+	var beats []time.Time
+	for _, p := range tasks.recorded() {
+		if isHeartbeat(p.status) {
+			beats = append(beats, p.at)
+		}
+	}
+	if len(beats) < 3 {
+		t.Fatalf("heartbeats = %d, want at least 3", len(beats))
+	}
+	for i := 1; i < len(beats); i++ {
+		if gap := beats[i].Sub(beats[i-1]); gap > interval*3/2 {
+			t.Errorf("heartbeats %d and %d are %s apart, want about %s", i-1, i, gap, interval)
+		}
+	}
+}
