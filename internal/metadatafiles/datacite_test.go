@@ -164,6 +164,49 @@ func TestABlankRequiredValueCountsAsMissing(t *testing.T) {
 	}
 }
 
+func TestBuildDataCiteRefusesUnpairableValues(t *testing.T) {
+	cases := []struct {
+		name    string
+		extra   []AVU
+		wantErr bool
+	}{
+		{
+			name:    "a creator with no affiliation",
+			extra:   []AVU{avu("datacite.creator", "Roe, Rich")},
+			wantErr: true,
+		},
+		{
+			name:    "more name identifiers than creators",
+			extra:   []AVU{avu("creatorNameIdentifier", "0000-0001"), avu("creatorNameIdentifier", "0000-0002")},
+			wantErr: true,
+		},
+		{
+			name:    "a related identifier missing its relation type",
+			extra:   []AVU{avu("RelatedIdentifier", "x"), avu("relatedIdentifierType", "DOI")},
+			wantErr: true,
+		},
+		{
+			name:  "fewer name identifiers than creators",
+			extra: []AVU{avu("datacite.creator", "Roe, Rich"), avu("creatorAffiliation", "UA")},
+		},
+		{
+			name:  "optional-only attributes of different lengths",
+			extra: []AVU{avu("geoLocationPoint", "1 2"), avu("geoLocationPoint", "3 4"), avu("geoLocationPlace", "Tucson")},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := BuildDataCite(append(minimalAVUs(), tc.extra...))
+
+			var association *AssociationError
+			if got := errors.As(err, &association); got != tc.wantErr {
+				t.Errorf("BuildDataCite returned %v, want an *AssociationError: %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
 func contains(values []string, want string) bool {
 	for _, value := range values {
 		if value == want {

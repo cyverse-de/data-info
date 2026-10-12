@@ -48,6 +48,11 @@ func BuildDataCite(avus []AVU) (string, error) {
 	if missing := missingAttributes(avus); len(missing) > 0 {
 		return "", &MissingAttributesError{Attributes: missing}
 	}
+	for _, a := range associations {
+		if err := a.check(avus); err != nil {
+			return "", err
+		}
+	}
 
 	root := Elem("datacite:resource", []Attr{
 		{Name: "xmlns:datacite", Value: dataciteNamespace},
@@ -100,7 +105,7 @@ func identifier(avus []AVU) *Element {
 }
 
 func creators(avus []AVU) *Element {
-	rows := associated(avus, []string{"datacite.creator", "creatorAffiliation"}, []string{"creatorNameIdentifier"})
+	rows := creatorAttributes.rows(avus)
 
 	children := make([]*Element, 0, len(rows))
 	for _, row := range rows {
@@ -153,7 +158,7 @@ func subjects(avus []AVU) *Element {
 }
 
 func contributors(avus []AVU) *Element {
-	rows := associated(avus, []string{"contributorName", "contributorType"}, nil)
+	rows := contributorAttributes.rows(avus)
 	if len(rows) == 0 {
 		return nil
 	}
@@ -168,7 +173,7 @@ func contributors(avus []AVU) *Element {
 }
 
 func alternateIdentifiers(avus []AVU) *Element {
-	rows := associated(avus, []string{"AlternateIdentifier", "alternateIdentifierType"}, nil)
+	rows := alternateIdentifierAttributes.rows(avus)
 	if len(rows) == 0 {
 		return nil
 	}
@@ -182,7 +187,7 @@ func alternateIdentifiers(avus []AVU) *Element {
 }
 
 func relatedIdentifiers(avus []AVU) *Element {
-	rows := associated(avus, []string{"RelatedIdentifier", "relatedIdentifierType", "relationType"}, nil)
+	rows := relatedIdentifierAttributes.rows(avus)
 	if len(rows) == 0 {
 		return nil
 	}
@@ -211,7 +216,7 @@ func rightsList(avus []AVU) *Element {
 }
 
 func descriptions(avus []AVU) *Element {
-	rows := associated(avus, []string{"Description", "descriptionType"}, nil)
+	rows := descriptionAttributes.rows(avus)
 	if len(rows) == 0 {
 		return nil
 	}
@@ -228,7 +233,7 @@ func descriptions(avus []AVU) *Element {
 
 func geoLocations(avus []AVU) *Element {
 	// All three are optional, so a location is built from whichever of them a row has.
-	rows := associated(avus, nil, []string{"geoLocationPoint", "geoLocationBox", "geoLocationPlace"})
+	rows := geoLocationAttributes.rows(avus)
 	if len(rows) == 0 {
 		return nil
 	}
@@ -271,48 +276,80 @@ func value(avus []AVU, attribute string) string {
 	return ""
 }
 
-// associated zips several attributes' values together by position.
-//
-// This is how the DE records repeating structures in a flat list of AVUs: the first creator's
-// name goes with the first affiliation, the second with the second, and so on. Required
-// attributes must all have the same number of values; optional ones may have fewer and are
-// padded, but never more.
-func associated(avus []AVU, required, optional []string) [][]string {
-	lists := make([][]string, 0, len(required)+len(optional))
+// association is a set of attributes whose values the DE pairs by position: the first
+// creator's name goes with the first affiliation, the second with the second, and so on.
+type association struct {
+	required []string
+	optional []string
+}
 
+var (
+	creatorAttributes = association{
+		required: []string{"datacite.creator", "creatorAffiliation"},
+		optional: []string{"creatorNameIdentifier"},
+	}
+	contributorAttributes         = association{required: []string{"contributorName", "contributorType"}}
+	alternateIdentifierAttributes = association{required: []string{"AlternateIdentifier", "alternateIdentifierType"}}
+	relatedIdentifierAttributes   = association{
+		required: []string{"RelatedIdentifier", "relatedIdentifierType", "relationType"},
+	}
+	descriptionAttributes = association{required: []string{"Description", "descriptionType"}}
+	geoLocationAttributes = association{optional: []string{"geoLocationPoint", "geoLocationBox", "geoLocationPlace"}}
+)
+
+// associations is every association a document uses, all checked before any is built.
+var associations = []association{
+	creatorAttributes,
+	contributorAttributes,
+	alternateIdentifierAttributes,
+	relatedIdentifierAttributes,
+	descriptionAttributes,
+	geoLocationAttributes,
+}
+
+// AssociationError reports attributes whose values cannot be paired by position.
+type AssociationError struct{ Reason string }
+
+func (e *AssociationError) Error() string { return e.Reason }
+
+// check refuses values that cannot be paired: required attributes with different numbers of
+// values, or an optional one with more than they have. Pairing them anyway would silently
+// drop or misattribute values in a published record.
+func (a association) check(avus []AVU) error {
+	if len(a.required) == 0 {
+		return nil
+	}
+
+	count := len(values(avus, a.required[0]))
+	for _, name := range a.required[1:] {
+		if len(values(avus, name)) != count {
+			return &AssociationError{Reason: "these attributes must have the same number of values: " +
+				strings.Join(a.required, ", ")}
+		}
+	}
+	for _, name := range a.optional {
+		if len(values(avus, name)) > count {
+			return &AssociationError{Reason: "none of the attributes " + strings.Join(a.optional, ", ") +
+				" may have more values than " + strings.Join(a.required, ", ")}
+		}
+	}
+	return nil
+}
+
+// rows zips the association's values together, padding optional attributes with blanks. It
+// assumes check has passed.
+func (a association) rows(avus []AVU) [][]string {
+	names := append(append([]string{}, a.required...), a.optional...)
+	lists := make([][]string, 0, len(names))
 	longest := 0
-	for _, name := range required {
+	for _, name := range names {
 		held := values(avus, name)
 		lists = append(lists, held)
-		if len(held) > longest {
-			longest = len(held)
-		}
+		longest = max(longest, len(held))
 	}
 
-	shortest := longest
-	for _, held := range lists {
-		if len(held) < shortest {
-			shortest = len(held)
-		}
-	}
-
-	for _, name := range optional {
-		held := values(avus, name)
-		if len(held) > longest {
-			longest = len(held)
-		}
-		lists = append(lists, held)
-	}
-
-	// Zipping stops at the shortest list, which is what makes a required attribute with
-	// fewer values than its partners truncate the result rather than produce blank entries.
-	rows := shortest
-	if len(required) == 0 {
-		rows = longest
-	}
-
-	out := make([][]string, 0, rows)
-	for i := range rows {
+	out := make([][]string, 0, longest)
+	for i := range longest {
 		row := make([]string, 0, len(lists))
 		for _, held := range lists {
 			if i < len(held) {

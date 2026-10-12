@@ -355,3 +355,16 @@ every upload case, as `"infoType": "csv"` against `"infoType": ""` in the respon
 AVU race, that consumer has never actually typed a DE upload, so its behaviour on this path
 is unproven in production -- which is the part to watch during the soak rather than the
 response field itself.
+
+## 22. DataCite metadata the library refuses answers 400, not 500
+
+`POST /data/{data-id}/ore/save` builds the DataCite document with metadata-files, which throws
+`ex-info` when a required attribute is missing or when associated attributes cannot be paired
+by position -- two `datacite.creator` values with one `creatorAffiliation`, say. Nothing
+catches it, so trap's catch-all answers `ERR_UNCHECKED_EXCEPTION` with a 500, after the
+metadata folder and an empty `cyverse-metadata.xml` have already been created.
+
+**Not reproduced.** `metadatafiles.BuildDataCite` validates before anything is written and
+the handler answers `ERR_BAD_OR_MISSING_FIELD` naming the problem, which the status table
+makes a 400. The data set's metadata is what is wrong, and a 500 would read as a fault in
+this service.
