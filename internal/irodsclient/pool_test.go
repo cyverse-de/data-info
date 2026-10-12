@@ -3,6 +3,8 @@ package irodsclient
 import (
 	"context"
 	"errors"
+	"net"
+	"sync"
 	"testing"
 	"time"
 )
@@ -203,9 +205,28 @@ func TestProbeSharesTheAdminSession(t *testing.T) {
 	}
 }
 
+// waitForProbe waits for the probe in flight, if any, to record its result.
+func waitForProbe(t *testing.T, p *Pool) {
+	t.Helper()
+
+	p.probeMu.Lock()
+	running := p.probeRunning
+	p.probeMu.Unlock()
+	if running == nil {
+		return
+	}
+
+	select {
+	case <-running:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the probe never finished")
+	}
+}
+
 // TestProbeIgnoresTheCallersDeadline covers the other half of that choice. GET / gives its
 // probe a couple of seconds; if the probe inherited that, ordinary latency would look like
-// a failure and discard the session every admin request uses.
+// a failure and discard the session every admin request uses. The caller stops waiting, but
+// the probe carries on to a result of its own.
 func TestProbeIgnoresTheCallersDeadline(t *testing.T) {
 	pool := testPool(t, func(c *Config) {
 		c.ProbeTimeout = 200 * time.Millisecond
@@ -216,15 +237,79 @@ func TestProbeIgnoresTheCallersDeadline(t *testing.T) {
 	cancelled, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err := pool.Probe(cancelled)
-	if err == nil {
+	if err := pool.Probe(cancelled); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Probe = %v, want the caller's cancellation", err)
+	}
+	waitForProbe(t, pool)
+
+	pool.probeMu.Lock()
+	result := pool.probeResult
+	pool.probeMu.Unlock()
+
+	// It should have tried and failed to reach iRODS, not recorded the caller's
+	// cancellation as the health result.
+	if result == nil {
 		t.Fatal("the probe against an unresolvable host succeeded")
 	}
-	// It should have tried and failed to reach iRODS, not simply reported the caller's
-	// cancellation back.
-	if errors.Is(err, context.Canceled) {
+	if errors.Is(result, context.Canceled) {
 		t.Error("the probe adopted the caller's cancellation instead of its own budget")
 	}
+}
+
+// TestProbeDoesNotHoldCallersPastTheirDeadline is the readiness case: the kubelet gives
+// /readyz 10 seconds, less than the probe's budget. A probe against a server that accepts
+// connections and never answers must not keep that caller, or the ones after it, waiting.
+func TestProbeDoesNotHoldCallersPastTheirDeadline(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	t.Cleanup(func() { _ = listener.Close() })
+
+	var held []net.Conn
+	var heldMu sync.Mutex
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			heldMu.Lock()
+			held = append(held, conn)
+			heldMu.Unlock()
+		}
+	}()
+	t.Cleanup(func() {
+		heldMu.Lock()
+		defer heldMu.Unlock()
+		for _, conn := range held {
+			_ = conn.Close()
+		}
+	})
+
+	port := listener.Addr().(*net.TCPAddr).Port
+	pool := testPool(t, func(c *Config) {
+		c.Host = "127.0.0.1"
+		c.Port = port
+		c.ProbeTimeout = 2 * time.Second
+		c.MaxRetries = 0
+	})
+
+	for caller := range 3 {
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		start := time.Now()
+		err := pool.Probe(ctx)
+		cancel()
+
+		if err == nil {
+			t.Fatalf("caller %d: a server that never answers was reported healthy", caller)
+		}
+		if waited := time.Since(start); waited > time.Second {
+			t.Errorf("caller %d waited %s for a probe it gave 100ms", caller, waited)
+		}
+	}
+
+	waitForProbe(t, pool)
 }
 
 // TestProbeResultIsCached matters because GET / reports iRODS health on every call and

@@ -158,9 +158,10 @@ type Pool struct {
 	sweeperStop chan struct{}
 	sweeperDone chan struct{}
 
-	probeMu     sync.Mutex
-	probeAt     time.Time
-	probeResult error
+	probeMu      sync.Mutex
+	probeAt      time.Time
+	probeResult  error
+	probeRunning chan struct{} // closed when the probe in flight finishes; nil when none is
 }
 
 // Session keys. A client user's key is their username, so these two sentinels are chosen
@@ -483,22 +484,47 @@ func (p *Pool) Close() {
 // TCP dial it exercises authentication, which is what the Clojure irods-running? check did
 // by opening a Jargon connection and stat-ing the home collection.
 //
-// The result is cached briefly and the probe runs on its own session. GET / reports iRODS
-// health on every call, and that endpoint takes no authentication, so an uncached probe
-// would let anyone drive a connection acquisition and a round trip per request. Using the
-// shared admin session would be worse still: a probe deadline that expires poisons the
-// session it ran on, which would tear down the session every other admin request is using.
+// The result is cached briefly, because GET / reports iRODS health on every call without
+// authentication. The probe itself runs in the background on its own budget, and a caller
+// waits for it only as long as the caller's own context allows: the budget is longer than
+// the kubelet's readiness timeout, and a probe that held a lock for all of it would queue
+// every later health check behind it.
 func (p *Pool) Probe(ctx context.Context) error {
 	p.probeMu.Lock()
-	defer p.probeMu.Unlock()
-
 	if !p.probeAt.IsZero() && time.Since(p.probeAt) < p.cfg.ProbeCacheTTL {
-		return p.probeResult
+		result := p.probeResult
+		p.probeMu.Unlock()
+		return result
 	}
+	running := p.probeRunning
+	if running == nil {
+		running = make(chan struct{})
+		p.probeRunning = running
+		go p.runProbe(ctx, running)
+	}
+	p.probeMu.Unlock()
 
-	p.probeResult = p.probeWithRetries(ctx)
+	select {
+	case <-running:
+		p.probeMu.Lock()
+		defer p.probeMu.Unlock()
+		return p.probeResult
+	case <-ctx.Done():
+		return fmt.Errorf("the iRODS health check had not finished when the caller gave up "+
+			"(%w); iRODS is probably slow to accept connections or unreachable", ctx.Err())
+	}
+}
+
+// runProbe probes iRODS, records the result for Probe's callers, and closes running.
+func (p *Pool) runProbe(ctx context.Context, running chan struct{}) {
+	err := p.probeWithRetries(ctx)
+
+	p.probeMu.Lock()
+	defer p.probeMu.Unlock()
+	p.probeResult = err
 	p.probeAt = time.Now()
-	return p.probeResult
+	p.probeRunning = nil
+	close(running)
 }
 
 // probeWithRetries retries a refused connection with a linear backoff.
