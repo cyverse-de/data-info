@@ -3,6 +3,8 @@ package shadow
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -547,6 +549,40 @@ func TestErrorCodeFrom(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := errorCodeFrom([]byte(tc.body)); got != tc.want {
 				t.Errorf("errorCodeFrom(%s) = %q, want %q", tc.body, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestFixturesRemove covers tearing down a run, including one whose cases built nothing.
+func TestFixturesRemove(t *testing.T) {
+	tests := []struct {
+		name    string
+		status  int
+		body    string
+		wantErr bool
+	}{
+		{"removed", http.StatusOK, `{"paths":[]}`, false},
+		{"nothing was built", http.StatusInternalServerError, `{"error_code":"ERR_DOES_NOT_EXIST"}`, false},
+		{"the delete failed", http.StatusInternalServerError, `{"error_code":"ERR_NOT_WRITEABLE"}`, true},
+	}
+
+	guard, err := NewScratchGuard("/cyverse/home/de-irods/shadow-scratch")
+	if err != nil {
+		t.Fatalf("NewScratchGuard: %v", err)
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tt.status)
+				_, _ = w.Write([]byte(tt.body))
+			}))
+			defer srv.Close()
+
+			err := NewFixtures(guard, "run-x", NewServiceClient(srv.URL)).Remove(context.Background(), "de-irods")
+			if (err != nil) != tt.wantErr {
+				t.Errorf("err = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}

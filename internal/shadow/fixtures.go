@@ -2,6 +2,7 @@ package shadow
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -128,5 +129,11 @@ func (f *Fixtures) Remove(ctx context.Context, user string) error {
 	if err := f.guard.Check(root); err != nil {
 		return err
 	}
-	return f.client.DeletePath(ctx, user, root)
+	// A run whose cases built no fixtures has no root to remove.
+	err := f.client.DeletePath(ctx, user, root)
+	var statusErr *StatusError
+	if errors.As(err, &statusErr) && statusErr.ErrorCode() == "ERR_DOES_NOT_EXIST" {
+		return nil
+	}
+	return err
 }

@@ -271,9 +271,26 @@ func (c *ServiceClient) send(
 	}
 
 	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("%s %s returned %d: %s", method, pathAndQuery, resp.StatusCode, truncate(raw))
+		return nil, &StatusError{Method: method, PathAndQuery: pathAndQuery, Status: resp.StatusCode, Body: raw}
 	}
 	return raw, nil
+}
+
+// StatusError is a service refusing one of the harness's own setup requests.
+type StatusError struct {
+	Method       string
+	PathAndQuery string
+	Status       int
+	Body         []byte
+}
+
+func (e *StatusError) Error() string {
+	return fmt.Sprintf("%s %s returned %d: %s", e.Method, e.PathAndQuery, e.Status, truncate(e.Body))
+}
+
+// ErrorCode is the error_code the service answered with, or "" if there was none.
+func (e *StatusError) ErrorCode() string {
+	return errorCodeFrom(e.Body)
 }
 
 // truncate keeps an error message readable when a service answers with a long body.
