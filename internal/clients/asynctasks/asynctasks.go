@@ -60,21 +60,30 @@ const StatusStalled = "detected-stalled"
 // locks its paths for good rather than for ten minutes. With the flag the same timeout
 // completes the task, which releases them.
 //
+// The processor only times out a task whose latest status matches a rule's start_status, so
+// there is a rule for every status a live task can sit at. A task refused at Worker.Start stays
+// at registered, and one whose pod dies before its first progress post stays at started.
+//
 // The trade is real but small: a job that genuinely goes ten minutes without reporting has
 // its paths released while it is still working. Jobs here report per path per step, so that
 // window belongs to a process that is gone, not one that is busy. Recorded in
 // docs/deferred-fixes.md.
 func StallBehavior() Behavior {
+	live := []string{StatusRegistered, StatusStarted, StatusRunning}
+
+	rules := make([]map[string]any, 0, len(live))
+	for _, status := range live {
+		rules = append(rules, map[string]any{
+			"start_status": status,
+			"end_status":   StatusStalled,
+			"timeout":      StallTimeout,
+			"complete":     true,
+		})
+	}
+
 	return Behavior{
 		Type: BehaviorStatusChangeTimeout,
-		Data: map[string]any{
-			"statuses": []map[string]any{{
-				"start_status": StatusRunning,
-				"end_status":   StatusStalled,
-				"timeout":      StallTimeout,
-				"complete":     true,
-			}},
-		},
+		Data: map[string]any{"statuses": rules},
 	}
 }
 

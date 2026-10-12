@@ -283,21 +283,25 @@ func TestStallBehaviorCompletesTheTask(t *testing.T) {
 		t.Fatalf("decoding the behavior: %v", err)
 	}
 
-	if len(decoded.Data.Statuses) != 1 {
-		t.Fatalf("statuses = %d, want exactly one", len(decoded.Data.Statuses))
+	// Every status a live task can sit at needs a rule, or a task stuck there is never timed
+	// out and locks its paths for good.
+	want := []string{StatusRegistered, StatusStarted, StatusRunning}
+	if len(decoded.Data.Statuses) != len(want) {
+		t.Fatalf("statuses = %d, want %d", len(decoded.Data.Statuses), len(want))
 	}
 
-	got := decoded.Data.Statuses[0]
-	if !got.Complete {
-		t.Error("complete is not set, so the timeout would leave the task's paths locked")
-	}
-	if got.StartStatus != StatusRunning {
-		t.Errorf("start_status = %q, want %q", got.StartStatus, StatusRunning)
-	}
-	if got.EndStatus != StatusStalled {
-		t.Errorf("end_status = %q, want %q", got.EndStatus, StatusStalled)
-	}
-	if got.Timeout != StallTimeout {
-		t.Errorf("timeout = %q, want %q", got.Timeout, StallTimeout)
+	for i, got := range decoded.Data.Statuses {
+		if got.StartStatus != want[i] {
+			t.Errorf("rule %d start_status = %q, want %q", i, got.StartStatus, want[i])
+		}
+		if !got.Complete {
+			t.Errorf("rule %d does not set complete, so the timeout would leave the task's paths locked", i)
+		}
+		if got.EndStatus != StatusStalled {
+			t.Errorf("rule %d end_status = %q, want %q", i, got.EndStatus, StatusStalled)
+		}
+		if got.Timeout != StallTimeout {
+			t.Errorf("rule %d timeout = %q, want %q", i, got.Timeout, StallTimeout)
+		}
 	}
 }

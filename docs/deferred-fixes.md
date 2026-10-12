@@ -228,10 +228,13 @@ rollout from a source of permanent locks into a non-event.
 
 **Decided, and done:** every task this service creates registers the behaviour with
 `"complete": true` (`asynctasks.StallBehavior`), so the ten-minute timeout completes the task
-and releases its paths. That covers what the drain cannot — SIGKILL, OOM, a node dying. The
-trade, accepted knowingly: a job that genuinely goes ten minutes without posting a status has
-its paths released while it is still working. Jobs here report per path per step, so that
-window belongs to a process that is gone rather than one that is busy.
+and releases its paths. The processor only fires for a task whose latest status matches a
+rule, so there is one rule each for `registered`, `started` and `running`: a task refused at
+`Worker.Start`, or whose pod dies before its first progress post, would otherwise never reach
+`running` and never time out. That covers what the drain cannot — SIGKILL, OOM, a node
+dying. The trade, accepted knowingly: a job that genuinely goes ten minutes without posting a
+status has its paths released while it is still working. Jobs here report per path per step,
+so that window belongs to a process that is gone rather than one that is busy.
 
 The Clojure service still omits the flag, so until cutover a task it creates behaves the old
 way. That is a one-line change in `services/rename.clj` and `services/write.clj` if the
