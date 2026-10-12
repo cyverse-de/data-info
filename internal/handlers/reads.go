@@ -219,6 +219,15 @@ func (h *Reads) Permissions(c echo.Context) error {
 		return err
 	}
 
+	admin, err := h.deps.OpenProxyScope(ctx)
+	if err != nil {
+		return err
+	}
+	defer admin.Close()
+
+	if _, err := admin.Stats(ctx, body.Paths).Get(ctx); err != nil {
+		return err
+	}
 	if _, err := scope.Stats(ctx, body.Paths).Get(ctx); err != nil {
 		return err
 	}
@@ -226,16 +235,22 @@ func (h *Reads) Permissions(c echo.Context) error {
 	// Existence is checked across every path before ownership is considered, and each check
 	// reports all of its failures rather than the first. The Clojure service runs the two
 	// validators in that order over the whole list, so a request whose first path is not
-	// owned and whose second is missing reports the missing one.
+	// owned and whose second is missing reports the missing one. Existence is asked as the
+	// service account, as there, so a path the caller cannot see is reported as not owned.
 	var missing, notOwned []string
 	for _, p := range body.Paths {
-		stat, err := scope.Stat(ctx, p).Get(ctx)
+		exists, err := admin.Stat(ctx, p).Get(ctx)
 		if err != nil {
 			return err
 		}
-		if !stat.Exists {
+		if !exists.Exists {
 			missing = append(missing, p)
 			continue
+		}
+
+		stat, err := scope.Stat(ctx, p).Get(ctx)
+		if err != nil {
+			return err
 		}
 		if stat.Permission != rods.PermissionOwn {
 			notOwned = append(notOwned, p)

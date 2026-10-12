@@ -88,7 +88,14 @@ func (t *Tickets) Add(c echo.Context) error {
 	if err := requireKnownUser(ctx, scope, user, false); err != nil {
 		return err
 	}
-	if err := requireAllExist(ctx, scope, requested); err != nil {
+
+	admin, err := t.deps.OpenProxyScope(ctx)
+	if err != nil {
+		return err
+	}
+	defer admin.Close()
+
+	if err := requireAllExist(ctx, admin, requested); err != nil {
 		return err
 	}
 
@@ -197,7 +204,14 @@ func (t *Tickets) List(c echo.Context) error {
 	if err := requireKnownUser(ctx, scope, user, false); err != nil {
 		return err
 	}
-	if err := requireAllExist(ctx, scope, requested); err != nil {
+
+	admin, err := t.deps.OpenProxyScope(ctx)
+	if err != nil {
+		return err
+	}
+	defer admin.Close()
+
+	if err := requireAllExist(ctx, admin, requested); err != nil {
 		return err
 	}
 	if err := requireAllReadable(ctx, scope, requested); err != nil {

@@ -126,7 +126,14 @@ func (h *Writes) deletePaths(
 	if err := requireKnownUser(ctx, scope, user, false); err != nil {
 		return err
 	}
-	if err := requireAllExist(ctx, scope, requested); err != nil {
+
+	admin, err := h.deps.OpenProxyScope(ctx)
+	if err != nil {
+		return err
+	}
+	defer admin.Close()
+
+	if err := requireAllExist(ctx, admin, requested); err != nil {
 		return err
 	}
 	if err := requireOwnsAll(ctx, scope, user, requested); err != nil {
@@ -255,18 +262,19 @@ func (h *Writes) Restore(c echo.Context) error {
 	if err := requireKnownUser(ctx, scope, user, false); err != nil {
 		return err
 	}
-	if err := requireAllExist(ctx, scope, requested); err != nil {
-		return err
-	}
-	if err := requireAllWriteable(ctx, scope, user, requested); err != nil {
-		return err
-	}
 
 	admin, err := h.deps.OpenProxyScope(ctx)
 	if err != nil {
 		return err
 	}
 	defer admin.Close()
+
+	if err := requireAllExist(ctx, admin, requested); err != nil {
+		return err
+	}
+	if err := requireAllWriteable(ctx, scope, user, requested); err != nil {
+		return err
+	}
 
 	plans := make(map[string]service.RestorePlan, len(requested))
 	destinations := make([]string, 0, len(requested))

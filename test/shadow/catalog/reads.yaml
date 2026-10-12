@@ -28,6 +28,14 @@ cases:
     query: {user: "{{.User}}"}
     body: {paths: ["{{.Root}}/definitely-not-here"]}
 
+  # Exists, but the caller holds no access to it, so it is not owned rather than missing.
+  - id: permissions-gatherer-path-the-caller-cannot-see
+    tier: read
+    method: POST
+    path: /permissions-gatherer
+    query: {user: "{{.User}}"}
+    body: {paths: ["/{{.Zone}}/trash/home"]}
+
   - id: navigation-base-paths
     tier: read
     method: GET

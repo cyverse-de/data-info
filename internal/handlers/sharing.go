@@ -140,15 +140,8 @@ func (h *Writes) applyShare(
 	scope, admin *rods.Scope,
 	user, sharee, path, permission string,
 ) (string, error) {
-	stat, err := scope.Stat(ctx, path).Get(ctx)
-	if err != nil {
+	if err := requireExistsAndOwned(ctx, admin, scope, user, path); err != nil {
 		return "", err
-	}
-	if !stat.Exists {
-		return "", apierror.New(apierror.ErrDoesNotExist).With("path", path)
-	}
-	if stat.Permission != rods.PermissionOwn {
-		return "", apierror.New(apierror.ErrNotOwner).With("user", user).With("path", path)
 	}
 
 	level, err := sharePermission(permission)
@@ -256,15 +249,8 @@ func (h *Writes) applyUnshare(
 	scope, admin *rods.Scope,
 	user, sharee, path string,
 ) (string, error) {
-	stat, err := scope.Stat(ctx, path).Get(ctx)
-	if err != nil {
+	if err := requireExistsAndOwned(ctx, admin, scope, user, path); err != nil {
 		return "", err
-	}
-	if !stat.Exists {
-		return "", apierror.New(apierror.ErrDoesNotExist).With("path", path)
-	}
-	if stat.Permission != rods.PermissionOwn {
-		return "", apierror.New(apierror.ErrNotOwner).With("user", user).With("path", path)
 	}
 
 	return service.Unshare(ctx, admin, h.shareRequest(user, sharee, path, rods.PermissionNone))
@@ -386,21 +372,22 @@ func (h *Writes) Anonymize(c echo.Context) error {
 	if err := requireKnownUser(ctx, scope, user, false); err != nil {
 		return err
 	}
-	if err := requireAllExist(ctx, scope, requested); err != nil {
-		return err
-	}
-	if err := requireAllAreFiles(ctx, scope, requested); err != nil {
-		return err
-	}
-	if err := requireOwnsAll(ctx, scope, user, requested); err != nil {
-		return err
-	}
 
 	admin, err := h.deps.OpenProxyScope(ctx)
 	if err != nil {
 		return err
 	}
 	defer admin.Close()
+
+	if err := requireAllExist(ctx, admin, requested); err != nil {
+		return err
+	}
+	if err := requireAllAreFiles(ctx, admin, requested); err != nil {
+		return err
+	}
+	if err := requireOwnsAll(ctx, scope, user, requested); err != nil {
+		return err
+	}
 
 	urls := make(map[string]string, len(requested))
 	for _, path := range requested {

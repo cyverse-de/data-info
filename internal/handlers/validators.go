@@ -18,6 +18,10 @@ import (
 
 // requireAllExist rejects a request naming anything that is not there, listing everything
 // missing rather than stopping at the first.
+//
+// Pass the service account's scope wherever the Clojure service checked existence over its
+// administrative connection, so that a path the caller cannot see fails the permission check
+// that follows rather than being reported as missing.
 func requireAllExist(ctx context.Context, scope *rods.Scope, requested []string) error {
 	stats, err := scope.Stats(ctx, requested).Get(ctx)
 	if err != nil {
@@ -169,6 +173,19 @@ func requireOwns(ctx context.Context, scope *rods.Scope, user, path string) erro
 		return apierror.New(apierror.ErrNotOwner).With("user", user).With("path", path)
 	}
 	return nil
+}
+
+// requireExistsAndOwned rejects one path that is not there, as the service account sees it, or
+// that the caller does not own -- the Clojure service's path-exists then user-owns-path.
+func requireExistsAndOwned(ctx context.Context, admin, scope *rods.Scope, user, path string) error {
+	stat, err := admin.Stat(ctx, path).Get(ctx)
+	if err != nil {
+		return err
+	}
+	if !stat.Exists {
+		return apierror.New(apierror.ErrDoesNotExist).With("path", path)
+	}
+	return requireOwns(ctx, scope, user, path)
 }
 
 // requireDoesNotExist rejects one path that is already there.
