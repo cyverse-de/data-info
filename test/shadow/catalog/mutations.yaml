@@ -335,7 +335,7 @@ cases:
     seed: {filename: described.txt, content: "describe me\n"}
     body: {dest: "{{.Root}}/nowhere/out.json", recursive: false}
 
-  # A header and no rows applies nothing, which is an empty result rather than an error.
+  # A header and no rows applies nothing. The Clojure service throws here (deferred fix 23).
   - id: metadata-csv-with-only-a-header
     tier: write
     method: POST

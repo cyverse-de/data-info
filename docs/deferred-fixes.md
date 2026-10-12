@@ -371,3 +371,14 @@ metadata folder and an empty `cyverse-metadata.xml` have already been created.
 the handler answers `ERR_BAD_OR_MISSING_FIELD` naming the problem, which the status table
 makes a 400. The data set's metadata is what is wrong, and a 500 would read as a fault in
 this service.
+
+## 23. A metadata CSV with no rows throws
+
+`POST /data/{data-id}/metadata/csv-parser` hands `bulk-add-avus` the rows after the header,
+which checks them with `validators/all-paths-writeable`. With no rows the path list is empty,
+and clj-jargon's `paths-writeable?` applies its predicate to no arguments, so a header-only
+file answers 500 `ERR_UNCHECKED_EXCEPTION`: `Wrong number of args (0) passed to:
+clj-jargon.permissions/paths-writeable?`.
+
+**Not reproduced.** No rows means nothing to apply, so this answers 200 with
+`{"path-metadata": []}`. Pinned by the shadow case `metadata-csv-with-only-a-header`.
