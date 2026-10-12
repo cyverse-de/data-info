@@ -138,6 +138,6 @@ Four things the harness cannot catch, learned by it failing to:
 - **`EmittedCodes()` overstates the vocabulary.** `ERR_TOO_MANY_PATHS` appears only in
   Clojure Swagger doc strings and is never thrown by either service. The rest of the list
   deserves the same check.
-- **A `preStop` sleep plus 30s server drain plus 60s job drain fit inside the manifest's
+- **A `preStop` sleep plus 30s server drain plus 75s job drain fit inside the manifest's
   120s grace period.** They are coupled: changing one without the other risks a SIGKILL
   mid-drain, which is what leaves paths locked forever.

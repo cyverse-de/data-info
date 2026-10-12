@@ -22,36 +22,22 @@ import (
 	"github.com/cyverse-de/data-info/internal/worker"
 )
 
-// version is what GET / and --version report. It is a constant in the source rather than a
-// linker flag: project.clj declares the Clojure service's the same way, and what that
-// service actually reports is the defproject string, not anything the build stamps in.
-// Bump it here when the port's version moves.
-const version = "3.0.2-SNAPSHOT"
+// version is what GET / and --version report.
+const version = "3.0.2"
 
 // serverGrace bounds how long in-flight requests have to finish, and drainGrace how long the
-// background jobs then have to stop and report. Their sum has to stay under the deployment's
-// terminationGracePeriodSeconds, or the kubelet sends SIGKILL while a job is still trying to
-// release its paths -- which is the leak the drain exists to prevent.
-//
-// The manifest asks for 120 seconds and spends 5 of them in a preStop sleep, leaving 115.
-// These use 90 of that, so a drain that runs right to its deadline still has room to log
-// what it gave up on before the kubelet loses patience.
+// background jobs then have to stop and report. With the preStop sleep, their sum has to stay
+// under the deployment's terminationGracePeriodSeconds; see k8s/data-info.yml.
 const (
 	serverGrace = 30 * time.Second
-	drainGrace  = 60 * time.Second
+	drainGrace  = 75 * time.Second
 )
 
-// asyncTasksTimeout bounds one call to the async-tasks service.
-//
-// It is short on purpose, despite the call that matters most being the one that records a
-// task's final status and releases its paths. During shutdown the whole drain has to finish
-// inside drainGrace, so an attempt that could outlast that window would waste it rather than
-// use it: several quick tries beat one long one that never returns.
+// asyncTasksTimeout bounds one call to the async-tasks service. It is short so that several
+// retries of a task's final status fit inside drainGrace.
 const asyncTasksTimeout = 5 * time.Second
 
-// notificationsTimeout bounds one call to the notification agent. A notification is the last
-// thing a job does and the work is already committed by then, so waiting long for one would
-// only hold a job's goroutine open.
+// notificationsTimeout bounds one call to the notification agent.
 const notificationsTimeout = 10 * time.Second
 
 // metadataTimeout bounds one call to the metadata service. It sits inside a request rather
@@ -60,7 +46,6 @@ const metadataTimeout = 30 * time.Second
 
 func main() {
 	if err := run(); err != nil {
-		// The logger may not exist yet if configuration failed, so report to stderr too.
 		fmt.Fprintf(os.Stderr, "data-info: %v\n", err)
 		os.Exit(1)
 	}
@@ -98,29 +83,17 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// Set when jobs are still running at exit, so their connections are left alone. Closing
-	// a pool out from under an in-flight job would make it fail against a closed handle
-	// instead of reporting itself -- and its report is what releases its paths.
-	skipClose := false
-
 	pool, err := irodsclient.NewPool(irodsPoolConfig(cfg))
 	if err != nil {
 		return fmt.Errorf("building the iRODS client: %w", err)
 	}
-	defer func() {
-		if !skipClose {
-			pool.Close()
-		}
-	}()
+	defer pool.Close()
 
 	store, err := icat.Open(icatConfig(cfg))
 	if err != nil {
 		return fmt.Errorf("connecting to the iRODS catalog: %w", err)
 	}
 	defer func() {
-		if skipClose {
-			return
-		}
 		if err := store.Close(); err != nil {
 			log.WithError(err).Error("closing the catalog connection")
 		}
@@ -181,38 +154,21 @@ func run() error {
 	serverCtx, cancelServer := context.WithTimeout(context.Background(), serverGrace)
 	defer cancelServer()
 
-	// Logged rather than returned. Shutdown reports a deadline overrun whenever a request
-	// outlasts the grace -- which is exactly when the pod is busy and jobs are most likely
-	// running -- and returning here would skip the drain below, locking their paths for
-	// good over what is only a slow request.
+	// Just log the error if the shutdown fails, so that active jobs can still be drained
+	// before the process exits.
 	if err := srv.Shutdown(serverCtx); err != nil {
 		log.WithError(err).Error("the listener did not close cleanly; draining jobs anyway")
 	}
 
-	// After the listener, not before: a request already in flight may still start a job,
-	// and a runner that had stopped accepting them would refuse it.
-	//
-	// Its own budget, not what the server left over. Sharing one deadline would give the
-	// runner whatever a slow request did not use, and a single terminal post can take
-	// longer than that -- so the drain would time out precisely when it matters. The two
-	// budgets together have to stay under the deployment's terminationGracePeriodSeconds.
-	//
-	// This is the whole reason the runner exists in this shape. Each job is cancelled,
-	// returns, and is recorded as failed, which sets the task's end date and releases the
-	// paths it held. Without it a rollout leaves those paths locked -- and nothing else
-	// releases them, because the stall timeout this service registers does not complete the
-	// task. See docs/deferred-fixes.md.
+	// Cancel running async tasks so that they're marked as failed in the database, which
+	// releases their paths. After the listener, because a request in flight may still start
+	// one. See docs/deferred-fixes.md.
 	drainCtx, cancelDrain := context.WithTimeout(context.Background(), drainGrace)
 	defer cancelDrain()
 
 	if err := runner.Shutdown(drainCtx); err != nil {
-		// The jobs are still running against the pool and the catalog. Closing those now
-		// would pull the connections out from under them, so they are left open and the
-		// process exits with them -- which loses nothing, since it is exiting anyway, and
-		// gives each job its best chance of reporting before the kubelet kills it.
 		log.WithError(err).Error("could not drain the background jobs before exiting; " +
-			"leaving the backend connections open so they can still report")
-		skipClose = true
+			"their tasks stay unfinished until the ten-minute stall timeout completes them")
 	}
 
 	log.Info("stopped")

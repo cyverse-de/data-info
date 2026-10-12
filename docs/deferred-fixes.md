@@ -246,7 +246,7 @@ permanently if its pod goes away.
 
 **The deployments half of this is done.** The `data-info-next` role's manifest sets
 `terminationGracePeriodSeconds: 120` and a 5-second `preStop` sleep, and `serverGrace` and
-`drainGrace` in `cmd/data-info/main.go` are 30s and 60s to match — a job under way gets a
+`drainGrace` in `cmd/data-info/main.go` are 30s and 75s to match — a job under way gets a
 real chance to report rather than a hurried one. What is *not* done is the `data-info` role:
 its manifest still runs on Kubernetes' 30-second default, so the Clojure service keeps the
 old behaviour until the swap moves these settings across with the rest of the role.
