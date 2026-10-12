@@ -1,6 +1,6 @@
 # The shadow harness baseline
 
-What a clean run looks like as of 2026-08-24, and what each remaining difference is. This is
+What a clean run looks like as of 2026-10-12, and what each remaining difference is. This is
 the diff-acceptance record the cutover plan asks for: the harness has no expected-difference
 table by design, so every difference it reports has to be matched against this file by a
 person. A difference with no entry here is a defect.
@@ -28,33 +28,45 @@ the normaliser exists to canonicalise.
 
 ## Baseline
 
-Against QA on 2026-08-24, candidate at `port-remaining-endpoints`:
+Against QA on 2026-10-12, candidate at `golang` e2ca980 (image `golang@sha256:d442b2d7…`),
+reference the Clojure `data-info` `v2026.09.01`. The table is the last full run. Every group
+was run at least twice that day, and a case counted as noise below came out differently
+between runs.
 
-| Group | matched | differences | all accounted for |
-|---|---|---|---|
-| reads | 27 | 0 | — |
-| stats | 25 | 0 | — |
-| listing | 27 | 0 | — |
-| downloads | 5 | 0 (2 skipped) | — |
-| mutations | 36 | 0 | — |
-| chunking | 28 | 2 | yes |
-| uploads | 10 | 3 | yes |
-| writes | 16 | 2 | yes |
+| Group     | matched | deliberate | noise | skipped
+|-----------|---------|------------|-------|--------
+| reads     | 28      | 0          | 0     | 1
+| stats     | 25      | 0          | 0     | 0
+| listing   | 27      | 0          | 0     | 0
+| downloads | 6       | 0          | 0     | 2
+| mutations | 40      | 1          | 4     | 0
+| chunking  | 28      | 2          | 2     | 1
+| uploads   | 10      | 3          | 1     | 0
+| writes    | 16      | 2          | 0     | 0
 
-**174 matched, 7 differences, every one a deliberate deviation recorded in
-`docs/deferred-fixes.md`.**
+**180 matched and 8 differences, every one a deliberate deviation recorded in
+`docs/deferred-fixes.md`.** Seven cases were not compared because of iRODS; see
+"Environmental noise".
 
-## The seven
+## The deliberate differences
 
-| Case | Difference | Entry |
-|---|---|---|
-| `upload-an-empty-file` | reference 500, candidate 200 | 8 — the Clojure service cannot upload a zero-byte file |
-| `upload-a-utf8-name` | reference 400, candidate 200 | 9 — the Clojure service rejects a non-ASCII filename |
-| `upload-a-csv` | `infoType` `"csv"` against `""` | 21 — file typing moved to info-typer |
-| `manifest-of-a-name-with-no-extension` | `text/plain` against `application/octet-stream` | 11 — content type from the name only |
-| `tabular-one-page-past-the-end` | reference 500, candidate 200 | 17 — reading past the end of a short file throws |
-| `create-the-zone-root` | reference 500, candidate 400 | 12 — `POST /data/directories` with `"/"` crashes |
-| `create-through-a-parent-reference` | reference 500, candidate 200 | 13 — acts on uncleaned paths |
+| Case                                   | Difference                                         | Entry
+|----------------------------------------|----------------------------------------------------|-----------------------------------------------------------
+| `upload-an-empty-file`                 | reference 500, candidate 200                       | 8 — the Clojure service cannot upload a zero-byte file
+| `upload-a-utf8-name`                   | reference 400, candidate 200                       | 9 — the Clojure service rejects a non-ASCII filename
+| `upload-with-no-extension`             | `text/plain` against `application/octet-stream`   | 11 — content type from the name only
+| `manifest-of-a-name-with-no-extension` | `text/plain` against `application/octet-stream`   | 11
+| `create-the-zone-root`                 | reference 500, candidate 400                       | 12 — `POST /data/directories` with `"/"` crashes
+| `create-through-a-parent-reference`    | reference 500, candidate 200                       | 13 — acts on uncleaned paths
+| `tabular-one-page-past-the-end`        | reference 500, candidate 200                       | 17 — reading past the end of a short file throws
+| `metadata-csv-with-only-a-header`      | reference 500, candidate 200                       | 23 — a metadata CSV with no rows throws
+
+`upload-a-csv` differs in some runs and not others: `infoType` `"csv"` against `"unknown"`
+(entry 21). The Clojure service reports whatever type info-typer has set by the time it
+answers, and info-typer sets it asynchronously, so the reference's answer depends on timing.
+
+Since the 2026-08-24 baseline, `upload-with-no-extension` differs as entry 11 says it should,
+`metadata-csv-with-only-a-header` is new, and the other review-fix cases match.
 
 ## Cases that cannot be paired
 
@@ -67,15 +79,30 @@ already being correct — and the Clojure service cannot create these.
 
 Each is covered by a unit test instead, named in the catalog beside the skip.
 
+A fourth, `service-info`, is skipped by the catalog itself: `GET /` reports build-specific and
+connection-dependent values, so the two services can never agree on it.
+
 ## Environmental noise, which is not the port
 
-Cases intermittently fail to be compared at all, with the harness reporting an `ERROR` rather
-than a difference. Every one seen so far is the same thing:
-`ResourceHierarchyException: HIERARCHY_ERROR` from iRODS when
-**reading a file that was just written**. It hits both services — the Clojure service threw 92
-of them during one run — and re-reading the same path afterwards succeeds every time.
+Cases intermittently fail to be compared at all, with the harness reporting an `ERROR`, or
+differ on one run and match on the next. Every one seen so far is iRODS **failing to read or
+move a data object that was just written**:
+
+- `ResourceHierarchyException: HIERARCHY_ERROR`, which the Clojure service reports as
+  `JargonException caught in constructor` and this service logs by name;
+- `LOCKED_DATA_OBJECT_ACCESS` on a read;
+- `UNIX_FILE_RENAME_ERR (No such file or directory)` when moving a fresh file to the trash.
+
+They hit both services, and the same operation succeeds when it is repeated. On 2026-10-12
+they produced 500s from the reference on `stat-lister-one-id`, `tabular-by-path`,
+`chunk-starting-past-the-end` and `chunk-splitting-a-multibyte-character`, and from the
+candidate on `chunk-from-the-middle` and `chunk-by-path`. None reproduced when probed by hand.
 
 That is a data-store problem rather than a service one, and it is worth resolving before the
 soak: it makes a fully clean run a matter of luck, and during a soak it would look like
 intermittent service failure. Note that it is *not* the connection limit that held this
 deployment up; three consumers of `de-irods` coexist without trouble.
+
+`restore-onto-an-occupied-path` has not been compared since August. In both full runs on
+2026-10-12, the harness timed out reading the task list from async-tasks, and in one of them
+the candidate's delete had failed with the rename error above.

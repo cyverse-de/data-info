@@ -41,6 +41,12 @@ images contain them: info-typer `v2026.09.01` and terrain `v2026.10.06`. QA runs
 `v2026.10.06` and info-typer `v2026.09.01-rc01`, which answers `GET /file-types` (checked
 2026-10-12).
 
+**QA runs the current code, and the harness was re-run against it** on 2026-10-12: image
+`golang@sha256:d442b2d7…` at e2ca980. `docs/shadow-baseline.md` records 180 matching cases
+and 8 differences, each a deliberate deviation in `docs/deferred-fixes.md`. The re-run
+caught one regression from the review fixes (`"irods-avus": null` was refused; Clojure treats
+it as an empty list) and one harness bug, and both are fixed.
+
 **The review on #106 is addressed** (2026-10-12, `f0f2bce..41d0e04`). Every finding was checked
 against the Clojure source and its libraries rather than taken on trust, and the fixes make
 the port match Clojure rather than adding deviations:
@@ -64,14 +70,6 @@ drain is 75s.
 
 ## What is blocked, and on what
 
-- **No current image.** QA runs `data-info-next:golang@sha256:44111eae…`, deployed
-  2026-08-24 — the image the baseline was recorded against. The descriptor on deployments
-  `main` names a later build, `golang@sha256:7809a8b3…` from 2026-09-01, that was never
-  deployed. Both predate every change above. Rebuild and redeploy before the next harness run
-  or soak.
-- **The baseline is stale.** `docs/shadow-baseline.md` (174 matching, 7 differences) was
-  recorded on 2026-08-24, before the review fixes changed behaviour on purpose. Six cases were
-  added for them and have never run.
 - **The deployments `data-info` role still renders Clojure config.** It renders
   `data-info.properties` into `data-info-configs`; this service reads `data-info.yml`. The
   template, manifest and secret key all have to move across. `data-info-next` is the model —
@@ -85,9 +83,10 @@ drain is 75s.
 **One environmental problem is worth resolving before the soak.** iRODS intermittently
 answers `ResourceHierarchyException: HIERARCHY_ERROR` when reading a file that was just
 written. It hits both services -- the Clojure one threw 92 during a single harness run -- and
-re-reading the same path afterwards succeeds every time. During a soak it would look like
-intermittent service failure. It is a data-store problem rather than a service one, and its
-status has not been checked since August.
+re-reading the same path afterwards succeeds every time. It was still happening on
+2026-10-12, alongside `LOCKED_DATA_OBJECT_ACCESS` and `UNIX_FILE_RENAME_ERR` on fresh files;
+`docs/shadow-baseline.md` lists the cases it hit. During a soak it would look like
+intermittent service failure. It is a data-store problem rather than a service one.
 
 ## Deploying to QA
 
@@ -142,16 +141,13 @@ manual check in QA.
 
 ## What I would do next
 
-1. **Rebuild and redeploy `data-info-next`**, then re-run every harness group and re-record
-   `docs/shadow-baseline.md`. Expect fewer differences than seven, not more; any new one with
-   no entry is a defect.
-2. **Check sharing by hand** with two accounts: share a path out of a collection someone else
+1. **Check sharing by hand** with two accounts: share a path out of a collection someone else
    owns.
-3. **Port the `data-info` role** to the Go config, manifest and secret key.
-4. **Understand the HIERARCHY_ERROR**, or accept that soak noise will include it.
-5. **Soak** for seven days, then merge #106, resolving the one conflict by keeping the
+2. **Port the `data-info` role** to the Go config, manifest and secret key.
+3. **Understand the HIERARCHY_ERROR**, or accept that soak noise will include it.
+4. **Soak** for seven days, then merge #106, resolving the one conflict by keeping the
    deletion.
-6. **Register the upload cleanup as a tracked async task** (deferred fix 20). Small, and the
+5. **Register the upload cleanup as a tracked async task** (deferred fix 20). Small, and the
    only known behavioural gap left that is not a deliberate deviation.
 
 ## Traps worth knowing
