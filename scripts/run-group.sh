@@ -24,9 +24,11 @@ DIR=$SC/catalog-$GROUP
 rm -rf "$DIR"; mkdir -p "$DIR"
 cp "test/shadow/catalog/$GROUP.yaml" "$DIR/"
 
-POD=$(kubectl -n qa get pods -l de-app=data-info-next -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+# Skip a pod that is shutting down: just after a rollout the old one drains for up to two
+# minutes, and a run aimed at it fails every case with connection refused.
+POD=$(kubectl -n qa get pods -l de-app=data-info-next -o go-template='{{range .items}}{{if not .metadata.deletionTimestamp}}{{.metadata.name}}{{"\n"}}{{end}}{{end}}' 2>/dev/null | head -n 1)
 if [ -z "$POD" ]; then
-    echo "no data-info-next pod in namespace qa on context $context" >&2
+    echo "no running data-info-next pod in namespace qa on context $context" >&2
     exit 1
 fi
 kubectl -n qa port-forward svc/data-info 18080:80   >/dev/null 2>&1 & PF1=$!
