@@ -76,9 +76,15 @@ func (h *Writes) Share(c echo.Context) error {
 		return err
 	}
 
+	admin, err := h.deps.OpenProxyScope(ctx)
+	if err != nil {
+		return err
+	}
+	defer admin.Close()
+
 	results := make([]map[string]any, 0, len(body.Sharing))
 	for _, entry := range body.Sharing {
-		outcomes, err := h.shareWith(ctx, scope, user, entry)
+		outcomes, err := h.shareWith(ctx, scope, admin, user, entry)
 		if err != nil {
 			return err
 		}
@@ -91,7 +97,7 @@ func (h *Writes) Share(c echo.Context) error {
 // shareWith applies one sharee's entry.
 func (h *Writes) shareWith(
 	ctx context.Context,
-	scope *rods.Scope,
+	scope, admin *rods.Scope,
 	user string,
 	entry shareeEntry,
 ) ([]shareOutcome, error) {
@@ -114,7 +120,7 @@ func (h *Writes) shareWith(
 			continue
 		}
 
-		reason, err := h.applyShare(ctx, scope, user, entry.User, path, item.Permission)
+		reason, err := h.applyShare(ctx, scope, admin, user, entry.User, path, item.Permission)
 		switch {
 		case err != nil:
 			outcome.Error = envelopeOf(err)
@@ -128,10 +134,10 @@ func (h *Writes) shareWith(
 	return outcomes, nil
 }
 
-// applyShare validates and performs one share.
+// applyShare validates one share as the caller and performs it as the service account.
 func (h *Writes) applyShare(
 	ctx context.Context,
-	scope *rods.Scope,
+	scope, admin *rods.Scope,
 	user, sharee, path, permission string,
 ) (string, error) {
 	stat, err := scope.Stat(ctx, path).Get(ctx)
@@ -150,7 +156,7 @@ func (h *Writes) applyShare(
 		return "", err
 	}
 
-	return service.Share(ctx, scope, h.shareRequest(user, sharee, path, level))
+	return service.Share(ctx, admin, h.shareRequest(user, sharee, path, level))
 }
 
 // sharePermission reads the access level a share asks for.
@@ -204,6 +210,12 @@ func (h *Writes) Unshare(c echo.Context) error {
 		return err
 	}
 
+	admin, err := h.deps.OpenProxyScope(ctx)
+	if err != nil {
+		return err
+	}
+	defer admin.Close()
+
 	results := make([]map[string]any, 0, len(body.Unshare))
 	for _, entry := range body.Unshare {
 		known, err := scope.UserExists(ctx, entry.User).Get(ctx)
@@ -222,7 +234,7 @@ func (h *Writes) Unshare(c echo.Context) error {
 				continue
 			}
 
-			reason, err := h.applyUnshare(ctx, scope, user, entry.User, path)
+			reason, err := h.applyUnshare(ctx, scope, admin, user, entry.User, path)
 			if err != nil {
 				outcome.Error = envelopeOf(err)
 			} else {
@@ -238,10 +250,10 @@ func (h *Writes) Unshare(c echo.Context) error {
 	return writeJSONOK(c, map[string]any{"unshare": results})
 }
 
-// applyUnshare validates and performs one unshare.
+// applyUnshare validates one unshare as the caller and performs it as the service account.
 func (h *Writes) applyUnshare(
 	ctx context.Context,
-	scope *rods.Scope,
+	scope, admin *rods.Scope,
 	user, sharee, path string,
 ) (string, error) {
 	stat, err := scope.Stat(ctx, path).Get(ctx)
@@ -255,7 +267,7 @@ func (h *Writes) applyUnshare(
 		return "", apierror.New(apierror.ErrNotOwner).With("user", user).With("path", path)
 	}
 
-	return service.Unshare(ctx, scope, h.shareRequest(user, sharee, path, rods.PermissionNone))
+	return service.Unshare(ctx, admin, h.shareRequest(user, sharee, path, rods.PermissionNone))
 }
 
 // AddPermission handles PUT /data/{data-id}/permissions/{share-with}/{permission}.
@@ -280,7 +292,8 @@ func (h *Writes) RemovePermission(c echo.Context) error {
 }
 
 // changePermission serves the two by-id routes, which differ only in what they do once the
-// path and the users are resolved -- and answer with the same thing afterwards.
+// path and the users are resolved -- and answer with the same thing afterwards. apply is
+// handed the service account's scope; ownership has already been checked as the caller.
 func (h *Writes) changePermission(
 	c echo.Context,
 	apply func(ctx context.Context, scope *rods.Scope, user, other, path string) error,
@@ -324,7 +337,13 @@ func (h *Writes) changePermission(
 		return apierror.New(apierror.ErrNotAUser).With("user", other)
 	}
 
-	if err := apply(ctx, scope, user, other, path); err != nil {
+	admin, err := h.deps.OpenProxyScope(ctx)
+	if err != nil {
+		return err
+	}
+	defer admin.Close()
+
+	if err := apply(ctx, admin, user, other, path); err != nil {
 		return err
 	}
 
@@ -377,10 +396,16 @@ func (h *Writes) Anonymize(c echo.Context) error {
 		return err
 	}
 
+	admin, err := h.deps.OpenProxyScope(ctx)
+	if err != nil {
+		return err
+	}
+	defer admin.Close()
+
 	urls := make(map[string]string, len(requested))
 	for _, path := range requested {
 		req := h.shareRequest(user, h.deps.AnonUser, path, rods.PermissionRead)
-		if _, err := service.Share(ctx, scope, req); err != nil {
+		if _, err := service.Share(ctx, admin, req); err != nil {
 			return err
 		}
 		urls[path] = h.deps.anonURL(path)
