@@ -178,24 +178,36 @@ func TestCaseExpansion(t *testing.T) {
 	}
 }
 
-// TestSchemaReasonWithEscapedQuotes covers a schema reason quoting the value that failed, so
-// the reason itself contains escaped quotes. Normalisation has to consume the whole string:
-// stopping at the first escaped quote leaves a remainder that does not parse, and the case
-// is then reported as "not JSON" instead of being compared.
-func TestSchemaReasonWithEscapedQuotes(t *testing.T) {
-	n := NewNormalizer("RUN")
+// TestSchemaReasonIsNormalisedWhole covers schema reasons whose shape could end the match
+// early. Normalisation has to consume the whole reason: stopping partway leaves a remainder
+// that does not parse, and the case is then reported as "not JSON" instead of being compared.
+func TestSchemaReasonIsNormalisedWhole(t *testing.T) {
+	tests := []struct {
+		name   string
+		reason string
+	}{
+		{"a string with escaped quotes", `"(not (map? \"not an object\"))"`},
+		{"a flat object", `{"irods-avus":"missing-required-key"}`},
+		{"an object holding a list of objects", `{"irods-avus":[{"unit":"missing-required-key"}]}`},
+	}
 
-	body := []byte(`{"error_code":"ERR_ILLEGAL_ARGUMENT","reason":"(not (map? \"not an object\"))"}`)
+	n := NewNormalizer("RUN")
 	other := []byte(`{"error_code":"ERR_ILLEGAL_ARGUMENT","reason":"something else entirely"}`)
 
-	diffs := n.Compare(Response{Status: 400, Body: body}, Response{Status: 400, Body: other})
-	for _, d := range diffs {
-		if strings.Contains(d.Detail, "not JSON") {
-			t.Fatalf("a reason containing escaped quotes broke parsing: %s", d.Detail)
-		}
-	}
-	if len(diffs) != 0 {
-		t.Errorf("the reason should be normalised away, leaving no difference: %+v", diffs)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := []byte(`{"error_code":"ERR_ILLEGAL_ARGUMENT","reason":` + tt.reason + `}`)
+
+			diffs := n.Compare(Response{Status: 400, Body: body}, Response{Status: 400, Body: other})
+			for _, d := range diffs {
+				if strings.Contains(d.Detail, "not JSON") {
+					t.Fatalf("the reason broke parsing: %s", d.Detail)
+				}
+			}
+			if len(diffs) != 0 {
+				t.Errorf("the reason should be normalised away, leaving no difference: %+v", diffs)
+			}
+		})
 	}
 }
 

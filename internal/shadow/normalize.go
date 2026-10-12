@@ -76,8 +76,9 @@ var (
 	// The string branch has to allow escaped quotes. These reasons quote the offending
 	// value, so they routinely contain them, and a pattern that stopped at the first
 	// escaped quote would leave a mangled remainder that no longer parses -- reporting
-	// "not JSON" instead of a real comparison.
-	schemaReasonPattern = regexp.MustCompile(`"reason":\s*(\{[^}]*\}|"(?:[^"\\]|\\.)*")`)
+	// "not JSON" instead of a real comparison. The object branch allows one level of nested
+	// objects, which is as deep as prismatic/schema's explanations of a list of maps go.
+	schemaReasonPattern = regexp.MustCompile(`"reason":\s*(\{(?:[^{}]|\{[^{}]*\})*\}|"(?:[^"\\]|\\.)*")`)
 )
 
 // canonicalMillis is what a timestamp is rewritten to.
