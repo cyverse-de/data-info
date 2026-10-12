@@ -1,6 +1,7 @@
 package irodsclient
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -10,10 +11,10 @@ import (
 	"github.com/cyverse/go-irodsclient/irods/types"
 )
 
-// uploadBufferSize is the chunk the reader is drained in. It is a compromise: iRODS pays a
-// round trip per write, so small buffers are slow, while a large one is held for the whole
-// upload on every concurrent request.
-const uploadBufferSize = 1 << 20
+// transferBufferSize is how much an upload or download moves per iRODS round trip. Every
+// Read and Write on a go-irodsclient handle is one RPC, so this sets the round trips per
+// GiB; the cost is one buffer held for each transfer in flight.
+const transferBufferSize = 4 << 20
 
 // WriteFile streams r into a new data object at path and returns the number of bytes
 // written.
@@ -29,7 +30,7 @@ func WriteFile(ctx context.Context, s *Session, path string, r io.Reader, resour
 			return 0, err
 		}
 
-		written, copyErr := io.CopyBuffer(handle, r, make([]byte, uploadBufferSize))
+		written, copyErr := copyInFullWrites(handle, r)
 
 		// Close is what commits the object, so its error matters even when the copy
 		// succeeded. When the copy failed it is still called, to release the handle, but
@@ -43,6 +44,17 @@ func WriteFile(ctx context.Context, s *Session, path string, r io.Reader, resour
 		}
 		return written, nil
 	})
+}
+
+// copyInFullWrites copies r to w in writes of transferBufferSize, whatever size r's reads
+// come back in. A multipart part never returns more than 4 KiB at a time.
+func copyInFullWrites(w io.Writer, r io.Reader) (int64, error) {
+	buffered := bufio.NewWriterSize(w, transferBufferSize)
+	written, err := io.Copy(buffered, r)
+	if err != nil {
+		return written, err
+	}
+	return written, buffered.Flush()
 }
 
 // ReadFile returns a data object's whole contents.

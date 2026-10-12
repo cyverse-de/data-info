@@ -71,7 +71,7 @@ func OpenReader(ctx context.Context, s *Session, path string) (io.ReadCloser, er
 // fileReader adapts an iRODS file handle to io.ReadCloser, translating its errors into the
 // service's vocabulary the way every other call through this package does.
 type fileReader struct {
-	handle *irodsfs.FileHandle
+	handle io.ReadCloser
 	path   string
 	user   string
 }
@@ -82,6 +82,13 @@ func (r *fileReader) Read(p []byte) (int, error) {
 		return n, err
 	}
 	return n, Translate(err, r.path, r.user)
+}
+
+// WriteTo is what io.Copy uses, so a download reads transferBufferSize per round trip rather
+// than io.Copy's default of 32 KiB. The wrappers hide WriteTo and ReadFrom, so the copy
+// cannot hand the transfer back to a smaller buffer.
+func (r *fileReader) WriteTo(w io.Writer) (int64, error) {
+	return io.CopyBuffer(struct{ io.Writer }{w}, struct{ io.Reader }{r}, make([]byte, transferBufferSize))
 }
 
 func (r *fileReader) Close() error { return r.handle.Close() }
