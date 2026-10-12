@@ -23,6 +23,9 @@ type fakeTasks struct {
 	statuses  []asynctasks.Status
 	completed []asynctasks.Status
 
+	// trail is every status recorded, progress and terminal alike, in order and with when.
+	trail []posted
+
 	// failuresLeft makes the next N posts fail, to exercise the retry budgets.
 	failuresLeft int
 
@@ -55,6 +58,7 @@ func (f *fakeTasks) AddStatus(_ context.Context, _ string, status asynctasks.Sta
 		return errors.New("async-tasks is unhappy")
 	}
 	f.statuses = append(f.statuses, status)
+	f.trail = append(f.trail, posted{status, time.Now()})
 	return nil
 }
 
@@ -67,7 +71,20 @@ func (f *fakeTasks) AddCompletedStatus(_ context.Context, _ string, status async
 		return errors.New("async-tasks is unhappy")
 	}
 	f.completed = append(f.completed, status)
+	f.trail = append(f.trail, posted{status, time.Now()})
 	return nil
+}
+
+// posted is one recorded status and when it arrived.
+type posted struct {
+	status asynctasks.Status
+	at     time.Time
+}
+
+func (f *fakeTasks) recorded() []posted {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]posted(nil), f.trail...)
 }
 
 func (f *fakeTasks) terminal() []asynctasks.Status {
@@ -530,5 +547,160 @@ func TestNotifyComesAfterTheTerminalStatus(t *testing.T) {
 				t.Errorf("failed = %v, want %v", job.failed, tc.jobErr != nil)
 			}
 		})
+	}
+}
+
+func isHeartbeat(s asynctasks.Status) bool {
+	return s.Status == asynctasks.StatusRunning && strings.Contains(s.Detail, "still working; last reported")
+}
+
+// TestHeartbeat covers the job the stall timeout would otherwise release while it works: one
+// busy in a single long iRODS call, reporting nothing until it returns.
+func TestHeartbeat(t *testing.T) {
+	cases := []struct {
+		name          string
+		interval      time.Duration
+		maxSilence    time.Duration
+		slowProgress  time.Duration
+		run           func(Progress)
+		minHeartbeats int
+		maxHeartbeats int
+		// heartbeatsBy, when set, is how long after the start every heartbeat must arrive.
+		heartbeatsBy time.Duration
+	}{
+		{
+			name:          "a silent job is reported as still running",
+			interval:      20 * time.Millisecond,
+			maxSilence:    time.Hour,
+			run:           func(Progress) { time.Sleep(200 * time.Millisecond) },
+			minHeartbeats: 3,
+			maxHeartbeats: 10,
+		},
+		{
+			name:       "a job that reports progress gets no heartbeat",
+			interval:   50 * time.Millisecond,
+			maxSilence: time.Hour,
+			run: func(progress Progress) {
+				for range 40 {
+					progress("/zone/a", "working")
+					time.Sleep(5 * time.Millisecond)
+				}
+			},
+			maxHeartbeats: 0,
+		},
+		{
+			// Past the cap the job is treated as hung, so the stall timeout can release it.
+			name:          "the heartbeat stops once the job has been silent too long",
+			interval:      10 * time.Millisecond,
+			maxSilence:    60 * time.Millisecond,
+			run:           func(Progress) { time.Sleep(300 * time.Millisecond) },
+			minHeartbeats: 1,
+			maxHeartbeats: 8,
+			heartbeatsBy:  60*time.Millisecond + 30*time.Millisecond,
+		},
+		{
+			// Posts are serialised, so a slow async-tasks spaces heartbeats out rather than
+			// stacking them up.
+			name:          "a slow async-tasks does not stack heartbeats up",
+			interval:      5 * time.Millisecond,
+			maxSilence:    time.Hour,
+			slowProgress:  50 * time.Millisecond,
+			run:           func(Progress) { time.Sleep(200 * time.Millisecond) },
+			minHeartbeats: 1,
+			maxHeartbeats: 5,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tasks := &fakeTasks{slowProgress: tc.slowProgress}
+			discard := logrus.New()
+			discard.SetOutput(io.Discard)
+			runner := NewRunner(tasks, logrus.NewEntry(discard), "test-instance",
+				WithHeartbeat(tc.interval, tc.maxSilence))
+
+			start := time.Now()
+			if err := runner.Start("/tasks/abc", "delete", JobFunc(
+				func(_ context.Context, _ *asynctasks.Task, progress Progress) error {
+					tc.run(progress)
+					return nil
+				},
+			)); err != nil {
+				t.Fatalf("Start: %v", err)
+			}
+			shutdown(t, runner)
+
+			trail := tasks.recorded()
+			if len(trail) == 0 || trail[len(trail)-1].status.Status != asynctasks.StatusCompleted {
+				t.Fatalf("the terminal status must be the last one recorded: %+v", trail)
+			}
+
+			heartbeats := 0
+			for _, p := range trail {
+				if !isHeartbeat(p.status) {
+					continue
+				}
+				heartbeats++
+				if tc.heartbeatsBy > 0 && p.at.Sub(start) > tc.heartbeatsBy {
+					t.Errorf("a heartbeat arrived %s after the start, past the cap", p.at.Sub(start))
+				}
+			}
+			if heartbeats < tc.minHeartbeats || heartbeats > tc.maxHeartbeats {
+				t.Errorf("heartbeats = %d, want between %d and %d", heartbeats, tc.minHeartbeats, tc.maxHeartbeats)
+			}
+		})
+	}
+}
+
+// TestHeartbeatNamesTheLastReportedStep is what an operator reads to see where a long job is.
+func TestHeartbeatNamesTheLastReportedStep(t *testing.T) {
+	tasks := &fakeTasks{}
+	discard := logrus.New()
+	discard.SetOutput(io.Discard)
+	runner := NewRunner(tasks, logrus.NewEntry(discard), "test-instance",
+		WithHeartbeat(10*time.Millisecond, time.Hour))
+
+	if err := runner.Start("/tasks/abc", "delete", JobFunc(
+		func(_ context.Context, _ *asynctasks.Task, progress Progress) error {
+			progress("/zone/home/u/big", "begin")
+			time.Sleep(100 * time.Millisecond)
+			return nil
+		},
+	)); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	shutdown(t, runner)
+
+	want := "[test-instance] still working; last reported /zone/home/u/big: begin"
+	for _, s := range tasks.progress() {
+		if isHeartbeat(s) {
+			if s.Detail != want {
+				t.Errorf("detail = %q, want %q", s.Detail, want)
+			}
+			return
+		}
+	}
+	t.Error("no heartbeat was posted")
+}
+
+// TestAShutdownSaysTheJobWasInterrupted: the user should check what iRODS already did before
+// retrying, since a cancelled job's iRODS call may have finished some of its work.
+func TestAShutdownSaysTheJobWasInterrupted(t *testing.T) {
+	tasks := &fakeTasks{}
+	runner := testRunner(tasks)
+
+	if err := runner.Start("/tasks/abc", "delete", JobFunc(
+		func(ctx context.Context, _ *asynctasks.Task, _ Progress) error {
+			<-ctx.Done()
+			return ctx.Err()
+		},
+	)); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	shutdown(t, runner)
+
+	terminal := tasks.terminal()
+	if len(terminal) != 1 || !strings.Contains(terminal[0].Detail, "interrupted by shutdown") {
+		t.Errorf("terminal statuses = %+v, want one saying the job was interrupted by shutdown", terminal)
 	}
 }

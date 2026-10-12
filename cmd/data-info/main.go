@@ -106,7 +106,8 @@ func run() error {
 		return fmt.Errorf("building the async-tasks client: %w", err)
 	}
 
-	runner := worker.NewRunner(tasks, log, worker.InstanceID())
+	runner := worker.NewRunner(tasks, log, worker.InstanceID(),
+		worker.WithHeartbeat(worker.DefaultHeartbeatInterval, irodsclient.DefaultIOLongOperationTimeout))
 
 	notifier, err := notifications.New(cfg.Services.NotificationAgent, notificationsTimeout)
 	if err != nil {

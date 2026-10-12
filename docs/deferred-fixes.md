@@ -232,9 +232,17 @@ and releases its paths. The processor only fires for a task whose latest status 
 rule, so there is one rule each for `registered`, `started` and `running`: a task refused at
 `Worker.Start`, or whose pod dies before its first progress post, would otherwise never reach
 `running` and never time out. That covers what the drain cannot — SIGKILL, OOM, a node
-dying. The trade, accepted knowingly: a job that genuinely goes ten minutes without posting a
-status has its paths released while it is still working. Jobs here report per path per step,
-so that window belongs to a process that is gone rather than one that is busy.
+dying.
+
+That alone would release the paths of a job that is busy but silent, and one is: a recursive
+delete is a single iRODS call, allowed up to twelve hours, that reports nothing until it
+returns. So the worker posts a heartbeat -- a `running` status naming the last step reported
+-- whenever a job has gone two minutes without posting anything. Heartbeats come from the
+replica running the job and stop with it, so a dead pod is still released ten minutes later.
+They show only that the process is alive, not that the call is progressing, so they stop once
+a job has been silent for as long as an iRODS call may run (`WithHeartbeat`); past that the
+job is treated as hung and the stall timeout releases it. The Clojure service has no
+heartbeat, which it did not need, since its stall timeout never released anything.
 
 The Clojure service still omits the flag, so until cutover a task it creates behaves the old
 way. That is a one-line change in `services/rename.clj` and `services/write.clj` if the

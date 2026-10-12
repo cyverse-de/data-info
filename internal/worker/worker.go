@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -56,6 +57,18 @@ const progressBuffer = 64
 // posted before the terminal status goes out regardless. Short, because the only thing on the
 // other side of it is the release of the job's paths.
 const progressFlushDeadline = 5 * time.Second
+
+// Heartbeat defaults. The interval leaves four missed beats inside the ten-minute stall
+// timeout. The maximum silence bounds how long a job that reports nothing is kept alive; it
+// should match the longest a single iRODS call may run, which main passes in.
+const (
+	DefaultHeartbeatInterval   = 2 * time.Minute
+	DefaultHeartbeatMaxSilence = 12 * time.Hour
+)
+
+// heartbeatTimeout bounds one heartbeat post. It is tried once: the next is only an interval
+// away, and a missed one costs nothing while the stall timeout is several intervals long.
+const heartbeatTimeout = 10 * time.Second
 
 // Tasks is the part of the async-tasks client a runner needs.
 type Tasks interface {
@@ -110,19 +123,46 @@ type Runner struct {
 
 	mu       sync.Mutex
 	stopping bool
+
+	// heartbeatInterval and heartbeatMaxSilence; see WithHeartbeat.
+	heartbeatInterval   time.Duration
+	heartbeatMaxSilence time.Duration
+}
+
+// Option configures a Runner.
+type Option func(*Runner)
+
+// WithHeartbeat sets how often a job that has posted nothing is reported as still running,
+// and how long a job may stay silent before that stops.
+//
+// The heartbeat is what keeps the stall timeout from releasing the paths of a job that is
+// busy in one long iRODS call, such as a recursive delete, which reports nothing until it
+// returns. It shows only that the process is alive, not that the call is progressing, so
+// maxSilence caps it: past that, a job is treated as hung and the stall timeout releases it.
+func WithHeartbeat(interval, maxSilence time.Duration) Option {
+	return func(r *Runner) {
+		r.heartbeatInterval = interval
+		r.heartbeatMaxSilence = maxSilence
+	}
 }
 
 // NewRunner builds a runner. Call Shutdown before the process exits.
-func NewRunner(tasks Tasks, log *logrus.Entry, instance string) *Runner {
+func NewRunner(tasks Tasks, log *logrus.Entry, instance string, opts ...Option) *Runner {
 	ctx, cancel := context.WithCancel(context.Background())
 
-	return &Runner{
-		tasks:    tasks,
-		log:      log,
-		instance: instance,
-		ctx:      ctx,
-		cancel:   cancel,
+	r := &Runner{
+		tasks:               tasks,
+		log:                 log,
+		instance:            instance,
+		ctx:                 ctx,
+		cancel:              cancel,
+		heartbeatInterval:   DefaultHeartbeatInterval,
+		heartbeatMaxSilence: DefaultHeartbeatMaxSilence,
 	}
+	for _, opt := range opts {
+		opt(r)
+	}
+	return r
 }
 
 // InstanceID names this process the way the Clojure service names it: by hostname, which in a
@@ -202,9 +242,17 @@ func (r *Runner) run(taskID, name string, job Job) {
 			entry = entry.WithField("stack", string(panicked.Stack))
 		}
 		entry.Error("the job failed; its paths are being released")
+		detail := fmt.Sprintf("[%s] %v", r.instance, runErr)
+		if r.ctx.Err() != nil {
+			// The job stopped because this instance is shutting down, not because the
+			// work failed. An iRODS call it was waiting on may still have finished some or
+			// all of it, so the user should check before retrying.
+			detail = fmt.Sprintf("[%s] interrupted by shutdown; iRODS may have finished part "+
+				"of the work: %v", r.instance, runErr)
+		}
 		r.post(log, taskID, asynctasks.Status{
 			Status: asynctasks.StatusFailed,
-			Detail: fmt.Sprintf("[%s] %v", r.instance, runErr),
+			Detail: detail,
 		}, true, terminalRetries)
 	} else {
 		r.post(log, taskID, asynctasks.Status{
@@ -274,18 +322,11 @@ func (r *Runner) progressReporter(log *logrus.Entry, taskID string) (Progress, f
 	sending.Add(1)
 	go func() {
 		defer sending.Done()
-
-		for status := range updates {
+		r.send(log, taskID, updates, func() (closing, discard bool) {
 			mu.RLock()
-			done := stopped
-			mu.RUnlock()
-
-			if done {
-				// Drain without posting, so the range ends promptly.
-				continue
-			}
-			r.post(log, taskID, status, false, progressRetries)
-		}
+			defer mu.RUnlock()
+			return closed, stopped
+		})
 	}()
 
 	progress := func(path, action string) {
@@ -348,6 +389,78 @@ func (r *Runner) progressReporter(log *logrus.Entry, taskID string) (Progress, f
 	}
 
 	return progress, stop
+}
+
+// send posts a job's progress updates until the channel closes, and posts a heartbeat
+// whenever the job has gone a heartbeat interval without one.
+//
+// Heartbeats are posted from this goroutine, not another, so they are serialised with the
+// progress updates: one can never be in flight while another is, and none can follow the
+// terminal status, which is posted only after this returns.
+func (r *Runner) send(
+	log *logrus.Entry,
+	taskID string,
+	updates <-chan asynctasks.Status,
+	state func() (closing, discard bool),
+) {
+	ticker := time.NewTicker(r.heartbeatInterval)
+	defer ticker.Stop()
+
+	// The "started" status has just been posted, which is where both clocks begin.
+	lastPosted := time.Now()
+	lastReported := lastPosted
+	lastDetail := "starting"
+	gaveUp := false
+
+	for {
+		select {
+		case status, ok := <-updates:
+			if !ok {
+				return
+			}
+			if _, discard := state(); discard {
+				// Drain without posting, so the range ends promptly.
+				continue
+			}
+			r.post(log, taskID, status, false, progressRetries)
+			lastPosted, lastReported = time.Now(), time.Now()
+			lastDetail = strings.TrimPrefix(status.Detail, "["+r.instance+"] ")
+
+		case <-ticker.C:
+			if closing, _ := state(); closing || time.Since(lastPosted) < r.heartbeatInterval {
+				continue
+			}
+			if time.Since(lastReported) > r.heartbeatMaxSilence {
+				if !gaveUp {
+					gaveUp = true
+					log.Errorf("the job has reported nothing for %s, so its heartbeat has "+
+						"stopped and the stall timeout will release its paths; it is probably "+
+						"stuck in an iRODS call that will not return", r.heartbeatMaxSilence)
+				}
+				continue
+			}
+			if r.heartbeat(log, taskID, lastDetail) {
+				lastPosted = time.Now()
+			}
+		}
+	}
+}
+
+// heartbeat reports a silent job as still running, once, and says whether that was recorded.
+func (r *Runner) heartbeat(log *logrus.Entry, taskID, lastDetail string) bool {
+	ctx, cancel := context.WithTimeout(r.ctx, heartbeatTimeout)
+	defer cancel()
+
+	err := r.tasks.AddStatus(ctx, taskID, asynctasks.Status{
+		Status: asynctasks.StatusRunning,
+		Detail: fmt.Sprintf("[%s] still working; last reported %s", r.instance, lastDetail),
+	})
+	if err != nil {
+		log.WithError(err).Warn("could not post a heartbeat; the next one will try again, " +
+			"and the task is released only if several in a row fail")
+		return false
+	}
+	return true
 }
 
 // post records a status, retrying.
