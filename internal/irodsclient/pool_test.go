@@ -135,19 +135,52 @@ func TestSessionsAfterCloseAreRefused(t *testing.T) {
 	}
 }
 
-// TestEvictionRespectsInUse makes sure a session being used is never pulled out from under
-// its caller, however far over the limit the pool is.
-func TestEvictionRespectsInUse(t *testing.T) {
-	pool := testPool(t, func(c *Config) { c.MaxSessions = 1 })
+// TestEviction covers which sessions the sweeper and new checkouts may evict. One in use
+// must stay, however long it has been held or however far over the limit the pool is: its
+// next caller would otherwise open a second session beside it.
+func TestEviction(t *testing.T) {
+	tests := []struct {
+		name        string
+		maxSessions int
+		held        bool
+		idle        bool
+		wantEvicted bool
+	}{
+		{"held past the idle timeout", 10, true, true, false},
+		{"held while over the limit", 1, true, false, false},
+		{"released past the idle timeout", 10, false, true, true},
+		{"released while over the limit", 1, false, false, true},
+		{"released, recent and within the limit", 10, false, false, false},
+	}
 
-	held := checkout(pool, "alice")
-	defer held.Close()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pool := testPool(t, func(c *Config) {
+				c.MaxSessions = tt.maxSessions
+				c.IdleTimeout = time.Minute
+			})
 
-	other := checkout(pool, "bob")
-	defer other.Close()
+			subject := checkout(pool, "alice")
+			if !tt.held {
+				subject.Close()
+			}
+			newest := checkout(pool, "bob")
+			defer newest.Close()
 
-	if held.entry.dead {
-		t.Error("an in-use entry was unlinked while over the session limit")
+			pool.mu.Lock()
+			if tt.idle {
+				subject.entry.lastUsed = time.Now().Add(-time.Hour)
+			}
+			pool.evictLocked()
+			pool.mu.Unlock()
+
+			if subject.entry.dead != tt.wantEvicted {
+				t.Errorf("evicted = %t, want %t", subject.entry.dead, tt.wantEvicted)
+			}
+			if tt.held {
+				subject.Close()
+			}
+		})
 	}
 }
 

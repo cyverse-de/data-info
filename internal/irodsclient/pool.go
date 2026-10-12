@@ -344,7 +344,12 @@ func (p *Pool) newFileSystem(clientUser string) (*irodsfs.FileSystem, error) {
 }
 
 // evictLocked unlinks least-recently-used sessions that are over the limit or have gone
-// idle. A session still in use is unlinked but not released; the last holder does that.
+// idle.
+//
+// A session in use is never evicted, even if that leaves the pool over MaxSessions. An
+// evicted session's next caller opens a new one alongside it, and for the admin session
+// that is a second service-account connection, which QA refuses. A long download or job
+// would trigger it just by outlasting IdleTimeout.
 func (p *Pool) evictLocked() {
 	cutoff := time.Now().Add(-p.cfg.IdleTimeout)
 
@@ -352,7 +357,7 @@ func (p *Pool) evictLocked() {
 		prev := el.Prev()
 		e := el.Value.(*entry)
 
-		if p.lru.Len() > p.cfg.MaxSessions || e.lastUsed.Before(cutoff) {
+		if e.inUse == 0 && (p.lru.Len() > p.cfg.MaxSessions || e.lastUsed.Before(cutoff)) {
 			p.unlinkLocked(el, e)
 		}
 		el = prev
