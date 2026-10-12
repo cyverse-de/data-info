@@ -504,7 +504,7 @@ func (h *Listings) findReadme(ctx context.Context, scope *rods.Scope, folder str
 			DateCreated:  stat.CreatedMS,
 			DateModified: stat.ModifiedMS,
 			BadName:      rule.Matches(stat.Path, service.ReadmeNames[i]),
-			InfoType:     infoTypeOrNil(stat.InfoType),
+			InfoType:     service.FileInfoType(stat.InfoType),
 			Name:         service.ReadmeNames[i],
 			Path:         stat.Path,
 			Permission:   string(stat.Permission),
@@ -513,14 +513,6 @@ func (h *Listings) findReadme(ctx context.Context, scope *rods.Scope, folder str
 	}
 
 	return nil, nil
-}
-
-// infoTypeOrNil reports null rather than an empty string when a file has no info type.
-func infoTypeOrNil(infoType string) any {
-	if infoType == "" {
-		return nil
-	}
-	return infoType
 }
 
 // requireExists reports a path that is not in the catalog at all, asking as the service's

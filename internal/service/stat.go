@@ -97,9 +97,7 @@ func StatOf(ctx context.Context, view rods.View, user, path string, opts StatOpt
 			out.ContentType = mediatype.OfName(base.Path)
 		}
 		if fields.Has(FieldInfoType) {
-			// A pointer so that a file with no info type reports an empty string rather
-			// than the field vanishing, which is what the Clojure service does.
-			infoType := base.InfoType
+			infoType := FileInfoType(base.InfoType)
 			out.InfoType = &infoType
 		}
 	}

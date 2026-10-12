@@ -87,12 +87,26 @@ func (r BadNameRule) Matches(path, name string) bool {
 	return false
 }
 
+// UnknownInfoType is what a data object nothing has typed yet reports.
+const UnknownInfoType = "unknown"
+
+// FileInfoType reports a data object's info type, substituting UnknownInfoType for none, as
+// clj-icat-direct's fmt-info-type did for every listing and stat the Clojure service served.
+func FileInfoType(infoType string) string {
+	if infoType == "" {
+		return UnknownInfoType
+	}
+	return infoType
+}
+
 // EntryOf converts a catalog row into a listing entry.
 func EntryOf(row icat.ListingRow, rule BadNameRule) ListingEntry {
-	// Null rather than an empty string when there is no info type: the Clojure service
-	// reports the catalog column, which is null for a folder and for a file that has none.
+	// A folder reports the catalog column as it is, which is null.
 	var infoType any
-	if row.InfoType.Valid && row.InfoType.String != "" {
+	switch {
+	case !row.IsCollection():
+		infoType = FileInfoType(row.InfoType.String)
+	case row.InfoType.String != "":
 		infoType = row.InfoType.String
 	}
 

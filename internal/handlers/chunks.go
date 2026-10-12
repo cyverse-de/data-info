@@ -232,16 +232,9 @@ func (h *Chunks) manifest(c echo.Context, ctx context.Context, scope *rods.Scope
 		urls = append(urls, manifestURL{Label: "anonymous", URL: h.deps.anonURL(path)})
 	}
 
-	// "unknown" rather than an empty string for a file nothing has typed yet, which is what
-	// the client switches on.
-	infoType := stat.InfoType
-	if infoType == "" {
-		infoType = "unknown"
-	}
-
 	return writeJSONOK(c, manifestResponse{
 		ContentType: mediatype.OfName(path),
-		InfoType:    infoType,
+		InfoType:    service.FileInfoType(stat.InfoType),
 		URLs:        urls,
 	})
 }
