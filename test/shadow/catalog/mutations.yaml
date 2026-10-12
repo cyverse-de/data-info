@@ -286,6 +286,15 @@ cases:
     seed: {filename: tagged.txt, content: "tag me\n"}
     body: {irods-avus: [{attr: "harness-attr", value: "harness-value", unit: ""}]}
 
+  # The metadata service refuses this, and its answer is relayed as it was given.
+  - id: add-avus-the-metadata-service-refuses
+    tier: write
+    method: PATCH
+    path: /data/{{.SeedID}}/metadata
+    query: {user: "{{.User}}"}
+    seed: {filename: tagged.txt, content: "tag me\n"}
+    body: {avus: "not-a-list"}
+
   - id: set-avus-to-an-empty-list
     tier: write
     method: PUT

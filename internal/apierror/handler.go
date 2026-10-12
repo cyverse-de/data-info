@@ -53,6 +53,14 @@ func HTTPErrorHandler(logErr func(echo.Context, *Error, error)) echo.HTTPErrorHa
 			return
 		}
 
+		// Only trap relays an upstream response; on a StyleOK route it reaches the default
+		// handler like any other exception, which toAPIError reproduces.
+		var upstream *UpstreamError
+		if errors.As(err, &upstream) && styleOf(c) == StyleTrap {
+			relay(logErr, c, upstream, err)
+			return
+		}
+
 		apiErr, raw := toAPIError(err, styleOf(c))
 
 		if logErr != nil {
@@ -108,6 +116,19 @@ func HTTPErrorHandler(logErr func(echo.Context, *Error, error)) echo.HTTPErrorHa
 		_, writeErr := c.Response().Write([]byte(raw))
 		report(logErr, c, apiErr, writeErr)
 	}
+}
+
+// relay writes another service's error response through unchanged.
+func relay(logErr func(echo.Context, *Error, error), c echo.Context, upstream *UpstreamError, err error) {
+	apiErr := New(upstream.Code()).WithStatus(upstream.Status).WithCause(err)
+	if logErr != nil {
+		logErr(c, apiErr, err)
+	}
+
+	setContentType(c, upstream.ContentType)
+	c.Response().WriteHeader(upstream.Status)
+	_, writeErr := c.Response().Write(upstream.Body)
+	report(logErr, c, apiErr, writeErr)
 }
 
 // report forwards a secondary failure -- one that happened while answering -- to the

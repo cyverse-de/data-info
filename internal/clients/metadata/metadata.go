@@ -16,6 +16,8 @@ import (
 	"net/http"
 	"net/url"
 	"time"
+
+	"github.com/cyverse-de/data-info/internal/apierror"
 )
 
 // Target types the metadata service knows. A collection is a "folder" there and a "dir" in
@@ -115,7 +117,7 @@ func (c *Client) avusURL(user, targetType, targetID string) *url.URL {
 	return out
 }
 
-// do performs one request, treating any 4xx or 5xx as an error.
+// do performs one request. A 4xx or 5xx is an *apierror.UpstreamError, so the handler can relay it.
 func (c *Client) do(ctx context.Context, method string, target *url.URL, body []byte) ([]byte, error) {
 	var reader io.Reader
 	if body != nil {
@@ -142,8 +144,12 @@ func (c *Client) do(ctx context.Context, method string, target *url.URL, body []
 	}
 
 	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("metadata: %s %s returned %d: %s",
-			method, target.Path, resp.StatusCode, bytes.TrimSpace(raw))
+		return nil, &apierror.UpstreamError{
+			Service:     "metadata " + method + " " + target.Path,
+			Status:      resp.StatusCode,
+			ContentType: resp.Header.Get("Content-Type"),
+			Body:        raw,
+		}
 	}
 	return raw, nil
 }

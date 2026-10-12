@@ -3,6 +3,7 @@ package apierror
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,14 @@ import (
 
 	"github.com/labstack/echo/v4"
 )
+
+// testUpstream is an error response from another service, as a client reports it.
+var testUpstream = &UpstreamError{
+	Service:     "metadata",
+	Status:      http.StatusBadRequest,
+	ContentType: "application/json; charset=utf-8",
+	Body:        []byte(`{"error_code":"ERR_EXISTS","reason":"duplicate"}`),
+}
 
 // newTestEcho returns an echo instance wired the way the service wires it.
 func newTestEcho() *echo.Echo {
@@ -69,6 +78,26 @@ func TestHTTPErrorHandler(t *testing.T) {
 			handler:    func(echo.Context) error { return context.DeadlineExceeded },
 			wantStatus: http.StatusInternalServerError,
 			wantBody:   `{"error_code":"ERR_UNAVAILABLE","reason":"context deadline exceeded"}`,
+		},
+		{
+			name:   "trap route relays an upstream error as received",
+			method: http.MethodPatch,
+			path:   "/data/abc/metadata",
+			handler: func(echo.Context) error {
+				return fmt.Errorf("updating: %w", testUpstream)
+			},
+			wantStatus: http.StatusBadRequest,
+			wantBody:   `{"error_code":"ERR_EXISTS","reason":"duplicate"}`,
+		},
+		{
+			name:       "ok route treats an upstream error like any other exception",
+			method:     http.MethodPost,
+			path:       "/path-info",
+			style:      StyleOK,
+			handler:    func(echo.Context) error { return testUpstream },
+			wantStatus: http.StatusInternalServerError,
+			wantBody: `{"error_code":"ERR_UNCHECKED_EXCEPTION","reason":` +
+				`"metadata answered 400: {\"error_code\":\"ERR_EXISTS\",\"reason\":\"duplicate\"}"}`,
 		},
 		{
 			name:       "HEAD answers with a bare status",
@@ -324,5 +353,39 @@ func TestWrongMethodSendsNoAllowHeader(t *testing.T) {
 
 	if got := rec.Header().Get("Allow"); got != "" {
 		t.Errorf("Allow = %q, want the header to be absent", got)
+	}
+}
+
+func TestUpstreamErrorKeepsItsContentType(t *testing.T) {
+	e := newTestEcho()
+	e.GET("/x", func(echo.Context) error { return testUpstream })
+
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/x", nil))
+
+	if got := rec.Header().Get(echo.HeaderContentType); got != testUpstream.ContentType {
+		t.Errorf("Content-Type = %q, want %q", got, testUpstream.ContentType)
+	}
+}
+
+func TestUpstreamErrorCode(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want Code
+	}{
+		{"an error envelope", `{"error_code":"ERR_EXISTS"}`, ErrExists},
+		{"JSON without a code", `{"reason":"nope"}`, ErrRequestFailed},
+		{"not JSON", `<html>bad gateway</html>`, ErrRequestFailed},
+		{"empty", ``, ErrRequestFailed},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := (&UpstreamError{Body: []byte(tt.body)}).Code()
+			if got != tt.want {
+				t.Errorf("Code() = %s, want %s", got, tt.want)
+			}
+		})
 	}
 }
