@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/cyverse-de/data-info/internal/apierror"
 	"github.com/cyverse-de/data-info/internal/clients/asynctasks"
 	"github.com/cyverse-de/data-info/internal/jobs"
 	"github.com/cyverse-de/data-info/internal/worker"
@@ -40,7 +41,12 @@ func (h *Writes) startTask(
 		Behaviors: []asynctasks.Behavior{asynctasks.StallBehavior()},
 	})
 	if err != nil {
-		return "", fmt.Errorf("recording a %s task: %w", taskType, err)
+		// The cause names async-tasks' URL and whatever it said, which do not belong in a
+		// response; it is kept as the cause so the error handler logs it. The Clojure
+		// service answered ERR_UNCHECKED_EXCEPTION here (deferred fix 24).
+		return "", apierror.New(apierror.ErrUnavailable).
+			With("reason", fmt.Sprintf("could not record the %s task", taskType)).
+			WithCause(fmt.Errorf("recording a %s task: %w", taskType, err))
 	}
 
 	if err := h.deps.Worker.Start(taskID, taskType, job); err != nil {
@@ -48,7 +54,9 @@ func (h *Writes) startTask(
 		// Nothing here can unlock them -- completing a task this service did not perform
 		// would be a lie -- so the stall timeout is what releases them, ten minutes from
 		// now. Reported as unavailable because retrying elsewhere is the right response.
-		return "", fmt.Errorf("starting the %s job for %s: %w", taskType, taskID, err)
+		return "", apierror.New(apierror.ErrUnavailable).
+			With("reason", fmt.Sprintf("could not start the %s job; retry the request", taskType)).
+			WithCause(fmt.Errorf("starting the %s job for %s: %w", taskType, taskID, err))
 	}
 
 	return taskID, nil

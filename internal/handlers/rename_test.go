@@ -276,3 +276,48 @@ func TestRenamingToTheSameNameDoesNothing(t *testing.T) {
 		t.Errorf("recorded %d tasks for a rename that was a no-op", len(creator.created))
 	}
 }
+
+// TestTaskMachineryFailuresAreUnavailable covers async-tasks refusing the record and this
+// instance refusing the job. Both are worth retrying elsewhere, and neither response may carry
+// async-tasks' address, which the underlying error names.
+func TestTaskMachineryFailuresAreUnavailable(t *testing.T) {
+	cases := []struct {
+		name  string
+		setup func(*Deps, *recordingCreator)
+	}{
+		{
+			name: "async-tasks refuses the record",
+			setup: func(_ *Deps, creator *recordingCreator) {
+				creator.err = errors.New(`async-tasks: POST tasks: Post "http://async-tasks.internal:60000/tasks": connection refused`)
+			},
+		},
+		{
+			name: "the worker is shutting down",
+			setup: func(deps *Deps, _ *recordingCreator) {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				_ = deps.Worker.Shutdown(ctx)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			deps, fake, creator := moveDeps(t)
+			fake.AddCollection(testHome+"/dest", icat.AccessOwn)
+			fake.AddCollection(testHome+"/owned", icat.AccessOwn)
+			tc.setup(&deps, creator)
+			writes := NewWrites(deps)
+
+			body := `{"sources":["` + testHome + `/owned"],"dest":"` + testHome + `/dest"}`
+			rec := serve(t, apierror.StyleTrap, http.MethodPost, "/mover?user="+testUser, body, writes.Move)
+
+			if got := errorCodeOf(t, rec); got != string(apierror.ErrUnavailable) {
+				t.Errorf("error_code = %q, want %q (body %s)", got, apierror.ErrUnavailable, rec.Body.String())
+			}
+			if strings.Contains(rec.Body.String(), "async-tasks.internal") {
+				t.Errorf("the response names async-tasks' address: %s", rec.Body.String())
+			}
+		})
+	}
+}
