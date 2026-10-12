@@ -23,7 +23,7 @@ import (
 )
 
 // version is what GET / and --version report.
-const version = "3.0.2"
+const version = "4.0.0"
 
 // serverGrace bounds how long in-flight requests have to finish, and drainGrace how long the
 // background jobs then have to stop and report. With the preStop sleep, their sum has to stay
