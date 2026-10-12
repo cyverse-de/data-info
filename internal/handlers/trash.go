@@ -262,10 +262,16 @@ func (h *Writes) Restore(c echo.Context) error {
 		return err
 	}
 
+	admin, err := h.deps.OpenProxyScope(ctx)
+	if err != nil {
+		return err
+	}
+	defer admin.Close()
+
 	plans := make(map[string]service.RestorePlan, len(requested))
 	destinations := make([]string, 0, len(requested))
 	for _, path := range requested {
-		plan, err := service.PlanRestore(ctx, scope, h.deps.Layout, user, path)
+		plan, err := service.PlanRestore(ctx, scope, admin, h.deps.Layout, user, path)
 		if err != nil {
 			return err
 		}

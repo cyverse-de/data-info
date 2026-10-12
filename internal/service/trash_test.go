@@ -70,6 +70,7 @@ func TestPlanRestore(t *testing.T) {
 		name        string
 		avus        []rods.AVU
 		stats       map[string]rods.Stat
+		adminStats  map[string]rods.Stat // what the service account sees; stats when nil
 		wantPath    string
 		wantPartial bool
 	}{
@@ -116,13 +117,40 @@ func TestPlanRestore(t *testing.T) {
 			},
 			wantPath: origin + ".1",
 		},
+		{
+			// Unshared from them, so the user cannot see it at all. It still exists, so
+			// restoring into it would fail; it goes home instead.
+			name:        "the collection it came from is no longer visible",
+			avus:        []rods.AVU{{Attribute: TrashOriginAttribute, Value: origin}},
+			stats:       map[string]rods.Stat{},
+			adminStats:  map[string]rods.Stat{"/iplant/home/wregglej/project": {Exists: true}},
+			wantPath:    "/iplant/home/wregglej/results.csv.AbC1234",
+			wantPartial: true,
+		},
+		{
+			name: "something the user cannot see is using the name",
+			avus: []rods.AVU{{Attribute: TrashOriginAttribute, Value: origin}},
+			stats: map[string]rods.Stat{
+				"/iplant/home/wregglej/project": {Exists: true, Permission: rods.PermissionOwn},
+			},
+			adminStats: map[string]rods.Stat{
+				"/iplant/home/wregglej/project": {Exists: true},
+				origin:                          {Exists: true},
+			},
+			wantPath: origin + ".0",
+		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			store := &restoreStore{stats: tc.stats, avus: map[string][]rods.AVU{trashed: tc.avus}}
+			avus := map[string][]rods.AVU{trashed: tc.avus}
+			view := &restoreStore{stats: tc.stats, avus: avus}
+			admin := view
+			if tc.adminStats != nil {
+				admin = &restoreStore{stats: tc.adminStats, avus: avus}
+			}
 
-			plan, err := PlanRestore(context.Background(), store, trashLayout(), "wregglej", trashed)
+			plan, err := PlanRestore(context.Background(), view, admin, trashLayout(), "wregglej", trashed)
 			if err != nil {
 				t.Fatalf("PlanRestore: %v", err)
 			}

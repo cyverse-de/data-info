@@ -81,24 +81,21 @@ type RestoreStore interface {
 //
 // A name already in use is not a conflict: a number is appended until one is free, so
 // restoring never overwrites.
-func PlanRestore(ctx context.Context, store RestoreStore, layout paths.Layout, user, path string) (RestorePlan, error) {
-	origin, err := trashOrigin(ctx, store, path)
+//
+// view acts as the user and admin as the service account. Whether something exists is asked
+// of admin, as the Clojure service did, so a collection or name the user cannot see still
+// counts: otherwise an unshared parent would look absent and the restore would target it.
+func PlanRestore(ctx context.Context, view, admin RestoreStore, layout paths.Layout, user, path string) (RestorePlan, error) {
+	origin, err := trashOrigin(ctx, view, path)
 	if err != nil {
 		return RestorePlan{}, err
 	}
 
 	toHome := origin == ""
 	if !toHome {
-		parent := paths.Dir(origin)
-
-		stat, err := store.Stat(ctx, parent).Get(ctx)
+		toHome, err = parentUnwriteable(ctx, view, admin, paths.Dir(origin))
 		if err != nil {
 			return RestorePlan{}, err
-		}
-		// A parent that no longer exists is not a reason to give up: it is recreated
-		// below. A parent that exists and cannot be written to is.
-		if stat.Exists && !rods.Permits(stat.Permission, rods.PermissionWrite) {
-			toHome = true
 		}
 	}
 
@@ -106,12 +103,30 @@ func PlanRestore(ctx context.Context, store RestoreStore, layout paths.Layout, u
 		origin = paths.Join(layout.UserHome(user), paths.Base(path))
 	}
 
-	free, err := firstFreeName(ctx, store, origin)
+	free, err := firstFreeName(ctx, admin, origin)
 	if err != nil {
 		return RestorePlan{}, err
 	}
 
 	return RestorePlan{RestoredPath: free, PartialRestore: toHome}, nil
+}
+
+// parentUnwriteable reports whether a restore's parent exists but the user cannot write to it.
+// A parent that no longer exists is not a reason to divert: the job recreates it.
+func parentUnwriteable(ctx context.Context, view, admin RestoreStore, parent string) (bool, error) {
+	exists, err := admin.Stat(ctx, parent).Get(ctx)
+	if err != nil {
+		return false, err
+	}
+	if !exists.Exists {
+		return false, nil
+	}
+
+	held, err := view.Stat(ctx, parent).Get(ctx)
+	if err != nil {
+		return false, err
+	}
+	return !rods.Permits(held.Permission, rods.PermissionWrite), nil
 }
 
 // trashOrigin reads where something was before it was trashed, or "" when nothing recorded it.
