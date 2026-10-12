@@ -335,8 +335,15 @@ func (s *Scope) AVUs(_ context.Context, path string) *lazy.Value[[]AVU] {
 
 	return memoize(s, memoKey{kindAVUs, path}, func() *lazy.Value[[]AVU] {
 		s.protocol.Add(1)
-		return lazy.Go(s.ctx, s.protocolSem, func(ctx context.Context) ([]AVU, error) {
+		// The semaphore is acquired here rather than by lazy.Go so that Done still runs when
+		// the acquire fails, as it does for a lookup still queued when Close cancels the scope.
+		return lazy.Go(s.ctx, nil, func(ctx context.Context) ([]AVU, error) {
 			defer s.protocol.Done()
+
+			if err := s.protocolSem.Acquire(ctx, 1); err != nil {
+				return nil, err
+			}
+			defer s.protocolSem.Release(1)
 
 			sess, err := s.session(ctx)
 			if err != nil {

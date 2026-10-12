@@ -466,3 +466,29 @@ func TestCloseIsIdempotent(t *testing.T) {
 	scope.Close()
 	scope.Close()
 }
+
+func TestCloseDoesNotWaitForQueuedProtocolWork(t *testing.T) {
+	scope, _ := testScope(t)
+
+	// Fill the semaphore so the lookup below is still queued when Close cancels it.
+	if err := scope.protocolSem.Acquire(context.Background(), scope.opts.ProtocolParallelism); err != nil {
+		t.Fatalf("filling the protocol semaphore: %v", err)
+	}
+	avus := scope.AVUs(context.Background(), testHome)
+
+	closed := make(chan struct{})
+	go func() {
+		scope.Close()
+		close(closed)
+	}()
+
+	select {
+	case <-closed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Close blocked on a lookup that never acquired the semaphore")
+	}
+
+	if _, err := avus.Get(context.Background()); !errors.Is(err, context.Canceled) {
+		t.Errorf("queued lookup err = %v, want context.Canceled", err)
+	}
+}
