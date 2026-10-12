@@ -65,11 +65,10 @@ func (l Layout) Label(user, p string) string {
 	}
 }
 
-// IsBasePath reports whether a path is one of the roots the service protects from being
-// moved, renamed or deleted.
+// IsBasePath reports whether a path is one of the special collections a path list may not be
+// built from. The user's own home is not one, matching the Clojure not-base-path.
 func (l Layout) IsBasePath(user, p string) bool {
-	return equal(p, l.UserHome(user)) ||
-		l.IsUserTrash(user, p) ||
+	return l.IsUserTrash(user, p) ||
 		l.IsTrashBase(p) ||
 		l.IsSharing(p) ||
 		l.IsCommunityData(p)
