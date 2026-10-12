@@ -165,10 +165,18 @@ func Checksum(ctx context.Context, s *Session, path, resource string) (string, e
 }
 
 // ExistsFile reports whether a data object is at path, asking the server rather than any
-// cache.
+// cache. Only a not-found answer means absent; any other failure is returned, because callers
+// act on "absent" by giving up a cleanup or recreating the object.
 func ExistsFile(ctx context.Context, s *Session, path string) (bool, error) {
 	found, err := DoPath(ctx, s, path, func(fsys *irodsfs.FileSystem) (bool, error) {
-		return fsys.ExistsFileFresh(path), nil
+		entry, err := fsys.StatFileFresh(path)
+		if types.IsFileNotFoundError(err) {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		return entry.ID > 0, nil
 	})
 	if err != nil {
 		return false, fmt.Errorf("checking for a data object at %q: %w", path, err)
