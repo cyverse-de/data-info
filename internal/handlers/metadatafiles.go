@@ -261,8 +261,9 @@ func (a *AVUs) ParseCSV(c echo.Context) error {
 	if err != nil {
 		return err
 	}
+	// Nothing to apply, which the Clojure service reports as an empty result, not an error.
 	if len(records) < 2 {
-		return schemaError("the source file needs a header row and at least one row of values")
+		return writeJSONOK(c, map[string]any{"path-metadata": []map[string]any{}})
 	}
 
 	attributes := records[0][1:]
