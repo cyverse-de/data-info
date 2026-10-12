@@ -167,8 +167,8 @@ func run() error {
 	defer cancelDrain()
 
 	if err := runner.Shutdown(drainCtx); err != nil {
-		log.WithError(err).Error("could not drain the background jobs before exiting; " +
-			"their tasks stay unfinished until the ten-minute stall timeout completes them")
+		log.WithError(err).Errorf("could not drain the background jobs before exiting; "+
+			"their tasks stay unfinished until the %s stall timeout completes them", asynctasks.StallTimeout)
 	}
 
 	log.Info("stopped")

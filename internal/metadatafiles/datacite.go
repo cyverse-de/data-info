@@ -1,6 +1,9 @@
 package metadatafiles
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 // The DataCite schema this service emits.
 //
@@ -339,7 +342,7 @@ func (a association) check(avus []AVU) error {
 // rows zips the association's values together, padding optional attributes with blanks. It
 // assumes check has passed.
 func (a association) rows(avus []AVU) [][]string {
-	names := append(append([]string{}, a.required...), a.optional...)
+	names := slices.Concat(a.required, a.optional)
 	lists := make([][]string, 0, len(names))
 	longest := 0
 	for _, name := range names {
