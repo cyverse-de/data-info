@@ -492,3 +492,15 @@ func TestCloseDoesNotWaitForQueuedProtocolWork(t *testing.T) {
 		t.Errorf("queued lookup err = %v, want context.Canceled", err)
 	}
 }
+
+// TestLookupsAfterCloseFail covers a lookup started once Close has begun waiting for protocol
+// work. It must fail rather than add work Close is no longer waiting for, which would then
+// run on a session already handed back to the pool.
+func TestLookupsAfterCloseFail(t *testing.T) {
+	scope, _ := testScope(t)
+	scope.Close()
+
+	if _, err := scope.AVUs(context.Background(), testHome+"/a.txt").Get(context.Background()); !errors.Is(err, errScopeClosed) {
+		t.Errorf("AVUs after Close = %v, want %v", err, errScopeClosed)
+	}
+}

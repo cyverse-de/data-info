@@ -22,6 +22,7 @@ package rods
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -173,6 +174,9 @@ func (s *Scope) User() string { return s.opts.User }
 // Zone is the iRODS zone.
 func (s *Scope) Zone() string { return s.deps.Zone }
 
+// errScopeClosed is what a lookup on a scope that has been closed fails with.
+var errScopeClosed = errors.New("rods: the scope is closed")
+
 // Close releases anything the scope holds. It is safe to call more than once.
 //
 // It waits for protocol work already in flight before returning the session to the pool.
@@ -209,7 +213,7 @@ func (s *Scope) session(ctx context.Context) (*irodsclient.Session, error) {
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
-		return nil, fmt.Errorf("rods: the scope is closed")
+		return nil, errScopeClosed
 	}
 	if s.sess != nil {
 		defer s.mu.Unlock()
@@ -229,7 +233,7 @@ func (s *Scope) session(ctx context.Context) (*irodsclient.Session, error) {
 	// run. Either way this one is surplus.
 	if s.closed {
 		sess.Close()
-		return nil, fmt.Errorf("rods: the scope is closed")
+		return nil, errScopeClosed
 	}
 	if s.sess != nil {
 		sess.Close()
@@ -252,6 +256,12 @@ func memoize[T any](s *Scope, key memoKey, build func() *lazy.Value[T]) *lazy.Va
 		if typed, ok := existing.(*lazy.Value[T]); ok {
 			return typed
 		}
+	}
+
+	// Checked under the lock Close takes to set closed, so that nothing built here can add
+	// protocol work after Close has begun waiting for it.
+	if s.closed {
+		return lazy.Failed[T](errScopeClosed)
 	}
 
 	value := build()
