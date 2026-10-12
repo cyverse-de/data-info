@@ -446,3 +446,59 @@ func TestProgressFlushDoesNotOutlastItsDeadline(t *testing.T) {
 		t.Errorf("progress = %d statuses, want the flush to have landed some", len(tasks.progress()))
 	}
 }
+
+// notifyingJob records how many terminal statuses had been posted when it was told to notify.
+type notifyingJob struct {
+	err   error
+	tasks *fakeTasks
+
+	mu             sync.Mutex
+	notified       int
+	failed         bool
+	terminalBefore int
+}
+
+func (j *notifyingJob) Run(context.Context, *asynctasks.Task, Progress) error { return j.err }
+
+func (j *notifyingJob) Notify(_ context.Context, _ *asynctasks.Task, failed bool) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	j.notified++
+	j.failed = failed
+	j.terminalBefore = len(j.tasks.terminal())
+}
+
+func TestNotifyComesAfterTheTerminalStatus(t *testing.T) {
+	cases := []struct {
+		name   string
+		jobErr error
+	}{
+		{name: "a job that succeeds"},
+		{name: "a job that fails", jobErr: errors.New("iRODS said no")},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tasks := &fakeTasks{}
+			job := &notifyingJob{err: tc.jobErr, tasks: tasks}
+			runner := testRunner(tasks)
+
+			if err := runner.Start("/tasks/abc", "move", job); err != nil {
+				t.Fatalf("Start: %v", err)
+			}
+			shutdown(t, runner)
+
+			job.mu.Lock()
+			defer job.mu.Unlock()
+			if job.notified != 1 {
+				t.Fatalf("notified %d times, want once", job.notified)
+			}
+			if job.terminalBefore != 1 {
+				t.Errorf("notified with %d terminal statuses posted, want 1", job.terminalBefore)
+			}
+			if job.failed != (tc.jobErr != nil) {
+				t.Errorf("failed = %v, want %v", job.failed, tc.jobErr != nil)
+			}
+		})
+	}
+}

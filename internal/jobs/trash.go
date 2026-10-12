@@ -81,8 +81,12 @@ func (e EmptyTrash) Run(ctx context.Context, task *asynctasks.Task, progress wor
 		e.Deps.Publisher.Publish(ctx, usageRoutingKeyPrefix+task.Username, "Update requested by data-info")
 	}
 
-	e.Deps.notify(ctx, notifications.EmptyTrash(task.Username, e.Deps.Layout, runErr != nil))
 	return runErr
+}
+
+// Notify implements worker.Notifying.
+func (e EmptyTrash) Notify(ctx context.Context, task *asynctasks.Task, failed bool) {
+	e.Deps.notify(ctx, notifications.EmptyTrash(task.Username, e.Deps.Layout, failed))
 }
 
 // Restore takes paths back out of the trash.
@@ -106,15 +110,25 @@ func (r Restore) Run(ctx context.Context, task *asynctasks.Task, progress worker
 	}
 	defer scope.Close()
 
+	return r.restore(ctx, scope, task.Username, trashPaths, plans, progress)
+}
+
+// Notify implements worker.Notifying.
+func (r Restore) Notify(ctx context.Context, task *asynctasks.Task, failed bool) {
+	trashPaths, err := stringsFrom(task.Data, "paths")
+	if err != nil {
+		return
+	}
+	plans, err := restorePlansFrom(task.Data)
+	if err != nil {
+		return
+	}
+
 	destinations := make([]string, 0, len(trashPaths))
 	for _, path := range trashPaths {
 		destinations = append(destinations, plans[path])
 	}
-
-	runErr := r.restore(ctx, scope, task.Username, trashPaths, plans, progress)
-
-	r.Deps.notify(ctx, notifications.Restore(task.Username, trashPaths, destinations, runErr != nil))
-	return runErr
+	r.Deps.notify(ctx, notifications.Restore(task.Username, trashPaths, destinations, failed))
 }
 
 func (r Restore) restore(

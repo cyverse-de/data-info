@@ -76,6 +76,13 @@ type Job interface {
 	Run(ctx context.Context, task *asynctasks.Task, progress Progress) error
 }
 
+// Notifying is a Job that tells its user how it went. Notify runs after the terminal status is
+// recorded, as the Clojure service's end-fn did, so a user acting on the notification straight
+// away does not find the task's paths still locked.
+type Notifying interface {
+	Notify(ctx context.Context, task *asynctasks.Task, failed bool)
+}
+
 // JobFunc adapts a function to Job.
 type JobFunc func(ctx context.Context, task *asynctasks.Task, progress Progress) error
 
@@ -192,14 +199,18 @@ func (r *Runner) run(taskID, name string, job Job) {
 			Status: asynctasks.StatusFailed,
 			Detail: fmt.Sprintf("[%s] %v", r.instance, runErr),
 		}, true, terminalRetries)
-		return
+	} else {
+		r.post(log, taskID, asynctasks.Status{
+			Status: asynctasks.StatusCompleted,
+			Detail: "[" + r.instance + "]",
+		}, true, terminalRetries)
+		log.Info("finished")
 	}
 
-	r.post(log, taskID, asynctasks.Status{
-		Status: asynctasks.StatusCompleted,
-		Detail: "[" + r.instance + "]",
-	}, true, terminalRetries)
-	log.Info("finished")
+	// Not r.ctx, which Shutdown cancels: the work is done and the user should still hear so.
+	if n, ok := job.(Notifying); ok {
+		n.Notify(context.WithoutCancel(r.ctx), task, runErr != nil)
+	}
 }
 
 // progressReporter returns a Progress that posts in the background, and a function that

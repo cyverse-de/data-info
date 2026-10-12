@@ -45,24 +45,35 @@ func (d Delete) Run(ctx context.Context, task *asynctasks.Task, progress worker.
 	}
 	defer scope.Close()
 
-	runErr := d.delete(ctx, scope, task.Username, requested, trashPaths, progress)
+	return d.delete(ctx, scope, task.Username, requested, trashPaths, progress)
+}
 
-	// Two notifications, because the two outcomes read differently to a user: something
-	// moved to the trash can be got back, and something deleted outright cannot.
+// Notify implements worker.Notifying.
+//
+// Two notifications, because the two outcomes read differently to a user: something moved to
+// the trash can be got back, and something deleted outright cannot.
+func (d Delete) Notify(ctx context.Context, task *asynctasks.Task, failed bool) {
+	requested, err := stringsFrom(task.Data, "paths")
+	if err != nil {
+		return
+	}
+	trashPaths, err := mapFrom(task.Data, "trash-paths")
+	if err != nil {
+		return
+	}
+
 	trashed, deleted := partitionByTrash(requested, trashPaths)
 
 	if len(deleted) > 0 {
-		d.Deps.notify(ctx, notifications.Delete(task.Username, deleted, d.Deps.Layout, runErr != nil))
+		d.Deps.notify(ctx, notifications.Delete(task.Username, deleted, d.Deps.Layout, failed))
 	}
 	if len(trashed) > 0 {
 		destinations := make([]string, 0, len(trashed))
 		for _, path := range trashed {
 			destinations = append(destinations, trashPaths[path])
 		}
-		d.Deps.notify(ctx, notifications.Trash(task.Username, trashed, destinations, runErr != nil))
+		d.Deps.notify(ctx, notifications.Trash(task.Username, trashed, destinations, failed))
 	}
-
-	return runErr
 }
 
 func (d Delete) delete(

@@ -32,9 +32,19 @@ func (r Rename) Run(ctx context.Context, task *asynctasks.Task, progress worker.
 	}
 	defer scope.Close()
 
-	runErr := moveOne(ctx, scope, r.Deps, task.Username, source, destination, progress)
+	return moveOne(ctx, scope, r.Deps, task.Username, source, destination, progress)
+}
 
-	r.Deps.notify(ctx, notifications.Rename(
-		task.Username, []string{source}, []string{destination}, runErr != nil))
-	return runErr
+// Notify implements worker.Notifying.
+func (r Rename) Notify(ctx context.Context, task *asynctasks.Task, failed bool) {
+	source, err := stringFrom(task.Data, "source")
+	if err != nil {
+		return
+	}
+	destination, err := stringFrom(task.Data, "destination")
+	if err != nil {
+		return
+	}
+
+	r.Deps.notify(ctx, notifications.Rename(task.Username, []string{source}, []string{destination}, failed))
 }

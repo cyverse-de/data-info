@@ -36,16 +36,26 @@ func (m Move) Run(ctx context.Context, task *asynctasks.Task, progress worker.Pr
 	}
 	defer scope.Close()
 
-	destinations := DestinationsUnder(destination, sources)
+	return m.move(ctx, scope, task.Username, sources, DestinationsUnder(destination, sources), progress)
+}
 
-	runErr := m.move(ctx, scope, task.Username, sources, destinations, progress)
+// Notify implements worker.Notifying.
+//
+// The notification names everything that was asked for, not everything that moved. A partial
+// failure is reported as a failure over the whole list, which is what the Clojure service does
+// and what the DE renders; the task's status history is where the detail of how far it got
+// lives.
+func (m Move) Notify(ctx context.Context, task *asynctasks.Task, failed bool) {
+	sources, err := stringsFrom(task.Data, "sources")
+	if err != nil {
+		return
+	}
+	destination, err := stringFrom(task.Data, "destination")
+	if err != nil {
+		return
+	}
 
-	// The notification names everything that was asked for, not everything that moved. A
-	// partial failure is reported as a failure over the whole list, which is what the Clojure
-	// service does and what the DE renders; the task's status history is where the detail of
-	// how far it got lives.
-	m.Deps.notify(ctx, notifications.Move(task.Username, sources, destinations, runErr != nil))
-	return runErr
+	m.Deps.notify(ctx, notifications.Move(task.Username, sources, DestinationsUnder(destination, sources), failed))
 }
 
 func (m Move) move(

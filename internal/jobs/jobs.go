@@ -20,6 +20,15 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// Every job tells its user how it went, after the worker has recorded the outcome.
+var (
+	_ worker.Notifying = Move{}
+	_ worker.Notifying = Rename{}
+	_ worker.Notifying = Delete{}
+	_ worker.Notifying = EmptyTrash{}
+	_ worker.Notifying = Restore{}
+)
+
 // Notifier tells a user that their operation finished.
 type Notifier interface {
 	Send(ctx context.Context, message notifications.Message) error
