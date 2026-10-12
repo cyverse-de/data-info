@@ -20,9 +20,7 @@ import (
 	"github.com/cyverse-de/data-info/internal/paths"
 	"github.com/cyverse-de/data-info/internal/worker"
 	"github.com/labstack/echo/v4"
-	"github.com/labstack/echo/v4/middleware"
 	"github.com/sirupsen/logrus"
-	"go.opentelemetry.io/contrib/instrumentation/github.com/labstack/echo/otelecho"
 )
 
 // uploadRoutes are the endpoints that stream whole files and therefore get the long idle
@@ -74,9 +72,9 @@ func buildServer(cfg *config.Config, version string, log *logrus.Entry, deps Dep
 	// Pre runs before routing, which is required: this rewrites the query string.
 	e.Pre(dimw.LowercaseQueryParams())
 
-	e.Use(middleware.Recover())
-	e.Use(otelecho.Middleware(handlers.ServiceName))
+	// The logger wraps Recover so that a request that panicked still gets its line.
 	e.Use(requestLogger(log))
+	e.Use(recoverer(log))
 	e.Use(dimw.IdleTimeout(cfg.Timeouts.Request, cfg.Timeouts.Upload, isUploadRoute))
 
 	status := handlers.NewStatus(cfg, version, deps.IRODSProbe, deps.ICATProbe)
@@ -411,57 +409,5 @@ func newHTTPServer(cfg *config.Config, h http.Handler) *http.Server {
 		Handler:           h,
 		ReadHeaderTimeout: 30 * time.Second,
 		IdleTimeout:       cfg.Timeouts.Request,
-	}
-}
-
-// requestLogger records each request and its outcome, matching the Clojure req-logger's
-// intent: enough to trace a call without logging bodies.
-func requestLogger(log *logrus.Entry) echo.MiddlewareFunc {
-	return middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
-		LogMethod:   true,
-		LogURI:      true,
-		LogStatus:   true,
-		LogLatency:  true,
-		LogError:    true,
-		LogRemoteIP: true,
-		HandleError: true,
-		LogValuesFunc: func(c echo.Context, v middleware.RequestLoggerValues) error {
-			entry := log.WithFields(logrus.Fields{
-				"method":  v.Method,
-				"uri":     v.URI,
-				"status":  v.Status,
-				"latency": v.Latency.String(),
-				"remote":  v.RemoteIP,
-				// The caller's identity is a query parameter, not a header or a token.
-				"user": c.QueryParam("user"),
-			})
-			// Errors are reported by the HTTP error handler, which has the error_code
-			// and the resolved status. Repeating them here would double-log every
-			// failure, so this only records that the request happened.
-			entry.Info("request")
-			return nil
-		},
-	})
-}
-
-// errorLogger reports errors the HTTP error handler renders, including any secondary
-// failure that happened while answering.
-func errorLogger(log *logrus.Entry) func(echo.Context, *apierror.Error, error) {
-	return func(c echo.Context, apiErr *apierror.Error, err error) {
-		status := apiErr.HTTPStatus()
-		entry := log.WithFields(logrus.Fields{
-			"method":     c.Request().Method,
-			"uri":        c.Request().RequestURI,
-			"error_code": string(apiErr.Code),
-			"status":     status,
-		}).WithError(err)
-
-		// A 404 from a stale client or a scanner is not an operational problem. Only
-		// server-side failures are worth an ERROR line.
-		if status < http.StatusInternalServerError {
-			entry.Warn("request error")
-			return
-		}
-		entry.Error("request error")
 	}
 }

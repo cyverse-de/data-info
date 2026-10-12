@@ -17,13 +17,9 @@ import (
 	"github.com/cyverse-de/data-info/internal/clients/metadata"
 	"github.com/cyverse-de/data-info/internal/clients/notifications"
 	"github.com/cyverse-de/data-info/internal/config"
-	"github.com/cyverse-de/data-info/internal/handlers"
 	"github.com/cyverse-de/data-info/internal/icat"
 	"github.com/cyverse-de/data-info/internal/irodsclient"
 	"github.com/cyverse-de/data-info/internal/worker"
-	"github.com/cyverse-de/go-mod/logging"
-	"github.com/cyverse-de/go-mod/otelutils"
-	"github.com/sirupsen/logrus"
 )
 
 // version is what GET / and --version report. It is a constant in the source rather than a
@@ -85,8 +81,10 @@ func run() error {
 		return nil
 	}
 
-	logging.SetupLogging(*logLevel)
-	log := logging.Log.WithFields(logrus.Fields{"service": handlers.ServiceName})
+	log, err := newLogger(*logLevel)
+	if err != nil {
+		return err
+	}
 
 	cfg, err := config.Load(config.Settings{
 		ConfigPath: *configPath,
@@ -99,15 +97,6 @@ func run() error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-
-	// Not ctx: otelutils derives the shutdown flush timeout from whatever context it is
-	// given, and ctx is already cancelled by the time the deferred shutdown runs on
-	// SIGTERM. Handing it the signal context would drop every span from the final batch
-	// window on every rollout.
-	shutdownTracing := otelutils.TracerProviderFromEnv(context.Background(), handlers.ServiceName, func(e error) {
-		log.WithError(e).Error("tracing failed; continuing without it")
-	})
-	defer shutdownTracing()
 
 	// Set when jobs are still running at exit, so their connections are left alone. Closing
 	// a pool out from under an in-flight job would make it fail against a closed handle

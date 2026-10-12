@@ -46,6 +46,18 @@ const (
 	ErrTooManyPaths      Code = "ERR_TOO_MANY_PATHS"
 )
 
+// IsServerFault reports whether the code means this service or a backend failed, rather than
+// that the caller's request was refused. It is independent of the HTTP status, which is 500
+// for many caller errors; see statusFor.
+func (c Code) IsServerFault() bool {
+	switch c {
+	case ErrConfigInvalid, ErrRequestFailed, ErrUnavailable, ErrUncheckedException:
+		return true
+	default:
+		return false
+	}
+}
+
 // EmittedCodes is every code data-info can return.
 //
 // A function rather than a package-level slice so a caller cannot mutate the canonical

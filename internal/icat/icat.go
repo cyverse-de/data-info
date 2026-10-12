@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/cyverse-de/dbutil"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq" // registers the postgres driver
 )
@@ -136,6 +135,9 @@ const (
 	DefaultConnectTimeout  = time.Minute
 )
 
+// maxConnectDelay caps the backoff between connection attempts at startup.
+const maxConnectDelay = 10 * time.Second
+
 // Open connects to the catalog. It retries while the database is unreachable, so a service
 // started before its database is up will still come up.
 func Open(cfg Config) (*PGStore, error) {
@@ -152,15 +154,14 @@ func Open(cfg Config) (*PGStore, error) {
 		cfg.ConnectTimeout = DefaultConnectTimeout
 	}
 
-	connector, err := dbutil.NewDefaultConnector(cfg.ConnectTimeout.String())
+	db, err := sql.Open("postgres", cfg.URI)
 	if err != nil {
-		return nil, fmt.Errorf("icat: building the connector: %w", err)
+		return nil, fmt.Errorf("icat: opening: %w", err)
 	}
-
-	// dbutil opens through otelsql, so every query is traced without further wiring.
-	db, err := connector.Connect("postgres", cfg.URI)
-	if err != nil {
-		return nil, fmt.Errorf("icat: connecting: %w", err)
+	if err := pingUntil(db, cfg.ConnectTimeout); err != nil {
+		pingErr := fmt.Errorf("icat: the catalog did not answer within %s; "+
+			"check that the database is up and the connection URI is right: %w", cfg.ConnectTimeout, err)
+		return nil, errors.Join(pingErr, db.Close())
 	}
 
 	db.SetMaxOpenConns(cfg.MaxOpenConns)
@@ -172,6 +173,28 @@ func Open(cfg Config) (*PGStore, error) {
 	db.SetConnMaxIdleTime(cfg.ConnMaxIdleTime)
 
 	return &PGStore{db: sqlx.NewDb(db, "postgres")}, nil
+}
+
+// pingUntil pings the database, backing off between attempts, until it answers or timeout
+// passes.
+func pingUntil(db *sql.DB, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	delay := time.Second
+	for {
+		err := db.PingContext(ctx)
+		if err == nil {
+			return nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return err
+		case <-time.After(delay):
+		}
+		delay = min(delay*2, maxConnectDelay)
+	}
 }
 
 // Ping reports whether the catalog is reachable.

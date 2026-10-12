@@ -91,7 +91,7 @@ func (p *Publisher) Publish(ctx context.Context, routingKey string, message any)
 
 	err = p.publishLocked(ctx, routingKey, body, now)
 	if err == nil {
-		log.Info("published an event")
+		log.Debug("published an event")
 		return
 	}
 	log.WithError(err).Warn("publishing an event failed; reconnecting and retrying once")
