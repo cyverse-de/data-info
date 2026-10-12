@@ -3,9 +3,11 @@
 -- Ported from clj-icat-direct's mk-paged-folder, which ran this as four statements in a
 -- transaction: two temporary tables with an ANALYZE each, then the listing. The temporary
 -- tables existed to stop PostgreSQL mis-estimating a CTE's cardinality and choosing nested
--- loops over the catalog. Modern PostgreSQL materialises a CTE referenced more than once and
--- can inline one referenced once, so the same shape is expressed here as CTEs and measured
--- rather than assumed; if a plan regresses, the temporary tables are the fallback.
+-- loops over the catalog. That still happens: a CTE of the children's AVUs was estimated at
+-- one row and scanned once per object, about 1.1s of a 1.2s page over 5,000 objects. So the
+-- AVUs are joined directly, with the attribute in the join condition, where the per-object
+-- lookups use the metamap's object_id index (76ms for the same page). If a plan regresses,
+-- the temporary tables are the fallback.
 --
 -- Rows are ordered by type first so that folders precede files, then by the requested
 -- column. The order is the contract -- it is what a sort-field request is asking for -- so
@@ -40,14 +42,6 @@ objs AS (
                                 FROM r_data_main d2
                                WHERE d2.data_id = d.data_id)
 ),
-avus AS (
-    SELECT mm.object_id, m.meta_attr_value, m.meta_attr_name
-      FROM r_objt_metamap mm
-      JOIN r_meta_main m ON mm.meta_id = m.meta_id
-     WHERE mm.object_id IN (SELECT data_id FROM objs
-                            UNION
-                            SELECT coll_id FROM r_coll_main WHERE parent_coll_name = $1)
-),
 folders AS (
     SELECT 'collection'                           AS type,
            ca.meta_attr_value                     AS uuid,
@@ -60,13 +54,13 @@ folders AS (
            MAX(a.access_type_id)                  AS access_type_id,
            NULL                                   AS data_checksum
       FROM r_coll_main c
-      JOIN avus ca ON ca.object_id = c.coll_id
+      JOIN r_objt_metamap cmm ON cmm.object_id = c.coll_id
+      JOIN r_meta_main ca ON ca.meta_id = cmm.meta_id AND ca.meta_attr_name = 'ipc_UUID'
       JOIN r_objt_access a ON c.coll_id = a.object_id
      WHERE $10 IN ('any', 'folder')
        AND c.parent_coll_name = $1
        -- Soft links are catalogued as collections but are not folders the DE shows.
        AND c.coll_type != 'linkPoint'
-       AND ca.meta_attr_name = 'ipc_UUID'
        AND a.user_id IN (SELECT group_user_id FROM groups)
      GROUP BY type, uuid, full_path, base_name, info_type, data_size,
               c.create_ts, c.modify_ts, data_checksum
@@ -83,12 +77,14 @@ files AS (
            MAX(a.access_type_id) AS access_type_id,
            d.data_checksum       AS data_checksum
       FROM objs d
-      JOIN avus m ON d.data_id = m.object_id
+      JOIN r_objt_metamap mm ON mm.object_id = d.data_id
+      JOIN r_meta_main m ON m.meta_id = mm.meta_id AND m.meta_attr_name = 'ipc_UUID'
       JOIN r_objt_access a ON d.data_id = a.object_id
-      LEFT JOIN (SELECT * FROM avus WHERE meta_attr_name = $9) f ON d.data_id = f.object_id
+      LEFT JOIN (r_objt_metamap fmm
+                 JOIN r_meta_main f ON f.meta_id = fmm.meta_id AND f.meta_attr_name = $9)
+             ON fmm.object_id = d.data_id
      WHERE $10 IN ('any', 'file')
        AND a.user_id IN (SELECT group_user_id FROM groups)
-       AND m.meta_attr_name = 'ipc_UUID'
        -- $6 says whether objects with no info type are kept. It is set independently of
        -- $5, because asking for only untyped objects is a real request: the reference
        -- spells it by naming "unknown" in the info-type list, and it must not be read as
