@@ -37,7 +37,9 @@ the account of how the last twelve were found.
 **The two operations that moved to info-typer have moved.** `GET /file-types` and
 `PUT /data/{data-id}/type` are served by info-typer (info-typer#14, deployments#106) and
 terrain asks it for them (terrain#339). All three merged on 2026-08-27, and the released
-images contain them: info-typer `v2026.09.01` and terrain `v2026.10.06`.
+images contain them: info-typer `v2026.09.01` and terrain `v2026.10.06`. QA runs terrain
+`v2026.10.06` and info-typer `v2026.09.01-rc01`, which answers `GET /file-types` (checked
+2026-10-12).
 
 **The review on #106 is addressed** (2026-10-12, `f0f2bce..41d0e04`). Every finding was checked
 against the Clojure source and its libraries rather than taken on trust, and the fixes make
@@ -62,9 +64,11 @@ drain is 75s.
 
 ## What is blocked, and on what
 
-- **No current image.** The `data-info-next` descriptor on deployments `main` is
-  `golang@sha256:7809a8b3…`, built 2026-09-01 — before every change above. Rebuild before the
-  next harness run or soak.
+- **No current image.** QA runs `data-info-next:golang@sha256:44111eae…`, deployed
+  2026-08-24 — the image the baseline was recorded against. The descriptor on deployments
+  `main` names a later build, `golang@sha256:7809a8b3…` from 2026-09-01, that was never
+  deployed. Both predate every change above. Rebuild and redeploy before the next harness run
+  or soak.
 - **The baseline is stale.** `docs/shadow-baseline.md` (174 matching, 7 differences) was
   recorded on 2026-08-24, before the review fixes changed behaviour on purpose. Six cases were
   added for them and have never run.
