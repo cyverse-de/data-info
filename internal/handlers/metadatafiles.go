@@ -28,9 +28,11 @@ type metadataSaveRequest struct {
 type savedItem struct {
 	service.Stat
 
-	Metadata []service.AVU `json:"metadata"`
-	Folders  []savedItem   `json:"folders,omitempty"`
-	Files    []savedItem   `json:"files,omitempty"`
+	// Metadata mixes iRODS AVUs with the metadata service's own AVU objects, which are written
+	// whole, nested AVUs and all, as the Clojure service wrote them.
+	Metadata []any       `json:"metadata"`
+	Folders  []savedItem `json:"folders,omitempty"`
+	Files    []savedItem `json:"files,omitempty"`
 }
 
 // Save handles POST /data/{data-id}/metadata/save.
@@ -147,7 +149,11 @@ func (a *AVUs) collect(
 		return savedItem{}, err
 	}
 
-	item := savedItem{Stat: described, Metadata: service.VisibleAVUs(held, false)}
+	visible := service.VisibleAVUs(held, false)
+	item := savedItem{Stat: described, Metadata: make([]any, 0, len(visible))}
+	for _, avu := range visible {
+		item.Metadata = append(item.Metadata, avu)
+	}
 
 	// Both kinds of metadata, merged. The exported file is meant to stand on its own, so
 	// leaving out the half this service does not store would make it useless.
@@ -156,7 +162,9 @@ func (a *AVUs) collect(
 	if err != nil {
 		return savedItem{}, err
 	}
-	item.Metadata = append(item.Metadata, templateAVUs(template)...)
+	if raw, ok := template["avus"].([]any); ok {
+		item.Metadata = append(item.Metadata, raw...)
+	}
 
 	if !recursive || stat.Type != rods.ObjectTypeDir {
 		return item, nil
