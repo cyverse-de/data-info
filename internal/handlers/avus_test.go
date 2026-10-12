@@ -35,10 +35,9 @@ func TestBindAVUChange(t *testing.T) {
 			wantErr:      true,
 		},
 		{
-			name:         "set with null irods-avus is refused",
+			name:         "set with null irods-avus clears the AVUs, as an empty list does",
 			body:         `{"irods-avus":null}`,
 			avusRequired: true,
-			wantErr:      true,
 		},
 		{
 			name:         "set with an empty list clears the AVUs",
@@ -51,9 +50,8 @@ func TestBindAVUChange(t *testing.T) {
 			wantRest: []string{"avus"},
 		},
 		{
-			name:    "add with null irods-avus is refused",
-			body:    `{"irods-avus":null}`,
-			wantErr: true,
+			name: "add with null irods-avus adds nothing",
+			body: `{"irods-avus":null}`,
 		},
 		{
 			name:     "a full AVU is kept and the rest is forwarded",

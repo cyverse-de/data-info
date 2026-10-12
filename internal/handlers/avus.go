@@ -362,8 +362,9 @@ func bindAVUChange(c echo.Context, avusRequired bool) (avuChangeRequest, error) 
 		return out, nil
 	}
 
+	// null is an empty list, as Clojure's [AVUMap] schema accepts nil: a PUT clears the AVUs.
 	list, ok := present.([]any)
-	if !ok {
+	if !ok && present != nil {
 		return avuChangeRequest{}, schemaError("irods-avus must be a list")
 	}
 
