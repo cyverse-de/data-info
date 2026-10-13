@@ -49,8 +49,8 @@ github.com/coreos/go-systemd/v22 v22.3.2/go.mod h1:Y58oyj3AT4RCenI/lSvhwexgC+NSV
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
 github.com/cyverse-de/go-mod/cfg v0.0.3 h1:FQhJfizn3JXO2F2JSQ4XToq67rkb2Et8ICMFstryysQ=
 github.com/cyverse-de/go-mod/cfg v0.0.3/go.mod h1:24B9W7FAoYV5ASWiZGaVM/osxAv/SJIm+joCo1zs3n8=
-github.com/cyverse/go-irodsclient v0.21.4 h1:cte/ffRh9tMj4SI5LAvNG1dTRFZ2n8Xdy6B7iPNtUCs=
-github.com/cyverse/go-irodsclient v0.21.4/go.mod h1:HaK+ZsfAi0gvCnqroPxSfJnxK41PeGDD2FKNG1pZiN0=
+github.com/cyverse/go-irodsclient v0.21.5 h1:v0qd7WwiAg2xLIoj+mk/zu726XILGPi04kibfJjalrs=
+github.com/cyverse/go-irodsclient v0.21.5/go.mod h1:HaK+ZsfAi0gvCnqroPxSfJnxK41PeGDD2FKNG1pZiN0=
 github.com/danwakefield/fnmatch v0.0.0-20160403171240-cbb64ac3d964 h1:y5HC9v93H5EPKqaS1UYVg1uYah5Xf51mBfIoWehClUQ=
 github.com/danwakefield/fnmatch v0.0.0-20160403171240-cbb64ac3d964/go.mod h1:Xd9hchkHSWYkEqJwUGisez3G1QY8Ryz0sdWrLPMGjLk=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=

@@ -4,7 +4,7 @@ go 1.26.0
 
 require (
 	github.com/cyverse-de/go-mod/cfg v0.0.3
-	github.com/cyverse/go-irodsclient v0.21.4
+	github.com/cyverse/go-irodsclient v0.21.5
 	github.com/google/uuid v1.6.0
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/knadh/koanf v1.5.0

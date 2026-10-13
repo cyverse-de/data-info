@@ -64,9 +64,10 @@ the port match Clojure rather than adding deviations:
   empty CSV answers 200, the caller's home is not a base path, and a lookup failure is not
   "absent".
 
-Alongside that: the go-irodsclient fork is gone (upstream v0.21.4 carries the fix),
-OpenTelemetry is removed, logs are JSON with levels chosen by error code, and the shutdown job
-drain is 75s.
+Alongside that: the go-irodsclient fork is gone, and the service is on upstream v0.21.5, which
+carries both fixes made for it (cyverse/go-irodsclient#65, a mutex leak, and #66, recursive
+deletes that failed once they ran longer than the operation timeout). OpenTelemetry is
+removed, logs are JSON with levels chosen by error code, and the shutdown job drain is 75s.
 
 ## What is blocked, and on what
 
