@@ -310,7 +310,7 @@ func (h *Writes) scheduleTempCleanup(user, path string) {
 			case <-time.After(wait):
 			}
 
-			outcome, err := h.removeTempObject(ctx, user, path)
+			outcome, err := h.removeTempObject(ctx, path)
 			if err != nil {
 				log.WithError(err).Debug("could not remove a partial upload yet; " +
 					"iRODS usually still holds a lock on the replica this soon after an aborted transfer")
@@ -332,7 +332,8 @@ func (h *Writes) scheduleTempCleanup(user, path string) {
 		}
 
 		log.Warn("gave up removing a partial upload after every attempt failed; " +
-			"the replica lock probably never cleared, and the object needs removing by hand")
+			"its replica is probably still locked, or the service account cannot delete it, " +
+			"and the object needs removing by hand")
 	}()
 }
 
@@ -349,8 +350,12 @@ const (
 )
 
 // removeTempObject makes one attempt at deleting an orphaned upload object.
-func (h *Writes) removeTempObject(ctx context.Context, user, path string) (cleanupOutcome, error) {
-	scope, err := h.deps.OpenScope(ctx, user)
+//
+// As the service account, as the Clojure service does. The object may never have become the
+// uploader's -- in QA a rule hands new objects in a home to its owner -- and then the uploader
+// cannot remove it, so attempting it as them leaves a hidden object behind for good.
+func (h *Writes) removeTempObject(ctx context.Context, path string) (cleanupOutcome, error) {
+	scope, err := h.deps.OpenProxyScope(ctx)
 	if err != nil {
 		return cleanupPending, err
 	}
