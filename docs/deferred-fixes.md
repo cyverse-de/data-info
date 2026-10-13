@@ -418,3 +418,22 @@ request it would refuse already fails against the Clojure service, so accepting 
 nothing. Matching it would mean an allowed-parameter list on each of the ported routes, kept
 in step by hand. The cost of leniency is that a misspelled parameter is silently ignored
 rather than reported. Pinned by the shadow case `unknown-query-parameter`.
+
+## 26. Uploading into a folder the caller can write to but does not own
+
+In QA, `POST /data` into another user's folder that has been shared with the caller for writing
+fails through both services, with the same status and different codes:
+
+- the Clojure service writes the temporary object as the service account, then fails to make
+  the caller its owner (`clj-jargon.permissions/set-owner`), and answers 500
+  `ERR_UNCHECKED_EXCEPTION` with `CatNoAccessException: No access to item in catalog`;
+- this service writes it as the caller, then is refused reading it back, and answers 500
+  `ERR_NOT_READABLE` naming the temporary object.
+
+Not verified, but consistent with both: a Data Store rule that gives new objects in a home to
+the home's owner, which leaves the caller without access to what it just wrote. Both services
+remove the temporary object afterwards as the service account.
+
+**Not reproduced**, the error code only. The status matches, the upload fails either way, and
+an unchecked exception is not something a caller can branch on. Seen in the two-user sharing
+check on 2026-10-13; no shadow case covers it, because the harness has one user.
