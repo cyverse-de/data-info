@@ -28,25 +28,29 @@ the normaliser exists to canonicalise.
 
 ## Baseline
 
-Against QA on 2026-10-12, candidate at `golang` e2ca980 (image `golang@sha256:d442b2d7…`),
-reference the Clojure `data-info` `v2026.09.01`. The table is the last full run. Every group
-was run at least twice that day, and a case counted as noise below came out differently
-between runs.
+Against QA on 2026-10-13, candidate at `golang` c0d4012 (image `golang@sha256:81444c70…`),
+reference the Clojure `data-info` `v2026.09.01`. A case counted as noise below is one the
+section on environmental noise explains; each has matched in other runs.
 
 | Group     | matched | deliberate | noise | skipped
 |-----------|---------|------------|-------|--------
-| reads     | 28      | 0          | 0     | 1
-| stats     | 25      | 0          | 0     | 0
+| reads     | 28      | 1          | 0     | 1
+| stats     | 24      | 0          | 1     | 0
 | listing   | 27      | 0          | 0     | 0
 | downloads | 6       | 0          | 0     | 2
-| mutations | 40      | 1          | 4     | 0
-| chunking  | 28      | 2          | 2     | 1
+| mutations | 42      | 1          | 2     | 0
+| chunking  | 29      | 2          | 1     | 1
 | uploads   | 10      | 3          | 1     | 0
 | writes    | 16      | 2          | 0     | 0
 
-**180 matched and 8 differences, every one a deliberate deviation recorded in
-`docs/deferred-fixes.md`.** Seven cases were not compared because of iRODS; see
+**182 matched and 9 differences, every one a deliberate deviation recorded in
+`docs/deferred-fixes.md`.** Four cases were not compared because of iRODS, and one,
+`overwrite-a-file`, differed because of a replica the Data Store's rules made; see
 "Environmental noise".
+
+The same catalog also matches locally, against both services running on ds-collection's
+standalone Data Store (`testing/standalone-env`, iRODS 4.3.1 with the CyVerse rule base) and
+a local async-tasks, with none of the read-after-write noise below.
 
 ## The deliberate differences
 
@@ -61,9 +65,6 @@ between runs.
 | `tabular-one-page-past-the-end`        | reference 500, candidate 200                       | 17 — reading past the end of a short file throws
 | `metadata-csv-with-only-a-header`      | reference 500, candidate 200                       | 23 — a metadata CSV with no rows throws
 | `unknown-query-parameter`              | reference 400, candidate 200                       | 25 — unknown query parameters are ignored, not refused
-
-`unknown-query-parameter` was added after the QA run above and has been seen only locally, so
-the next QA run should show 9 deliberate differences, one of them in reads.
 
 `upload-a-csv` differs in some runs and not others: `infoType` `"csv"` against `"unknown"`
 (entry 21). The Clojure service reports whatever type info-typer has set by the time it
@@ -107,6 +108,17 @@ soak: it makes a fully clean run a matter of luck, and during a soak it would lo
 intermittent service failure. Note that it is *not* the connection limit that held this
 deployment up; three consumers of `de-irods` coexist without trouble.
 
-`restore-onto-an-occupied-path` has not been compared since August. In both full runs on
-2026-10-12, the harness timed out reading the task list from async-tasks, and in one of them
-the candidate's delete had failed with the rename error above.
+**A replica the rules made.** Clojure's stat reports the size and checksum of a stale replica
+after an overwrite, where this service reports the replica that was written. The harness reads
+both sides' state back through the reference, so when the Data Store's replication rule has
+copied the candidate's seed to a second resource before the overwrite and has not yet copied
+the reference's, `overwrite-a-file` shows the candidate at the old size. Reproduced locally
+with `irepl`: an overwrite through either service leaves the written replica current and the
+other stale (`X`), and both services download the new contents. It is a difference in which
+replica Clojure's stat reads, not in what was written.
+
+`restore-a-deleted-file` and `restore-onto-an-occupied-path` named the original path rather
+than the trash path until 2026-10-12, so neither had restored anything since August. Both now
+capture the trash path from their delete and match locally. In QA, `restore-a-deleted-file`
+matched on 2026-10-13; `restore-onto-an-occupied-path` has still not been compared there,
+because the reference could not read back its state.
