@@ -75,13 +75,11 @@ and its own note, not a silent correction during the port.
 
 ## 5. `GET /admin/config` does not mask the AMQP URI
 
-The mask is `(?:irods|icat)[-.](?:user|pass)`, so `data-info.amqp.uri` — which embeds the
-broker password — is returned in the clear.
-
-**Blocked on:** nothing. Broadening the mask to `(?i)pass|secret|token|password` is safe on
-its own; it is listed here only so the port reproduces today's output while
-`GET /admin/config` is being diffed against the Clojure service as a config-translation
-check (all 52 keys at once). Fix immediately after that check passes.
+**Fixed on 2026-10-15.** The Clojure service's mask, `(?:irods|icat)[-.](?:user|pass)`, never
+matched `data-info.amqp.uri`, so the broker password was returned in the clear. The port kept
+that while `GET /admin/config` was diffed against the Clojure service as a
+config-translation check. With that check done, the URI is reported with its password
+replaced by `xxxxx`, the rest left readable.
 
 ## 6. `PUT /data/{data-id}` validates read access, not write
 
@@ -252,12 +250,10 @@ benefit is wanted before then; it is not required for the port.
 nicety. Any in-flight move, rename, delete or restore at the swap will lock its paths
 permanently if its pod goes away.
 
-**The deployments half of this is done.** The `data-info-next` role's manifest sets
-`terminationGracePeriodSeconds: 120` and a 5-second `preStop` sleep, and `serverGrace` and
-`drainGrace` in `cmd/data-info/main.go` are 30s and 75s to match — a job under way gets a
-real chance to report rather than a hurried one. What is *not* done is the `data-info` role:
-its manifest still runs on Kubernetes' 30-second default, so the Clojure service keeps the
-old behaviour until the swap moves these settings across with the rest of the role.
+**The deployments half of this is done.** The `data-info` role's manifest (deployments#122)
+sets `terminationGracePeriodSeconds: 120` and a 5-second `preStop` sleep, and `serverGrace`
+and `drainGrace` in `cmd/data-info/main.go` are 30s and 75s to match — a job under way gets
+a real chance to report rather than a hurried one.
 
 ## 15. The lock's prefix test does not respect component boundaries
 
@@ -437,3 +433,16 @@ remove the temporary object afterwards as the service account.
 **Not reproduced**, the error code only. The status matches, the upload fails either way, and
 an unchecked exception is not something a caller can branch on. Seen in the two-user sharing
 check on 2026-10-13; no shadow case covers it, because the harness has one user.
+
+## 27. A failed catalog query does not put the database's message in the response
+
+The Clojure service let a catalog failure fall through to its catch-all, which answers 500
+`ERR_UNCHECKED_EXCEPTION` with the exception's message -- for a PostgreSQL error, text that
+names tables, columns and constraints. This service answers the same code and status with
+`a query against the iRODS catalog failed` in place of that message, and logs the full error
+with the request. Every query failure in `internal/icat` is an `icat.QueryError`, and
+`apierror.publicMessage` is where the substitution happens.
+
+**Not reproduced on purpose.** Nothing can branch on the text of an unchecked exception, and
+the database's internals should not reach a caller. iRODS errors are passed through as before;
+they are what Jargon's messages amounted to, and they say what went wrong in iRODS's terms.
