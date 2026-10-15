@@ -86,6 +86,11 @@ func (d Delete) delete(
 ) error {
 	progress(pathsetDeleted, actionBegin)
 
+	// Listed once, on the first path, rather than per path: iRODS cannot be asked for the
+	// tickets on one path, so each listing is every ticket the account can see.
+	var tickets []rods.Ticket
+	ticketsDeleted := make(map[string]bool)
+
 	for i, path := range requested {
 		if err := ctx.Err(); err != nil {
 			return fmt.Errorf("the delete was stopped after %d of %d paths: %w", i, len(requested), err)
@@ -93,7 +98,14 @@ func (d Delete) delete(
 
 		progress(path, actionBeginDelete)
 
-		if err := d.deleteTickets(ctx, scope, path); err != nil {
+		if tickets == nil {
+			listed, err := scope.Tickets(ctx)
+			if err != nil {
+				return fmt.Errorf("listing the tickets on %q: %w", path, err)
+			}
+			tickets = append(make([]rods.Ticket, 0, len(listed)), listed...)
+		}
+		if err := deleteTickets(ctx, scope, rods.TicketsUnder(tickets, path), ticketsDeleted, path); err != nil {
 			return err
 		}
 		progress(path, actionDeletedTickets)
@@ -138,21 +150,20 @@ func (d Delete) delete(
 	return nil
 }
 
-// deleteTickets removes every ticket pointing at a path.
+// deleteTickets removes the tickets pointing at a path.
 //
 // A ticket outliving the thing it grants access to is a dangling grant, and iRODS does not
-// clean them up on delete. There is no way to ask for the tickets on one path, so this lists
-// them and filters -- which is what the Clojure service's query amounted to as well.
-func (d Delete) deleteTickets(ctx context.Context, scope *rods.Scope, path string) error {
-	tickets, err := scope.TicketsUnderPath(ctx, path)
-	if err != nil {
-		return fmt.Errorf("listing the tickets on %q: %w", path, err)
-	}
-
+// clean them up on delete. deleted records what earlier paths in the same request already
+// removed, since a ticket inside one requested collection may also be under another.
+func deleteTickets(ctx context.Context, scope *rods.Scope, tickets []rods.Ticket, deleted map[string]bool, path string) error {
 	for _, ticket := range tickets {
+		if deleted[ticket.Name] {
+			continue
+		}
 		if err := scope.DeleteTicket(ctx, ticket.Name); err != nil {
 			return fmt.Errorf("deleting ticket %q on %q: %w", ticket.Name, path, err)
 		}
+		deleted[ticket.Name] = true
 	}
 	return nil
 }

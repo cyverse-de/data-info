@@ -32,13 +32,15 @@ func (s *Scope) TicketsForPath(ctx context.Context, path string) ([]Ticket, erro
 	return s.ticketsMatching(ctx, path, false)
 }
 
-// TicketsUnderPath lists the tickets on a path and on everything inside it.
+// TicketsUnder picks out of a listing from Tickets the ones on a path and on everything
+// inside it.
 //
 // For deletion only. Removing a collection takes its contents with it, so a ticket on
 // something inside is left pointing at nothing -- iRODS does not clean those up and the
 // Clojure service does not either. Including them here is a deliberate improvement on that.
-func (s *Scope) TicketsUnderPath(ctx context.Context, path string) ([]Ticket, error) {
-	return s.ticketsMatching(ctx, path, true)
+// It takes a listing rather than making one so that a bulk delete lists once, not per path.
+func TicketsUnder(all []Ticket, path string) []Ticket {
+	return matchTickets(all, path, true)
 }
 
 func (s *Scope) ticketsMatching(ctx context.Context, path string, includeDescendants bool) ([]Ticket, error) {
@@ -46,7 +48,10 @@ func (s *Scope) ticketsMatching(ctx context.Context, path string, includeDescend
 	if err != nil {
 		return nil, err
 	}
+	return matchTickets(all, path, includeDescendants), nil
+}
 
+func matchTickets(all []Ticket, path string, includeDescendants bool) []Ticket {
 	path = normalizePath(path)
 
 	out := make([]Ticket, 0, len(all))
@@ -57,7 +62,7 @@ func (s *Scope) ticketsMatching(ctx context.Context, path string, includeDescend
 			out = append(out, ticket)
 		}
 	}
-	return out, nil
+	return out
 }
 
 // GetTicket returns one ticket by name, or nil when there is none.
