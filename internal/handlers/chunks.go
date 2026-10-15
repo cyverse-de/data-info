@@ -105,15 +105,15 @@ func (h *Chunks) TabularChunkByPath(c echo.Context) error {
 // a different error_code for the same request.
 func (h *Chunks) serveTabular(
 	c echo.Context,
-	resolve func(echo.Context, context.Context, *rods.Scope) (string, error),
+	resolve func(context.Context, echo.Context, *rods.Scope) (string, error),
 ) error {
 	params, err := tabularParams(c)
 	if err != nil {
 		return err
 	}
 
-	return h.serve(c, resolve, func(c echo.Context, ctx context.Context, scope *rods.Scope, user, path string) error {
-		return h.tabularChunk(c, ctx, scope, user, path, params)
+	return h.serve(c, resolve, func(ctx context.Context, c echo.Context, scope *rods.Scope, user, path string) error {
+		return h.tabularChunk(ctx, c, scope, user, path, params)
 	})
 }
 
@@ -171,8 +171,8 @@ func tabularParams(c echo.Context) (tabularRequest, error) {
 // file rather than that they cannot read it.
 func (h *Chunks) serve(
 	c echo.Context,
-	resolve func(echo.Context, context.Context, *rods.Scope) (string, error),
-	act func(echo.Context, context.Context, *rods.Scope, string, string) error,
+	resolve func(context.Context, echo.Context, *rods.Scope) (string, error),
+	act func(context.Context, echo.Context, *rods.Scope, string, string) error,
 ) error {
 	ctx := c.Request().Context()
 
@@ -191,7 +191,7 @@ func (h *Chunks) serve(
 		return err
 	}
 
-	path, err := resolve(c, ctx, scope)
+	path, err := resolve(ctx, c, scope)
 	if err != nil {
 		return err
 	}
@@ -207,16 +207,16 @@ func (h *Chunks) serve(
 		return err
 	}
 
-	return act(c, ctx, scope, user, path)
+	return act(ctx, c, scope, user, path)
 }
 
 // pathFromID resolves the data-id path parameter.
-func (h *Chunks) pathFromID(c echo.Context, ctx context.Context, scope *rods.Scope) (string, error) {
+func (h *Chunks) pathFromID(ctx context.Context, c echo.Context, scope *rods.Scope) (string, error) {
 	return resolveID(ctx, scope, c.Param("data-id"))
 }
 
 // manifest reports how to render a file and where else it can be fetched from.
-func (h *Chunks) manifest(c echo.Context, ctx context.Context, scope *rods.Scope, _, path string) error {
+func (h *Chunks) manifest(ctx context.Context, c echo.Context, scope *rods.Scope, _, path string) error {
 	stat, err := scope.Stat(ctx, path).Get(ctx)
 	if err != nil {
 		return err
@@ -260,7 +260,7 @@ func (h *Chunks) anonymouslyReadable(ctx context.Context, path string) (bool, er
 }
 
 // chunk returns a span of a file's bytes.
-func (h *Chunks) chunk(c echo.Context, ctx context.Context, scope *rods.Scope, user, path string) error {
+func (h *Chunks) chunk(ctx context.Context, c echo.Context, scope *rods.Scope, user, path string) error {
 	position, err := requiredIntParam(c, "position")
 	if err != nil {
 		return err
@@ -297,8 +297,8 @@ func (h *Chunks) chunk(c echo.Context, ctx context.Context, scope *rods.Scope, u
 //
 // The paging parameters were read and checked before the validators ran; see serveTabular.
 func (h *Chunks) tabularChunk(
-	c echo.Context,
 	ctx context.Context,
+	c echo.Context,
 	scope *rods.Scope,
 	user, path string,
 	req tabularRequest,
@@ -374,7 +374,7 @@ func (h *Chunks) read(ctx context.Context, scope *rods.Scope, path string, offse
 // parameter to put back in front of it. The raw URL is used for the same reason as there:
 // echo decodes the wildcard once before the handler sees it, so a name containing an encoded
 // slash would otherwise arrive looking like two path elements.
-func pathFromWildcard(c echo.Context, _ context.Context, _ *rods.Scope) (string, error) {
+func pathFromWildcard(_ context.Context, c echo.Context, _ *rods.Scope) (string, error) {
 	escaped := c.Request().URL.EscapedPath()
 
 	prefix := strings.TrimSuffix(c.Path(), "*")

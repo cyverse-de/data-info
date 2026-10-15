@@ -247,7 +247,7 @@ func (h *Listings) FolderListing(c echo.Context) error {
 		return apierror.New(apierror.ErrDoesNotExist).With("path", path)
 	}
 	if stat.Type != rods.ObjectTypeDir {
-		return h.download(c, ctx, scope, stat)
+		return h.download(ctx, c, scope, stat)
 	}
 
 	limit, err := listingLimit(c)

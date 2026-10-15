@@ -93,7 +93,7 @@ func (h *Writes) Upload(c echo.Context) error {
 		return err
 	}
 
-	return h.respondWithStat(c, ctx, scope, user, path)
+	return h.respondWithStat(ctx, c, scope, user, path)
 }
 
 // Overwrite handles PUT /data/{data-id}.
@@ -168,7 +168,7 @@ func (h *Writes) Overwrite(c echo.Context) error {
 		return err
 	}
 
-	return h.respondWithStat(c, ctx, scope, user, path)
+	return h.respondWithStat(ctx, c, scope, user, path)
 }
 
 // writeAtomically streams an upload into a temporary object beside its destination and
@@ -217,8 +217,8 @@ func (h *Writes) writeAtomically(
 // the AMQP event shortly afterwards. Callers that need the type read it back rather than
 // taking it from this response.
 func (h *Writes) respondWithStat(
-	c echo.Context,
 	ctx context.Context,
+	c echo.Context,
 	scope *rods.Scope,
 	user, path string,
 ) error {

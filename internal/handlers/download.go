@@ -22,7 +22,7 @@ import (
 // The body is streamed rather than read. A data object is as large as whatever a user put
 // there, so holding one in memory to hand it over would size the service to its largest
 // file.
-func (h *Listings) download(c echo.Context, ctx context.Context, scope *rods.Scope, stat rods.Stat) error {
+func (h *Listings) download(ctx context.Context, c echo.Context, scope *rods.Scope, stat rods.Stat) error {
 	attachment, err := boolParam(c, "attachment")
 	if err != nil {
 		return err

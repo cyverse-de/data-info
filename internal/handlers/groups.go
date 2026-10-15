@@ -49,7 +49,7 @@ func (g *Groups) Get(c echo.Context) error {
 		return err
 	}
 
-	return g.respond(c, ctx, scope, name)
+	return g.respond(ctx, c, scope, name)
 }
 
 // Create handles POST /groups.
@@ -99,7 +99,7 @@ func (g *Groups) Create(c echo.Context) error {
 		}
 	}
 
-	return g.respond(c, ctx, scope, body.Name)
+	return g.respond(ctx, c, scope, body.Name)
 }
 
 // Update handles PUT /groups/{group-name}.
@@ -170,7 +170,7 @@ func (g *Groups) Update(c echo.Context) error {
 		}
 	}
 
-	return g.respond(c, ctx, scope, name)
+	return g.respond(ctx, c, scope, name)
 }
 
 // Delete handles DELETE /groups/{group-name}.
@@ -228,7 +228,7 @@ func (g *Groups) open(c echo.Context) (string, *rods.Scope, error) {
 }
 
 // respond answers with a group and its current membership, read back rather than assumed.
-func (g *Groups) respond(c echo.Context, ctx context.Context, scope *rods.Scope, name string) error {
+func (g *Groups) respond(ctx context.Context, c echo.Context, scope *rods.Scope, name string) error {
 	members, err := scope.GroupMembers(ctx, name)
 	if err != nil {
 		return err

@@ -55,7 +55,7 @@ func (h *Writes) Delete(c echo.Context) error {
 	}
 	defer scope.Close()
 
-	return h.deletePaths(c, ctx, scope, user, trimAll(body.Paths))
+	return h.deletePaths(ctx, c, scope, user, trimAll(body.Paths))
 }
 
 // DeleteByID handles DELETE /data/{data-id}.
@@ -78,7 +78,7 @@ func (h *Writes) DeleteByID(c echo.Context) error {
 		return err
 	}
 
-	return h.deletePaths(c, ctx, scope, user, []string{strings.TrimRight(path, "/")})
+	return h.deletePaths(ctx, c, scope, user, []string{strings.TrimRight(path, "/")})
 }
 
 // DeleteChildrenByID handles DELETE /data/{data-id}/children: the collection stays and what
@@ -112,13 +112,13 @@ func (h *Writes) DeleteChildrenByID(c echo.Context) error {
 		return err
 	}
 
-	return h.deletePaths(c, ctx, scope, user, children)
+	return h.deletePaths(ctx, c, scope, user, children)
 }
 
 // deletePaths validates a deletion, records it, and answers with where everything is going.
 func (h *Writes) deletePaths(
-	c echo.Context,
 	ctx context.Context,
+	c echo.Context,
 	scope *rods.Scope,
 	user string,
 	requested []string,
