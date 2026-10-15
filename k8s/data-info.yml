@@ -67,9 +67,8 @@ spec:
             - name: listen-port
               containerPort: 60000
           # /healthz answers from memory, so liveness and the startup gate can poll it freely.
-          # Readiness is the one that checks iRODS and the catalog, which is why it alone runs
-          # on a 20s period -- the same steady-state load on the data store the Clojure service
-          # puts there with its GET / probes.
+          # Readiness checks only the catalog, which is why it alone runs on a 20s period. It
+          # leaves iRODS alone so the probes spend none of the Data Store's per-node connections.
           livenessProbe:
             httpGet:
               path: /healthz

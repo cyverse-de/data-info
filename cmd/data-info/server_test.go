@@ -154,31 +154,58 @@ func TestHealthz(t *testing.T) {
 	}
 }
 
-// TestReadyzFailsWhenBackendsAreUnreachable covers the reason readiness is separate from
-// liveness: an unreachable backend must fail readiness without restarting the pod.
-func TestReadyzFailsWhenBackendsAreUnreachable(t *testing.T) {
-	e := testServer(t)
-	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/readyz", nil))
-
-	if rec.Code != http.StatusServiceUnavailable {
-		t.Errorf("status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
+// TestReadyz covers what readiness depends on: the catalog, which fails it without
+// restarting the pod, and not iRODS, whose probe would spend the Data Store's per-node
+// connection budget every 20 seconds.
+func TestReadyz(t *testing.T) {
+	unreachable := errors.New("unreachable")
+	tests := []struct {
+		name   string
+		irods  error
+		icat   error
+		status int
+	}{
+		{"both reachable", nil, nil, http.StatusOK},
+		{"iRODS down does not fail readiness", unreachable, nil, http.StatusOK},
+		{"catalog down fails readiness", nil, unreachable, http.StatusServiceUnavailable},
 	}
 
-	var body struct {
-		Ready    bool              `json:"ready"`
-		Backends map[string]string `json:"backends"`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-		t.Fatalf("decoding body: %v", err)
-	}
-	if body.Ready {
-		t.Error("ready = true, want false")
-	}
-	for _, name := range []string{"irods", "icat"} {
-		if _, ok := body.Backends[name]; !ok {
-			t.Errorf("backends is missing %q", name)
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			irodsProbed := false
+			irods := handlers.ProberFunc(func(context.Context) error {
+				irodsProbed = true
+				return tt.irods
+			})
+			e := testServerWithDeps(t, Deps{IRODSProbe: irods, ICATProbe: stubProber(tt.icat)})
+
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+
+			if rec.Code != tt.status {
+				t.Errorf("status = %d, want %d (%s)", rec.Code, tt.status, rec.Body.String())
+			}
+			if irodsProbed {
+				t.Error("readiness probed iRODS")
+			}
+
+			var body struct {
+				Ready    bool              `json:"ready"`
+				Backends map[string]string `json:"backends"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+				t.Fatalf("decoding body: %v", err)
+			}
+			if body.Ready != (tt.status == http.StatusOK) {
+				t.Errorf("ready = %v, want %v", body.Ready, tt.status == http.StatusOK)
+			}
+			if _, ok := body.Backends["icat"]; !ok {
+				t.Error(`backends is missing "icat"`)
+			}
+			if _, ok := body.Backends["irods"]; ok {
+				t.Error(`backends reports "irods", which readiness no longer checks`)
+			}
+		})
 	}
 }
 
@@ -256,35 +283,6 @@ func TestUploadTimeoutExceedsRequestTimeout(t *testing.T) {
 	}
 	if cfg.Timeouts.Upload < time.Hour {
 		t.Errorf("upload timeout %s is too short for a large file", cfg.Timeouts.Upload)
-	}
-}
-
-// TestReadyzSucceedsWhenBackendsAreReachable is the other half of readiness: it must
-// actually pass once the backends answer.
-func TestReadyzSucceedsWhenBackendsAreReachable(t *testing.T) {
-	e := testServerWithDeps(t, Deps{IRODSProbe: stubProber(nil), ICATProbe: stubProber(nil)})
-
-	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/readyz", nil))
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d (%s)", rec.Code, http.StatusOK, rec.Body.String())
-	}
-
-	var body struct {
-		Ready    bool              `json:"ready"`
-		Backends map[string]string `json:"backends"`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-		t.Fatalf("decoding body: %v", err)
-	}
-	if !body.Ready {
-		t.Error("ready = false, want true")
-	}
-	for name, state := range body.Backends {
-		if state != "ok" {
-			t.Errorf("backend %s = %q, want %q", name, state, "ok")
-		}
 	}
 }
 

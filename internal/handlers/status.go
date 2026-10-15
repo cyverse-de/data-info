@@ -41,7 +41,7 @@ type Status struct {
 }
 
 // NewStatus builds the service-information handlers. version is the build version reported
-// by GET /; irods and icat are probed for readiness.
+// by GET /; irods is probed for GET / and icat for readiness.
 func NewStatus(cfg *config.Config, version string, irods, icat Prober) *Status {
 	return &Status{cfg: cfg, version: version, irods: irods, icat: icat}
 }
@@ -106,34 +106,27 @@ func (s *Status) Healthz(c echo.Context) error {
 	return writeJSONOK(c, map[string]string{"status": "ok"})
 }
 
-// Readyz handles GET /readyz: the service can actually serve requests, which means both
-// backends are reachable. This is the readiness probe target.
+// Readyz handles GET /readyz: the service can reach the catalog, which answers most reads.
+// This is the readiness probe target.
+//
+// iRODS is deliberately not checked. Each probe would hold an iRODS connection, every 20
+// seconds on every pod, against the Data Store's small per-node connection budget, and
+// keep the service account's session from ever going idle. The Clojure service's probes
+// stopped touching iRODS for the same reason. GET / still reports iRODS reachability.
 func (s *Status) Readyz(c echo.Context) error {
-	ctx := c.Request().Context()
-
-	backends := map[string]Prober{"irods": s.irods, "icat": s.icat}
-	results := make(map[string]string, len(backends))
-	ready := true
-
-	for name, p := range backends {
-		if p == nil {
-			results[name] = "not configured"
-			ready = false
-			continue
-		}
-		if err := p.Probe(ctx); err != nil {
-			results[name] = err.Error()
-			ready = false
-			continue
-		}
-		results[name] = "ok"
+	result := "ok"
+	if s.icat == nil {
+		result = "not configured"
+	} else if err := s.icat.Probe(c.Request().Context()); err != nil {
+		result = err.Error()
 	}
 
+	ready := result == "ok"
 	status := http.StatusOK
 	if !ready {
 		status = http.StatusServiceUnavailable
 	}
-	return writeJSON(c, status, map[string]any{"ready": ready, "backends": results})
+	return writeJSON(c, status, map[string]any{"ready": ready, "backends": map[string]string{"icat": result}})
 }
 
 // AdminConfig handles GET /admin/config, reporting the running configuration with
