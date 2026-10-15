@@ -272,3 +272,32 @@ type nopReadCloser struct{}
 
 func (nopReadCloser) Read([]byte) (int, error) { return 0, nil }
 func (nopReadCloser) Close() error             { return nil }
+
+// TestWaitReportRollsUpWaits keeps a burst of queued calls to one warning a minute, with
+// nothing lost between warnings.
+func TestWaitReportRollsUpWaits(t *testing.T) {
+	start := time.Date(2026, 10, 15, 9, 0, 0, 0, time.UTC)
+	steps := []struct {
+		at      time.Duration
+		waited  time.Duration
+		due     bool
+		waits   int
+		longest time.Duration
+	}{
+		{at: 0, waited: time.Second, due: true, waits: 1, longest: time.Second},
+		{at: 10 * time.Second, waited: 3 * time.Second, due: false},
+		{at: 30 * time.Second, waited: 2 * time.Second, due: false},
+		{at: waitReportInterval, waited: time.Second, due: true, waits: 3, longest: 3 * time.Second},
+		{at: waitReportInterval + time.Second, waited: time.Second, due: false},
+		{at: 3 * waitReportInterval, waited: 5 * time.Second, due: true, waits: 2, longest: 5 * time.Second},
+	}
+
+	var r waitReport
+	for i, s := range steps {
+		due, waits, longest := r.record(start.Add(s.at), s.waited)
+		if due != s.due || waits != s.waits || longest != s.longest {
+			t.Errorf("step %d: record = (%v, %d, %s), want (%v, %d, %s)",
+				i, due, waits, longest, s.due, s.waits, s.longest)
+		}
+	}
+}

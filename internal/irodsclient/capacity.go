@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"sync"
 	"time"
 
 	irodsfs "github.com/cyverse/go-irodsclient/fs"
@@ -25,6 +26,9 @@ const (
 	// connections on its own schedule without telling anybody, so waiting only for this
 	// pool's own signals could sleep through a slot freed that way.
 	capacityPollInterval = time.Second
+
+	// waitReportInterval is the least time between warnings about calls that waited.
+	waitReportInterval = time.Minute
 )
 
 // errPoolClosed is what a caller gets from a pool that has been closed.
@@ -76,12 +80,7 @@ func (p *Pool) lease(ctx context.Context, e *entry, weight int) (func(), error) 
 			p.mu.Unlock()
 
 			if !waitingSince.IsZero() {
-				p.cfg.Log.WithFields(logrus.Fields{
-					"waited": time.Since(waitingSince).Round(time.Millisecond).String(),
-					"limit":  p.cfg.MaxTotalConnections,
-				}).Warn("a call waited for an iRODS connection because this replica was at " +
-					"irods.maxtotalconnections; this usually means many users were active at once " +
-					"or long transfers were holding connections")
+				p.reportWait(time.Since(waitingSince))
 			}
 
 			return func() {
@@ -107,6 +106,48 @@ func (p *Pool) lease(ctx context.Context, e *entry, weight int) (func(), error) 
 		case <-time.After(capacityPollInterval):
 		}
 	}
+}
+
+// reportWait records a call that had to wait for a connection, warning at most once per
+// waitReportInterval with what has accumulated since the last warning.
+func (p *Pool) reportWait(waited time.Duration) {
+	due, waits, longest := p.waits.record(time.Now(), waited)
+	if !due {
+		return
+	}
+	p.cfg.Log.WithFields(logrus.Fields{
+		"waits":   waits,
+		"longest": longest.Round(time.Millisecond).String(),
+		"limit":   p.cfg.MaxTotalConnections,
+	}).Warn("calls waited for an iRODS connection because this replica was at " +
+		"irods.maxtotalconnections; this usually means many users were active at once " +
+		"or long transfers were holding connections")
+}
+
+// waitReport rolls up calls that waited for a connection, so a burst of them is one warning
+// rather than one per call. Waits after a warning are carried into the next one.
+type waitReport struct {
+	mu       sync.Mutex
+	reported time.Time
+	waits    int
+	longest  time.Duration
+}
+
+// record notes a wait that ended at now and reports whether a warning is due, with the
+// count and the longest of the waits it covers.
+func (r *waitReport) record(now time.Time, waited time.Duration) (due bool, waits int, longest time.Duration) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.waits++
+	r.longest = max(r.longest, waited)
+	if !r.reported.IsZero() && now.Sub(r.reported) < waitReportInterval {
+		return false, 0, 0
+	}
+
+	waits, longest = r.waits, r.longest
+	r.reported, r.waits, r.longest = now, 0, 0
+	return true, waits, longest
 }
 
 // chargedConnections sums what every tracked session is charged. It reads leased counts, so

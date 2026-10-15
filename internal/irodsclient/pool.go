@@ -184,6 +184,8 @@ type Pool struct {
 	// countOpen reports a FileSystem's open connections. Tests replace it.
 	countOpen func(*irodsfs.FileSystem) int
 
+	waits waitReport
+
 	sweeperStop chan struct{}
 	sweeperDone chan struct{}
 
