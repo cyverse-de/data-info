@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -82,7 +83,7 @@ func (c *Config) LegacyMap() map[string]string {
 		"data-info.path-list.multi-input.file-identifier": c.PathLists.MultiInput.FileIdentifier,
 		"data-info.path-list.multi-input.info-type":       c.PathLists.MultiInput.InfoType,
 
-		"data-info.amqp.uri":                  c.AMQP.URI,
+		"data-info.amqp.uri":                  maskURIPassword(c.AMQP.URI),
 		"data-info.amqp.exchange.name":        c.AMQP.Exchange.Name,
 		"data-info.amqp.exchange.durable":     strconv.FormatBool(c.AMQP.Exchange.Durable),
 		"data-info.amqp.exchange.auto-delete": strconv.FormatBool(c.AMQP.Exchange.AutoDelete),
@@ -103,6 +104,16 @@ func (c *Config) LegacyMap() map[string]string {
 }
 
 // masked reports whether a property's value should be replaced before it is returned.
+// maskURIPassword hides the password in a URI's userinfo. The Clojure service returned the
+// AMQP URI in the clear, broker password and all; see deferred fix 5.
+func maskURIPassword(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return maskedValue
+	}
+	return u.Redacted()
+}
+
 func masked(key string) bool {
 	for _, f := range maskFilters {
 		if f.MatchString(key) {

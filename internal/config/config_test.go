@@ -317,10 +317,9 @@ icat:
 		}
 	}
 
-	// Reproduced wart: the key does not match any mask filter, so the broker password
-	// is returned in the clear, exactly as the Clojure service does.
-	if got := m["data-info.amqp.uri"]; got != "amqp://ipc:hunter2@rabbit:5672/%2Fqa" {
-		t.Errorf("data-info.amqp.uri = %q, want it unmasked to match the Clojure service", got)
+	// The broker password is masked inside the URI; the rest stays readable.
+	if got, want := m["data-info.amqp.uri"], "amqp://ipc:xxxxx@rabbit:5672/%2Fqa"; got != want {
+		t.Errorf("data-info.amqp.uri = %q, want %q", got, want)
 	}
 }
 
