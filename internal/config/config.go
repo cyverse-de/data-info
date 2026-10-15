@@ -48,6 +48,7 @@ const (
 	DefaultIRODSUser                 = "rods"
 	DefaultIRODSHome                 = "/iplant/home"
 	DefaultIRODSMaxSessions          = 32
+	DefaultIRODSMaxTotalConnections  = 8
 	DefaultIRODSMaxConnections       = 4
 	DefaultIRODSSessionIdleTimeout   = 5 * time.Minute
 	DefaultIRODSOperationTimeout     = 1 * time.Minute
@@ -183,12 +184,15 @@ type IRODS struct {
 	// AdminUsers are exempt from inherit-bit removal during unsharing.
 	AdminUsers []string `koanf:"adminusers"`
 
-	// MaxSessions bounds how many distinct users' connections are held open, and
-	// MaxConnections how many each of those may open. Their product is the ceiling on
-	// iRODS agents this replica can occupy, which is the number to tune against the
-	// server's limit.
+	// MaxSessions bounds how many distinct users' sessions are kept, and MaxConnections
+	// how many metadata connections each may open.
 	MaxSessions    int `koanf:"maxsessions"`
 	MaxConnections int `koanf:"maxconnections"`
+
+	// MaxTotalConnections is the ceiling on iRODS connections this replica holds open; a
+	// call that would cross it waits. Size it below what the Data Store will accept from
+	// one node, less what the node's other pods use.
+	MaxTotalConnections int `koanf:"maxtotalconnections"`
 
 	// SessionIdleTimeout evicts a user's connections after a period of disuse.
 	SessionIdleTimeout time.Duration `koanf:"sessionidletimeout"`

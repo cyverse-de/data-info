@@ -376,7 +376,7 @@ func icatConfig(cfg *config.Config) icat.Config {
 }
 
 // irodsPoolConfig derives the pool's settings from the service configuration.
-func irodsPoolConfig(cfg *config.Config) irodsclient.Config {
+func irodsPoolConfig(cfg *config.Config, log *logrus.Entry) irodsclient.Config {
 	return irodsclient.Config{
 		Host:          cfg.IRODS.Host,
 		Port:          cfg.IRODS.Port,
@@ -387,12 +387,14 @@ func irodsPoolConfig(cfg *config.Config) irodsclient.Config {
 		AppName:       handlers.ServiceName,
 
 		MaxSessions:          cfg.IRODS.MaxSessions,
+		MaxTotalConnections:  cfg.IRODS.MaxTotalConnections,
 		MaxConnections:       cfg.IRODS.MaxConnections,
 		IdleTimeout:          cfg.IRODS.SessionIdleTimeout,
 		OperationTimeout:     cfg.IRODS.OperationTimeout,
 		LongOperationTimeout: cfg.IRODS.LongOperationTimeout,
 		MaxRetries:           cfg.IRODS.MaxRetries,
 		RetrySleep:           cfg.IRODS.RetrySleep,
+		Log:                  log,
 	}
 }
 

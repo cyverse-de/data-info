@@ -108,6 +108,7 @@ func defaults() *Config {
 	c.IRODS.UseTrash = true
 	c.IRODS.AdminUsers = DefaultIRODSAdminUsers()
 	c.IRODS.MaxSessions = DefaultIRODSMaxSessions
+	c.IRODS.MaxTotalConnections = DefaultIRODSMaxTotalConnections
 	c.IRODS.MaxConnections = DefaultIRODSMaxConnections
 	c.IRODS.SessionIdleTimeout = DefaultIRODSSessionIdleTimeout
 	c.IRODS.OperationTimeout = DefaultIRODSOperationTimeout
@@ -223,6 +224,9 @@ func (c *Config) Validate() error {
 	}
 	if c.IRODS.MaxConnections < 1 {
 		add("irods.maxconnections must be at least 1, got %d", c.IRODS.MaxConnections)
+	}
+	if c.IRODS.MaxTotalConnections < 1 {
+		add("irods.maxtotalconnections must be at least 1, got %d", c.IRODS.MaxTotalConnections)
 	}
 	if c.IRODS.SessionIdleTimeout <= 0 {
 		add("irods.sessionidletimeout must be positive, got %s", c.IRODS.SessionIdleTimeout)

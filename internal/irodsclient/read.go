@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sync"
 
 	irodsfs "github.com/cyverse/go-irodsclient/fs"
 )
@@ -36,7 +37,7 @@ func ReadAt(ctx context.Context, s *Session, path string, offset, length int64) 
 		return nil, nil
 	}
 
-	return DoPath(ctx, s, path, func(fsys *irodsfs.FileSystem) ([]byte, error) {
+	return doWeighted(ctx, s, path, transferWeight, func(fsys *irodsfs.FileSystem) ([]byte, error) {
 		handle, err := fsys.OpenFile(path, "", "r")
 		if err != nil {
 			return nil, err
@@ -59,21 +60,35 @@ func ReadAt(ctx context.Context, s *Session, path string, offset, length int64) 
 // as whatever a user put there, and holding one in memory to hand it to the client would
 // size the service to its largest file.
 func OpenReader(ctx context.Context, s *Session, path string) (io.ReadCloser, error) {
-	handle, err := DoPath(ctx, s, path, func(fsys *irodsfs.FileSystem) (*irodsfs.FileHandle, error) {
-		return fsys.OpenFile(path, "", "r")
-	})
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	// Leased for the life of the reader, not just the open: the handle keeps its
+	// connection until it is closed.
+	release, err := s.pool.lease(ctx, s.entry, transferWeight)
 	if err != nil {
 		return nil, err
 	}
-	return &fileReader{handle: handle, path: path, user: s.ClientUser()}, nil
+
+	handle, err := run(ctx, s, path, func(fsys *irodsfs.FileSystem) (*irodsfs.FileHandle, error) {
+		return fsys.OpenFile(path, "", "r")
+	})
+	if err != nil {
+		release()
+		return nil, err
+	}
+	return &fileReader{handle: handle, path: path, user: s.ClientUser(), release: release}, nil
 }
 
 // fileReader adapts an iRODS file handle to io.ReadCloser, translating its errors into the
 // service's vocabulary the way every other call through this package does.
 type fileReader struct {
-	handle io.ReadCloser
-	path   string
-	user   string
+	handle  io.ReadCloser
+	path    string
+	user    string
+	release func()
+	once    sync.Once
 }
 
 func (r *fileReader) Read(p []byte) (int, error) {
@@ -91,4 +106,8 @@ func (r *fileReader) WriteTo(w io.Writer) (int64, error) {
 	return io.CopyBuffer(struct{ io.Writer }{w}, struct{ io.Reader }{r}, make([]byte, transferBufferSize))
 }
 
-func (r *fileReader) Close() error { return r.handle.Close() }
+func (r *fileReader) Close() error {
+	err := r.handle.Close()
+	r.once.Do(r.release)
+	return err
+}

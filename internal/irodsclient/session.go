@@ -68,11 +68,29 @@ func Do[T any](ctx context.Context, s *Session, fn func(*irodsfs.FileSystem) (T,
 // DoPath is Do with a path folded into any error it produces, so callers whose operation
 // concerns a single path do not have to re-wrap the result.
 func DoPath[T any](ctx context.Context, s *Session, path string, fn func(*irodsfs.FileSystem) (T, error)) (T, error) {
+	return doWeighted(ctx, s, path, metadataWeight, fn)
+}
+
+// doWeighted is DoPath for a call that may need more than one connection at once.
+func doWeighted[T any](ctx context.Context, s *Session, path string, weight int, fn func(*irodsfs.FileSystem) (T, error)) (T, error) {
 	var zero T
 
 	if err := ctx.Err(); err != nil {
 		return zero, err
 	}
+
+	release, err := s.pool.lease(ctx, s.entry, weight)
+	if err != nil {
+		return zero, err
+	}
+	defer release()
+
+	return run(ctx, s, path, fn)
+}
+
+// run is the body of DoPath for a caller that already holds a lease.
+func run[T any](ctx context.Context, s *Session, path string, fn func(*irodsfs.FileSystem) (T, error)) (T, error) {
+	var zero T
 
 	type result struct {
 		value T

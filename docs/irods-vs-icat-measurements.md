@@ -69,10 +69,10 @@ zone, so its connections are part of the same budget.
 
 Two consequences:
 
-- **`maxsessions` x `maxconnections` is a ceiling, not a target.** The defaults (32 x 4)
-  describe what the pool will do if the server allows it, and this server plainly will not.
-  Whatever those are set to in a deployment has to be checked against what the server will
-  actually grant, not chosen on the client's own reasoning.
+- **The server's limit, not the client's reasoning, sets the ceiling.** Sessions in use are
+  never evicted, so `maxsessions` x `maxconnections` was never a hard ceiling either.
+  `maxtotalconnections` is: a call that would cross it waits. It has to be sized against what
+  the server will actually grant.
 - **A health check must not open a session of its own.** An earlier version gave the probe a
   dedicated session so that a short probe deadline could not poison the session admin work
   shares. That reasoning was sound and the fix was still wrong here, because the extra
@@ -103,3 +103,20 @@ queries have to account for.
     /tmp/irods-smoke --config <config> --path /cyverse/home/shared --bulk 19 --parallel 4
 
 It only reads. Nothing it does creates, modifies or deletes anything.
+
+## What the limit turned out to be
+
+Measured in QA on 2026-10-15. The Data Store's HAProxy (ds-collection's `cyverse.ds.haproxy`
+role) tracks open connections per client address. Past one, new connections go to a shared
+throttled backend; past ten, they are refused. The DE's nodes are deliberately not exempt,
+and every pod on a node shares its address.
+
+Sixty simultaneous reads by one user against the Clojure service reached ten connections on
+its node, and the other 59 failed with `ERR_UNAVAILABLE` (`read length is set to zero`, a
+connection dropped as it opened). The same burst against this service completed, because
+one session queues on its own connections. The Go and Clojure pods each held ten at the same
+moment from different nodes, which is how we know the budget is per node rather than per
+cluster.
+
+Idle connections count against it. Before the cap existed, this service held eight or nine
+for about two and a half minutes after that burst, and was back to one after five.

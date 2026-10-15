@@ -4,11 +4,13 @@ import (
 	"container/list"
 	"context"
 	"fmt"
+	"io"
 	"sync"
 	"time"
 
 	irodsfs "github.com/cyverse/go-irodsclient/fs"
 	"github.com/cyverse/go-irodsclient/irods/types"
+	"github.com/sirupsen/logrus"
 )
 
 // Config describes how to reach iRODS and how many sessions to keep open.
@@ -27,20 +29,23 @@ type Config struct {
 	// AppName is reported to the iRODS server for connection accounting.
 	AppName string
 
-	// MaxSessions bounds how many distinct client users are held open at once. Each one
-	// owns its own connection pool, so this multiplied by the per-session connection
-	// count is the ceiling on agents this replica can occupy on the iRODS server.
+	// MaxSessions bounds how many distinct client users are held open at once. Sessions
+	// in use are never evicted, so it is a target rather than a ceiling.
 	MaxSessions int
 
-	// IdleTimeout evicts a session that has gone unused. A background sweeper enforces
-	// it, so a service that goes quiet does not hold sessions open indefinitely.
+	// MaxTotalConnections is the ceiling on iRODS connections this replica holds open
+	// across every session. A call that would need another one waits until there is room.
+	MaxTotalConnections int
+
+	// IdleTimeout evicts a session that has gone unused, and closes a connection that has
+	// sat idle inside a session still in use. A background sweeper enforces the first, so a
+	// service that goes quiet does not hold sessions open indefinitely.
 	IdleTimeout time.Duration
 
 	// MaxConnections bounds the metadata connections one session may open. It is the
 	// per-user concurrency limit: go-irodsclient defaults it to 2, and because almost
 	// every operation is willing to share a connection, extra concurrency beyond it does
-	// not fail -- it serialises. Raising it trades against the iRODS server's agent
-	// limit, whose ceiling for this replica is MaxSessions multiplied by this.
+	// not fail -- it serialises.
 	MaxConnections int
 
 	// MaxIOConnections bounds the connections used for file transfer.
@@ -64,6 +69,9 @@ type Config struct {
 	MaxRetries int
 	RetrySleep time.Duration
 
+	// Log receives reports of calls that had to wait for a connection. Nil discards them.
+	Log *logrus.Entry
+
 	// OperationTimeout and LongOperationTimeout become socket deadlines on the metadata
 	// connection. They bound how long an orphaned call can hold a connection after its
 	// caller has given up, so neither should be generous.
@@ -82,6 +90,7 @@ type Config struct {
 // calls run under the *long* timeout, so both have to be bounded.
 const (
 	DefaultMaxSessions            = 32
+	DefaultMaxTotalConnections    = 8
 	DefaultMaxConnections         = 4
 	DefaultMaxIOConnections       = 8
 	DefaultIdleTimeout            = 5 * time.Minute
@@ -98,6 +107,9 @@ const (
 func (c *Config) applyDefaults() {
 	if c.MaxSessions <= 0 {
 		c.MaxSessions = DefaultMaxSessions
+	}
+	if c.MaxTotalConnections <= 0 {
+		c.MaxTotalConnections = DefaultMaxTotalConnections
 	}
 	if c.MaxConnections <= 0 {
 		c.MaxConnections = DefaultMaxConnections
@@ -135,6 +147,11 @@ func (c *Config) applyDefaults() {
 	if c.AppName == "" {
 		c.AppName = "data-info"
 	}
+	if c.Log == nil {
+		discard := logrus.New()
+		discard.SetOutput(io.Discard)
+		c.Log = logrus.NewEntry(discard)
+	}
 }
 
 // Pool hands out sessions, one per client user plus one for the proxy account itself.
@@ -154,6 +171,18 @@ type Pool struct {
 	entries map[string]*list.Element // session key -> lru element
 	lru     *list.List               // front is most recently used
 	closed  bool
+
+	// tracked holds every FileSystem that may still have connections open, from creation
+	// until its Release returns -- including ones unlinked from the pool, which still
+	// count against MaxTotalConnections until they are torn down.
+	tracked map[*entry]*irodsfs.FileSystem
+
+	// changed is closed and replaced whenever room under MaxTotalConnections may have
+	// appeared, which is what callers waiting for a connection wake on.
+	changed chan struct{}
+
+	// countOpen reports a FileSystem's open connections. Tests replace it.
+	countOpen func(*irodsfs.FileSystem) int
 
 	sweeperStop chan struct{}
 	sweeperDone chan struct{}
@@ -186,6 +215,10 @@ type entry struct {
 	lastUsed time.Time
 	inUse    int
 
+	// leased is the connections that calls in flight on this session may need, counted
+	// in transfer weights. See Pool.lease.
+	leased int
+
 	// dead marks an entry that has been unlinked from the pool and must be released once
 	// the last holder lets go. Without it an entry unlinked while another caller still
 	// held it would never be released by anyone: the unlinking path sees inUse > 0 and
@@ -216,6 +249,9 @@ func NewPool(cfg Config) (*Pool, error) {
 		cfg:         cfg,
 		entries:     make(map[string]*list.Element),
 		lru:         list.New(),
+		tracked:     make(map[*entry]*irodsfs.FileSystem),
+		changed:     make(chan struct{}),
+		countOpen:   (*irodsfs.FileSystem).GetOpenConnections,
 		sweeperStop: make(chan struct{}),
 		sweeperDone: make(chan struct{}),
 	}
@@ -258,7 +294,7 @@ func (p *Pool) session(ctx context.Context, key, clientUser string) (*Session, e
 	p.mu.Lock()
 	if p.closed {
 		p.mu.Unlock()
-		return nil, fmt.Errorf("irods pool is closed")
+		return nil, errPoolClosed
 	}
 
 	if el, ok := p.entries[key]; ok {
@@ -283,7 +319,7 @@ func (p *Pool) session(ctx context.Context, key, clientUser string) (*Session, e
 
 	if p.closed {
 		fsys.Release()
-		return nil, fmt.Errorf("irods pool is closed")
+		return nil, errPoolClosed
 	}
 
 	// Another goroutine may have built one for the same user while we were connecting.
@@ -298,6 +334,7 @@ func (p *Pool) session(ctx context.Context, key, clientUser string) (*Session, e
 
 	e := &entry{user: key, fs: fsys, lastUsed: time.Now(), inUse: 1}
 	p.entries[key] = p.lru.PushFront(e)
+	p.tracked[e] = fsys
 	p.evictLocked()
 
 	return &Session{pool: p, entry: e, fs: fsys, clientUser: clientUser}, nil
@@ -333,11 +370,13 @@ func (p *Pool) newFileSystem(clientUser string) (*irodsfs.FileSystem, error) {
 	// Connect lazily so a pool built while iRODS is down still returns.
 	fsc.MetadataConnection.InitNumber = 0
 	fsc.MetadataConnection.MaxNumber = p.cfg.MaxConnections
+	fsc.MetadataConnection.IdleTimeout = types.Duration(p.cfg.IdleTimeout)
 	fsc.MetadataConnection.OperationTimeout = types.Duration(p.cfg.OperationTimeout)
 	fsc.MetadataConnection.LongOperationTimeout = types.Duration(p.cfg.LongOperationTimeout)
 
 	fsc.IOConnection.InitNumber = 0
 	fsc.IOConnection.MaxNumber = p.cfg.MaxIOConnections
+	fsc.IOConnection.IdleTimeout = types.Duration(p.cfg.IdleTimeout)
 	fsc.IOConnection.OperationTimeout = types.Duration(p.cfg.IOOperationTimeout)
 	fsc.IOConnection.LongOperationTimeout = types.Duration(p.cfg.IOLongOperationTimeout)
 
@@ -373,20 +412,28 @@ func (p *Pool) unlinkLocked(el *list.Element, e *entry) {
 	e.dead = true
 
 	if e.inUse == 0 {
-		e.releaseFS()
+		p.releaseFSLocked(e)
 	}
 }
 
-// releaseFS tears the FileSystem down off the caller's goroutine, since Release closes
-// connections and can block. The nil check is not decoration: this runs in its own
-// goroutine, where a panic would take the process down rather than fail one request.
-func (e *entry) releaseFS() {
+// releaseFSLocked tears an entry's FileSystem down off the caller's goroutine, since
+// Release closes connections and can block. The FileSystem stays tracked until Release
+// returns, so its connections count against MaxTotalConnections until they are gone.
+// Callers must hold p.mu.
+func (p *Pool) releaseFSLocked(e *entry) {
 	if e.fs == nil {
 		return
 	}
 	fsys := e.fs
 	e.fs = nil
-	go fsys.Release()
+	go func() {
+		fsys.Release()
+
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		delete(p.tracked, e)
+		p.signalLocked()
+	}()
 }
 
 // release returns a session to the pool.
@@ -416,7 +463,7 @@ func (p *Pool) release(e *entry, poisoned bool) {
 	// this the entry would be unreachable from the pool and never released by anyone.
 	if e.dead {
 		if e.inUse <= 0 {
-			e.releaseFS()
+			p.releaseFSLocked(e)
 		}
 		return
 	}
@@ -424,7 +471,7 @@ func (p *Pool) release(e *entry, poisoned bool) {
 	if p.closed {
 		if e.inUse <= 0 {
 			e.dead = true
-			e.releaseFS()
+			p.releaseFSLocked(e)
 		}
 		return
 	}
@@ -468,6 +515,7 @@ func (p *Pool) Close() {
 		return
 	}
 	p.closed = true
+	p.signalLocked()
 
 	for el := p.lru.Front(); el != nil; {
 		next := el.Next()

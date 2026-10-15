@@ -24,7 +24,7 @@ const transferBufferSize = 4 << 20
 // the next caller would inherit. Nothing is buffered on local disk: the reader here is the
 // request's own multipart part.
 func WriteFile(ctx context.Context, s *Session, path string, r io.Reader, resource string) (int64, error) {
-	return DoPath(ctx, s, path, func(fsys *irodsfs.FileSystem) (int64, error) {
+	return doWeighted(ctx, s, path, transferWeight, func(fsys *irodsfs.FileSystem) (int64, error) {
 		handle, err := fsys.CreateFile(path, resource, "w")
 		if err != nil {
 			return 0, err
@@ -63,7 +63,7 @@ func copyInFullWrites(w io.Writer, r io.Reader) (int64, error) {
 // of metadata, a path list -- and not for downloads, which stream. The limit is what keeps a
 // caller from being handed a terabyte because somebody pointed this at the wrong path.
 func ReadFile(ctx context.Context, s *Session, path string, limit int64) ([]byte, error) {
-	return DoPath(ctx, s, path, func(fsys *irodsfs.FileSystem) ([]byte, error) {
+	return doWeighted(ctx, s, path, transferWeight, func(fsys *irodsfs.FileSystem) ([]byte, error) {
 		handle, err := fsys.OpenFile(path, "", "r")
 		if err != nil {
 			return nil, err

@@ -67,8 +67,9 @@ irods:
   adminusers:
     - rods
     - rodsadmin
-  # maxsessions x maxconnections is the ceiling on iRODS agents one replica can occupy.
-  # Tune it against the server's agent limit before raising either.
+  # maxtotalconnections is the ceiling on iRODS connections one replica holds open; a call
+  # that would cross it waits. Keep it below what the Data Store accepts from one node.
+  maxtotalconnections: 8
   maxsessions: 32
   maxconnections: 4
   sessionidletimeout: 5m
