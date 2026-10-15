@@ -436,6 +436,9 @@ func (a *AVUs) SaveORE(c echo.Context) error {
 	if _, err := scope.WriteFile(ctx, dataCitePath, strings.NewReader(document)); err != nil {
 		return err
 	}
+	if _, err := scope.Checksum(ctx, dataCitePath); err != nil {
+		return err
+	}
 	if err := a.ensureExists(ctx, scope, orePath); err != nil {
 		return err
 	}
@@ -445,6 +448,11 @@ func (a *AVUs) SaveORE(c echo.Context) error {
 		return err
 	}
 	if _, err := scope.WriteFile(ctx, orePath, strings.NewReader(resourceMap)); err != nil {
+		return err
+	}
+	// As every other write here does: Jargon checksummed each object it wrote, and an
+	// object without one reports an empty md5 for the rest of its life.
+	if _, err := scope.Checksum(ctx, orePath); err != nil {
 		return err
 	}
 
