@@ -286,9 +286,8 @@ var tempCleanupSchedule = []time.Duration{
 // Best effort. A failure here leaves a hidden object behind rather than user-visible
 // damage, so it is logged with what a sweep would need and never reported to the caller.
 //
-// The Clojure service registers this as a tracked async task so an operator can see it. That
-// needs the async-task client, which arrives with the rest of the task machinery; until then
-// the log line above is the record.
+// The Clojure service registers this as a tracked async task so an operator can see it; this
+// one does not yet, so the log is the only record. See deferred fix 20.
 func (h *Writes) scheduleTempCleanup(user, path string) {
 	log := h.deps.Logger().WithFields(map[string]any{"path": path, "user": user})
 

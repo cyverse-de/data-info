@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"github.com/cyverse-de/data-info/internal/apierror"
@@ -91,7 +92,7 @@ func (p *PathLists) Create(c echo.Context) error {
 
 	contents, err := service.BuildPathList(entries, query)
 	if err != nil {
-		if err == service.ErrNoMatchingPaths {
+		if errors.Is(err, service.ErrNoMatchingPaths) {
 			return apierror.New(apierror.ErrNotFound).With("reason", err.Error())
 		}
 		return err

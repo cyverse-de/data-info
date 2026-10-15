@@ -27,6 +27,10 @@ const (
 	TargetFolder = "folder"
 )
 
+// maxResponseBytes bounds what is read from one metadata response, success or error. It is
+// generous: the largest legitimate answer is an item's full AVU list, which is far smaller.
+const maxResponseBytes = 64 << 20
+
 // CopyTarget names one item metadata is being copied to.
 type CopyTarget struct {
 	ID   string `json:"id"`
@@ -138,9 +142,13 @@ func (c *Client) do(ctx context.Context, method string, target *url.URL, body []
 	}
 	defer resp.Body.Close() //nolint:errcheck // the body is read below
 
-	raw, err := io.ReadAll(resp.Body)
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("metadata: reading the response to %s %s: %w", method, target.Path, err)
+	}
+	if len(raw) > maxResponseBytes {
+		return nil, fmt.Errorf("metadata: the response to %s %s is larger than %d bytes; the metadata "+
+			"service is probably returning something other than what was asked for", method, target.Path, maxResponseBytes)
 	}
 
 	if resp.StatusCode >= 400 {
