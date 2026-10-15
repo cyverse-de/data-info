@@ -28,7 +28,7 @@ type Stat struct {
 	FileSize     *int64  `json:"file-size,omitempty"`
 	ContentType  string  `json:"content-type,omitempty"`
 	InfoType     *string `json:"infoType,omitempty"`
-	MD5          string  `json:"md5,omitempty"`
+	MD5          *string `json:"md5,omitempty"`
 }
 
 // StatOptions shape one stat.

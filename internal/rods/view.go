@@ -2,6 +2,7 @@ package rods
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 
 	"github.com/cyverse-de/data-info/internal/icat"
@@ -43,8 +44,10 @@ type Stat struct {
 	CreatedMS  int64
 	ModifiedMS int64
 	Permission Permission
-	Checksum   string
-	Exists     bool
+	// Checksum is nil when the catalog holds none at all. An empty checksum is still
+	// reported, because clj-irods kept it and terrain requires md5 on every file.
+	Checksum *string
+	Exists   bool
 }
 
 // ACLEntry is one user's access to a path.
@@ -611,9 +614,17 @@ func statOf(row icat.Row) Stat {
 		CreatedMS:  row.CreatedMillis(),
 		ModifiedMS: row.ModifiedMillis(),
 		Permission: row.Permission(),
-		Checksum:   row.DataChecksum.String,
+		Checksum:   nullableString(row.DataChecksum),
 		Exists:     true,
 	}
+}
+
+// nullableString keeps the difference between a NULL column and an empty one.
+func nullableString(s sql.NullString) *string {
+	if !s.Valid {
+		return nil
+	}
+	return &s.String
 }
 
 // aclOf converts catalog permission rows into access entries.
