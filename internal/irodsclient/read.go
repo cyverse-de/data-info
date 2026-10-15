@@ -37,7 +37,7 @@ func ReadAt(ctx context.Context, s *Session, path string, offset, length int64) 
 		return nil, nil
 	}
 
-	return doWeighted(ctx, s, path, transferWeight, func(fsys *irodsfs.FileSystem) ([]byte, error) {
+	return doLeased(ctx, s, path, transferConn, func(fsys *irodsfs.FileSystem) ([]byte, error) {
 		handle, err := fsys.OpenFile(path, "", "r")
 		if err != nil {
 			return nil, err
@@ -66,7 +66,7 @@ func OpenReader(ctx context.Context, s *Session, path string) (io.ReadCloser, er
 
 	// Leased for the life of the reader, not just the open: the handle keeps its
 	// connection until it is closed.
-	release, err := s.pool.lease(ctx, s.entry, transferWeight)
+	release, err := s.pool.lease(ctx, s.entry, transferConn)
 	if err != nil {
 		return nil, err
 	}

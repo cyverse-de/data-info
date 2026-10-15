@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cyverse-de/data-info/internal/irodsclient"
 	"github.com/cyverse-de/go-mod/cfg"
 	"github.com/knadh/koanf"
 	"github.com/mitchellh/mapstructure"
@@ -225,8 +226,9 @@ func (c *Config) Validate() error {
 	if c.IRODS.MaxConnections < 1 {
 		add("irods.maxconnections must be at least 1, got %d", c.IRODS.MaxConnections)
 	}
-	if c.IRODS.MaxTotalConnections < 1 {
-		add("irods.maxtotalconnections must be at least 1, got %d", c.IRODS.MaxTotalConnections)
+	if c.IRODS.MaxTotalConnections < irodsclient.MinTotalConnections {
+		add("irods.maxtotalconnections must be at least %d, one held back for calls that are not "+
+			"file transfers and one for a transfer, got %d", irodsclient.MinTotalConnections, c.IRODS.MaxTotalConnections)
 	}
 	if c.IRODS.SessionIdleTimeout <= 0 {
 		add("irods.sessionidletimeout must be positive, got %s", c.IRODS.SessionIdleTimeout)

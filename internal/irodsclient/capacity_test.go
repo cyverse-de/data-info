@@ -13,33 +13,33 @@ import (
 // fakeOpen stands in for go-irodsclient's own connection counts.
 type fakeOpen struct {
 	mu    sync.Mutex
-	conns map[*irodsfs.FileSystem]int
+	conns map[*irodsfs.FileSystem]usage
 }
 
-func (f *fakeOpen) count(fsys *irodsfs.FileSystem) int {
+func (f *fakeOpen) count(fsys *irodsfs.FileSystem) usage {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.conns[fsys]
 }
 
-func (f *fakeOpen) set(fsys *irodsfs.FileSystem, n int) {
+func (f *fakeOpen) set(fsys *irodsfs.FileSystem, u usage) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.conns[fsys] = n
+	f.conns[fsys] = u
 }
 
 // capacityPool returns a pool capped at limit whose connection counts the test controls.
 func capacityPool(t *testing.T, limit int) (*Pool, *fakeOpen) {
 	t.Helper()
 	pool := testPool(t, func(c *Config) { c.MaxTotalConnections = limit })
-	open := &fakeOpen{conns: map[*irodsfs.FileSystem]int{}}
+	open := &fakeOpen{conns: map[*irodsfs.FileSystem]usage{}}
 	pool.countOpen = open.count
 	return pool, open
 }
 
 // trackedSession checks out a session for user whose FileSystem reports open connections.
 // The entry's own fs stays nil so that eviction never calls Release on a fake.
-func trackedSession(pool *Pool, open *fakeOpen, user string, conns int) *Session {
+func trackedSession(pool *Pool, open *fakeOpen, user string, conns usage) *Session {
 	s := checkout(pool, user)
 	fsys := &irodsfs.FileSystem{}
 	open.set(fsys, conns)
@@ -51,10 +51,10 @@ func trackedSession(pool *Pool, open *fakeOpen, user string, conns int) *Session
 }
 
 // leaseAsync starts a lease and reports its outcome on the returned channel.
-func leaseAsync(ctx context.Context, pool *Pool, s *Session, weight int) <-chan error {
+func leaseAsync(ctx context.Context, pool *Pool, s *Session, kind connKind) <-chan error {
 	done := make(chan error, 1)
 	go func() {
-		release, err := pool.lease(ctx, s.entry, weight)
+		release, err := pool.lease(ctx, s.entry, kind)
 		if err == nil {
 			defer release()
 		}
@@ -63,24 +63,29 @@ func leaseAsync(ctx context.Context, pool *Pool, s *Session, weight int) <-chan 
 	return done
 }
 
+func meta(n int) usage     { return usage{metadata: n} }
+func transfer(n int) usage { return usage{transfer: n} }
+
 func TestLeaseAdmission(t *testing.T) {
 	tests := []struct {
 		name  string
 		limit int
 		// open connections held by other users' sessions, all in use
-		others []int
+		others []usage
 		// connections already open on the caller's own session
-		own    int
-		weight int
-		admit  bool
+		own   usage
+		kind  connKind
+		admit bool
 	}{
-		{name: "room under the limit", limit: 4, others: []int{2}, weight: 1, admit: true},
-		{name: "exactly at the limit after admission", limit: 4, others: []int{3}, weight: 1, admit: true},
-		{name: "would cross the limit", limit: 4, others: []int{4}, weight: 1, admit: false},
-		{name: "an idle connection of its own needs no new room", limit: 4, others: []int{3}, own: 1, weight: 1, admit: true},
-		{name: "a transfer needs two", limit: 4, others: []int{3}, weight: 2, admit: false},
-		{name: "a transfer with one open needs one more", limit: 4, others: []int{2}, own: 1, weight: 2, admit: true},
-		{name: "anything runs on an empty replica", limit: 1, weight: 2, admit: true},
+		{name: "room under the limit", limit: 4, others: []usage{meta(2)}, kind: metadataConn, admit: true},
+		{name: "exactly at the limit after admission", limit: 4, others: []usage{meta(3)}, kind: metadataConn, admit: true},
+		{name: "would cross the limit", limit: 4, others: []usage{meta(4)}, kind: metadataConn, admit: false},
+		{name: "an idle connection of its own needs no new room", limit: 4, others: []usage{meta(3)}, own: meta(1), kind: metadataConn, admit: true},
+		{name: "an idle metadata connection cannot carry a transfer", limit: 4, others: []usage{meta(2)}, own: meta(1), kind: transferConn, admit: false},
+		{name: "an idle transfer connection can", limit: 4, others: []usage{meta(3)}, own: transfer(1), kind: transferConn, admit: true},
+		{name: "a transfer leaves the reserve alone", limit: 4, others: []usage{transfer(3)}, kind: transferConn, admit: false},
+		{name: "a metadata call may use the reserve", limit: 4, others: []usage{transfer(3)}, kind: metadataConn, admit: true},
+		{name: "anything runs on an empty replica", limit: 1, kind: transferConn, admit: true},
 	}
 
 	for _, tc := range tests {
@@ -95,7 +100,7 @@ func TestLeaseAdmission(t *testing.T) {
 
 			ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 			defer cancel()
-			err := <-leaseAsync(ctx, pool, caller, tc.weight)
+			err := <-leaseAsync(ctx, pool, caller, tc.kind)
 
 			if tc.admit && err != nil {
 				t.Errorf("lease refused: %v", err)
@@ -111,30 +116,35 @@ func TestLeaseAdmission(t *testing.T) {
 // calls in flight hold every connection, and the next call runs once one finishes.
 func TestLeaseWaitsForAReleaseOnTheSameSession(t *testing.T) {
 	pool, open := capacityPool(t, 2)
-	s := trackedSession(pool, open, "user", 0)
+	s := trackedSession(pool, open, "user", usage{})
 	defer s.Close()
 
-	first, err := pool.lease(context.Background(), s.entry, 2)
-	if err != nil {
-		t.Fatalf("first lease: %v", err)
+	var releases []func()
+	for range 2 {
+		release, err := pool.lease(context.Background(), s.entry, metadataConn)
+		if err != nil {
+			t.Fatalf("lease: %v", err)
+		}
+		releases = append(releases, release)
 	}
 
-	waiting := leaseAsync(context.Background(), pool, s, 1)
+	waiting := leaseAsync(context.Background(), pool, s, metadataConn)
 	select {
 	case err := <-waiting:
-		t.Fatalf("second lease returned %v while the first held every connection", err)
+		t.Fatalf("a third lease returned %v while two held every connection", err)
 	case <-time.After(100 * time.Millisecond):
 	}
 
-	first()
+	releases[0]()
 	select {
 	case err := <-waiting:
 		if err != nil {
-			t.Errorf("second lease after the release: %v", err)
+			t.Errorf("third lease after a release: %v", err)
 		}
 	case <-time.After(2 * time.Second):
-		t.Error("the second lease was not woken by the release")
+		t.Error("the third lease was not woken by the release")
 	}
+	releases[1]()
 }
 
 // TestLeaseEvictsIdleSessionsToMakeRoom covers the common way room appears: another user's
@@ -142,14 +152,14 @@ func TestLeaseWaitsForAReleaseOnTheSameSession(t *testing.T) {
 func TestLeaseEvictsIdleSessionsToMakeRoom(t *testing.T) {
 	pool, open := capacityPool(t, 2)
 
-	idle := trackedSession(pool, open, "idle", 2)
+	idle := trackedSession(pool, open, "idle", meta(2))
 	idleEntry := idle.entry
 	idle.Close()
 
-	caller := trackedSession(pool, open, "caller", 0)
+	caller := trackedSession(pool, open, "caller", usage{})
 	defer caller.Close()
 
-	waiting := leaseAsync(context.Background(), pool, caller, 1)
+	waiting := leaseAsync(context.Background(), pool, caller, metadataConn)
 
 	deadline := time.After(2 * time.Second)
 	for {
@@ -186,14 +196,14 @@ func TestLeaseEvictsIdleSessionsToMakeRoom(t *testing.T) {
 // request is part way through using.
 func TestLeaseNeverEvictsSessionsInUse(t *testing.T) {
 	pool, open := capacityPool(t, 2)
-	busy := trackedSession(pool, open, "busy", 2)
+	busy := trackedSession(pool, open, "busy", meta(2))
 	defer busy.Close()
-	caller := trackedSession(pool, open, "caller", 0)
+	caller := trackedSession(pool, open, "caller", usage{})
 	defer caller.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
-	if err := <-leaseAsync(ctx, pool, caller, 1); !errors.Is(err, context.DeadlineExceeded) {
+	if err := <-leaseAsync(ctx, pool, caller, metadataConn); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("lease = %v, want it to wait until the deadline", err)
 	}
 
@@ -209,18 +219,18 @@ func TestLeaseNeverEvictsSessionsInUse(t *testing.T) {
 // connection on its own schedule, which nothing signals.
 func TestLeaseNoticesConnectionsClosedElsewhere(t *testing.T) {
 	pool, open := capacityPool(t, 2)
-	busy := trackedSession(pool, open, "busy", 2)
+	busy := trackedSession(pool, open, "busy", meta(2))
 	defer busy.Close()
-	caller := trackedSession(pool, open, "caller", 0)
+	caller := trackedSession(pool, open, "caller", usage{})
 	defer caller.Close()
 
-	waiting := leaseAsync(context.Background(), pool, caller, 1)
+	waiting := leaseAsync(context.Background(), pool, caller, metadataConn)
 	time.Sleep(50 * time.Millisecond)
 
 	pool.mu.Lock()
 	fsys := pool.tracked[busy.entry]
 	pool.mu.Unlock()
-	open.set(fsys, 1)
+	open.set(fsys, meta(1))
 
 	select {
 	case err := <-waiting:
@@ -235,10 +245,10 @@ func TestLeaseNoticesConnectionsClosedElsewhere(t *testing.T) {
 // TestLeaseIsRefusedOnceThePoolCloses keeps shutdown from leaving callers waiting.
 func TestLeaseIsRefusedOnceThePoolCloses(t *testing.T) {
 	pool, open := capacityPool(t, 1)
-	busy := trackedSession(pool, open, "busy", 1)
-	caller := trackedSession(pool, open, "caller", 0)
+	busy := trackedSession(pool, open, "busy", meta(1))
+	caller := trackedSession(pool, open, "caller", usage{})
 
-	waiting := leaseAsync(context.Background(), pool, caller, 1)
+	waiting := leaseAsync(context.Background(), pool, caller, metadataConn)
 	time.Sleep(50 * time.Millisecond)
 	pool.Close()
 
@@ -273,31 +283,43 @@ type nopReadCloser struct{}
 func (nopReadCloser) Read([]byte) (int, error) { return 0, nil }
 func (nopReadCloser) Close() error             { return nil }
 
-// TestWaitReportRollsUpWaits keeps a burst of queued calls to one warning a minute, with
-// nothing lost between warnings.
-func TestWaitReportRollsUpWaits(t *testing.T) {
+// TestWaitReport keeps a burst of queued calls to one warning a minute, counts the calls
+// that gave up, and reports the tail of a burst once the interval passes even if nothing
+// waits afterwards.
+func TestWaitReport(t *testing.T) {
 	start := time.Date(2026, 10, 15, 9, 0, 0, 0, time.UTC)
-	steps := []struct {
-		at      time.Duration
-		waited  time.Duration
-		due     bool
-		waits   int
-		longest time.Duration
-	}{
-		{at: 0, waited: time.Second, due: true, waits: 1, longest: time.Second},
-		{at: 10 * time.Second, waited: 3 * time.Second, due: false},
-		{at: 30 * time.Second, waited: 2 * time.Second, due: false},
-		{at: waitReportInterval, waited: time.Second, due: true, waits: 3, longest: 3 * time.Second},
-		{at: waitReportInterval + time.Second, waited: time.Second, due: false},
-		{at: 3 * waitReportInterval, waited: 5 * time.Second, due: true, waits: 2, longest: 5 * time.Second},
+
+	type step struct {
+		at     time.Duration
+		flush  bool
+		waited time.Duration
+		gaveUp bool
+		due    bool
+		want   waitTally
+	}
+	steps := []step{
+		{at: 0, waited: time.Second, due: true, want: waitTally{waits: 1, longest: time.Second}},
+		{at: 10 * time.Second, waited: 3 * time.Second},
+		{at: 20 * time.Second, waited: 30 * time.Second, gaveUp: true},
+		{at: 30 * time.Second, flush: true},
+		{at: waitReportInterval, flush: true, due: true, want: waitTally{waits: 2, gaveUp: 1, longest: 30 * time.Second}},
+		{at: waitReportInterval + time.Second, flush: true},
+		{at: 3 * waitReportInterval, waited: 5 * time.Second, due: true, want: waitTally{waits: 1, longest: 5 * time.Second}},
 	}
 
 	var r waitReport
 	for i, s := range steps {
-		due, waits, longest := r.record(start.Add(s.at), s.waited)
-		if due != s.due || waits != s.waits || longest != s.longest {
-			t.Errorf("step %d: record = (%v, %d, %s), want (%v, %d, %s)",
-				i, due, waits, longest, s.due, s.waits, s.longest)
+		var (
+			got waitTally
+			due bool
+		)
+		if s.flush {
+			got, due = r.flush(start.Add(s.at))
+		} else {
+			got, due = r.record(start.Add(s.at), s.waited, s.gaveUp)
+		}
+		if due != s.due || got != s.want {
+			t.Errorf("step %d: (%+v, %v), want (%+v, %v)", i, got, due, s.want, s.due)
 		}
 	}
 }

@@ -182,7 +182,7 @@ type Pool struct {
 	changed chan struct{}
 
 	// countOpen reports a FileSystem's open connections. Tests replace it.
-	countOpen func(*irodsfs.FileSystem) int
+	countOpen func(*irodsfs.FileSystem) usage
 
 	waits waitReport
 
@@ -217,9 +217,9 @@ type entry struct {
 	lastUsed time.Time
 	inUse    int
 
-	// leased is the connections that calls in flight on this session may need, counted
-	// in transfer weights. See Pool.lease.
-	leased int
+	// leased is the connections that calls in flight on this session may need. See
+	// Pool.lease.
+	leased usage
 
 	// dead marks an entry that has been unlinked from the pool and must be released once
 	// the last holder lets go. Without it an entry unlinked while another caller still
@@ -253,7 +253,7 @@ func NewPool(cfg Config) (*Pool, error) {
 		lru:         list.New(),
 		tracked:     make(map[*entry]*irodsfs.FileSystem),
 		changed:     make(chan struct{}),
-		countOpen:   (*irodsfs.FileSystem).GetOpenConnections,
+		countOpen:   openUsage,
 		sweeperStop: make(chan struct{}),
 		sweeperDone: make(chan struct{}),
 	}
@@ -372,12 +372,16 @@ func (p *Pool) newFileSystem(clientUser string) (*irodsfs.FileSystem, error) {
 	// Connect lazily so a pool built while iRODS is down still returns.
 	fsc.MetadataConnection.InitNumber = 0
 	fsc.MetadataConnection.MaxNumber = p.cfg.MaxConnections
+	// One idle connection per pool at most: idle connections count against the Data
+	// Store's per-node limit, and nothing can reclaim them from a session still in use.
+	fsc.MetadataConnection.MaxIdleNumber = 1
 	fsc.MetadataConnection.IdleTimeout = types.Duration(p.cfg.IdleTimeout)
 	fsc.MetadataConnection.OperationTimeout = types.Duration(p.cfg.OperationTimeout)
 	fsc.MetadataConnection.LongOperationTimeout = types.Duration(p.cfg.LongOperationTimeout)
 
 	fsc.IOConnection.InitNumber = 0
 	fsc.IOConnection.MaxNumber = p.cfg.MaxIOConnections
+	fsc.IOConnection.MaxIdleNumber = 1
 	fsc.IOConnection.IdleTimeout = types.Duration(p.cfg.IdleTimeout)
 	fsc.IOConnection.OperationTimeout = types.Duration(p.cfg.IOOperationTimeout)
 	fsc.IOConnection.LongOperationTimeout = types.Duration(p.cfg.IOLongOperationTimeout)
@@ -504,6 +508,8 @@ func (p *Pool) startSweeper() {
 				p.evictLocked()
 			}
 			p.mu.Unlock()
+
+			p.flushWaits()
 		}
 	}
 }

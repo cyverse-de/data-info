@@ -217,6 +217,7 @@ func TestValidateRejectsBadValues(t *testing.T) {
 		{"non-amqp broker uri", "amqp:\n  uri: http://rabbit:5672/", "must use the amqp or amqps scheme"},
 		{"relative mapping key", "anonfiles:\n  mappings:\n    relative: x/", "must be an absolute iRODS path"},
 		{"out of range irods port", "irods:\n  port: 70000", "irods.port must be between 1 and 65535"},
+		{"connection cap with no room for a transfer", "irods:\n  maxtotalconnections: 1", "irods.maxtotalconnections must be at least 2"},
 		{"empty icat password", "icat:\n  password: \"\"", "icat.password must not be empty"},
 	}
 
