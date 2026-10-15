@@ -184,7 +184,7 @@ func pagedFolder(ctx context.Context, qr queryer, q ListingQuery) ([]ListingRow,
 		infoTypeArray(q.InfoTypes), q.IncludeUnknownInfoType, limit, q.Offset,
 		infoTypeAttributeOr(q.InfoTypeAttribute), string(entityType))
 	if err != nil {
-		return nil, fmt.Errorf("icat: listing %q: %w", q.Path, err)
+		return nil, queryError(err, "listing %q", q.Path)
 	}
 	return rows, nil
 }
@@ -224,7 +224,7 @@ func foldersInFolder(ctx context.Context, qr queryer, q ListingQuery) ([]Listing
 	err := qr.SelectContext(ctx, &rows, sqlFoldersInFolder,
 		strings.TrimRight(q.Path, "/"), q.User, q.Zone, groupIDArray(q.GroupIDs))
 	if err != nil {
-		return nil, fmt.Errorf("icat: listing subfolders of %q: %w", q.Path, err)
+		return nil, queryError(err, "listing subfolders of %q", q.Path)
 	}
 	return rows, nil
 }

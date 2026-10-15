@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/cyverse-de/data-info/internal/icat"
 	"github.com/labstack/echo/v4"
 )
 
@@ -70,6 +71,17 @@ func TestHTTPErrorHandler(t *testing.T) {
 			handler:    func(echo.Context) error { return errors.New("boom") },
 			wantStatus: http.StatusInternalServerError,
 			wantBody:   `{"error_code":"ERR_UNCHECKED_EXCEPTION","message":"boom"}`,
+		},
+		{
+			name:   "a failed catalog query does not reach the response",
+			method: http.MethodPost,
+			path:   "/deleter",
+			handler: func(echo.Context) error {
+				return fmt.Errorf("stat: %w", &icat.QueryError{Op: "getting 1 item(s)",
+					Err: errors.New(`pq: relation "r_data_main" does not exist`)})
+			},
+			wantStatus: http.StatusInternalServerError,
+			wantBody:   `{"error_code":"ERR_UNCHECKED_EXCEPTION","message":"a query against the iRODS catalog failed"}`,
 		},
 		{
 			name:       "ok route reports an unexpected error under reason",

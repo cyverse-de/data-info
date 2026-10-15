@@ -91,7 +91,7 @@ func pagedUUIDs(ctx context.Context, qr queryer, q UUIDListingQuery) ([]ListingR
 		infoTypeArray(q.InfoTypes), q.IncludeUnknownInfoType,
 		q.Limit, q.Offset, infoTypeAttributeOr(q.InfoTypeAttribute))
 	if err != nil {
-		return nil, fmt.Errorf("icat: listing %d data ids: %w", len(q.UUIDs), err)
+		return nil, queryError(err, "listing %d data ids", len(q.UUIDs))
 	}
 	return rows, nil
 }
@@ -120,7 +120,7 @@ func countUUIDs(ctx context.Context, qr queryer, q UUIDListingQuery) (int64, err
 		infoTypeArray(q.InfoTypes), q.IncludeUnknownInfoType,
 		infoTypeAttributeOr(q.InfoTypeAttribute))
 	if err != nil {
-		return 0, fmt.Errorf("icat: counting %d data ids: %w", len(q.UUIDs), err)
+		return 0, queryError(err, "counting %d data ids", len(q.UUIDs))
 	}
 	return total, nil
 }

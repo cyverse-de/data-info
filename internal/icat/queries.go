@@ -128,7 +128,7 @@ func userGroupIDs(ctx context.Context, q queryer, user, zone string) ([]int64, e
 
 	var ids []int64
 	if err := q.SelectContext(ctx, &ids, sqlUserGroupIDs, user, zone); err != nil {
-		return nil, fmt.Errorf("icat: looking up group ids for %q: %w", user, err)
+		return nil, queryError(err, "looking up group ids for %q", user)
 	}
 	return ids, nil
 }
@@ -171,7 +171,7 @@ func getItems(ctx context.Context, qr queryer, q ItemQuery) ([]Row, error) {
 	err = qr.SelectContext(ctx, &rows, sqlGetItems,
 		pq.Array(dirnames), pq.Array(basenames), q.User, q.Zone, groupIDs, q.infoTypeAttribute())
 	if err != nil {
-		return nil, fmt.Errorf("icat: getting %d item(s): %w", len(q.Paths), err)
+		return nil, queryError(err, "getting %d item(s)", len(q.Paths))
 	}
 	return rows, nil
 }
@@ -215,7 +215,7 @@ func lookupUser(ctx context.Context, qr queryer, user, zone string) (UserKind, e
 
 	var kinds []UserKind
 	if err := qr.SelectContext(ctx, &kinds, sqlUserExists, user, zone); err != nil {
-		return UserKindNone, fmt.Errorf("icat: looking up %q: %w", user, err)
+		return UserKindNone, queryError(err, "looking up %q", user)
 	}
 	if len(kinds) == 0 {
 		return UserKindNone, nil
@@ -240,7 +240,7 @@ func userGroupNames(ctx context.Context, qr queryer, user, zone string) ([]strin
 
 	var names []string
 	if err := qr.SelectContext(ctx, &names, sqlUserGroups, user, zone); err != nil {
-		return nil, fmt.Errorf("icat: listing groups for %q: %w", user, err)
+		return nil, queryError(err, "listing groups for %q", user)
 	}
 	return names, nil
 }
@@ -262,7 +262,7 @@ func pathsForUUIDs(ctx context.Context, qr queryer, uuids []string) ([]UUIDPath,
 
 	var out []UUIDPath
 	if err := qr.SelectContext(ctx, &out, sqlPathsForUUIDs, pq.Array(uuids)); err != nil {
-		return nil, fmt.Errorf("icat: resolving %d uuid(s): %w", len(uuids), err)
+		return nil, queryError(err, "resolving %d uuid(s)", len(uuids))
 	}
 	return out, nil
 }
@@ -304,7 +304,7 @@ func countChildren(ctx context.Context, qr queryer, q ChildCountQuery) (ChildCou
 	err := qr.GetContext(ctx, &counts, sqlCountChildren,
 		strings.TrimRight(q.Path, "/"), q.User, q.Zone, groupIDs)
 	if err != nil {
-		return ChildCounts{}, fmt.Errorf("icat: counting children of %q: %w", q.Path, err)
+		return ChildCounts{}, queryError(err, "counting children of %q", q.Path)
 	}
 	return counts, nil
 }
@@ -349,7 +349,7 @@ func countChildrenBatch(ctx context.Context, qr queryer, q BatchChildCountQuery)
 	err := qr.SelectContext(ctx, &out, sqlCountChildrenBatch,
 		pq.Array(trimmed), q.User, q.Zone, groupIDs)
 	if err != nil {
-		return nil, fmt.Errorf("icat: counting children of %d collection(s): %w", len(q.Paths), err)
+		return nil, queryError(err, "counting children of %d collection(s)", len(q.Paths))
 	}
 	return out, nil
 }
@@ -377,7 +377,7 @@ func permsForItems(ctx context.Context, qr queryer, paths []string) ([]Perm, err
 	var perms []Perm
 	err = qr.SelectContext(ctx, &perms, sqlPermsForItems, pq.Array(dirnames), pq.Array(basenames))
 	if err != nil {
-		return nil, fmt.Errorf("icat: getting permissions for %d path(s): %w", len(paths), err)
+		return nil, queryError(err, "getting permissions for %d path(s)", len(paths))
 	}
 	return perms, nil
 }

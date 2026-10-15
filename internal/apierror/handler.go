@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/cyverse-de/data-info/internal/icat"
 	"github.com/labstack/echo/v4"
 )
 
@@ -169,7 +170,7 @@ func toAPIError(err error, style Style) (*Error, string) {
 	}
 
 	if errors.Is(err, context.DeadlineExceeded) {
-		return New(ErrUnavailable).WithStyle(style).With("reason", err.Error()).WithCause(err), ""
+		return New(ErrUnavailable).WithStyle(style).With("reason", publicMessage(err)).WithCause(err), ""
 	}
 
 	var he *echo.HTTPError
@@ -205,7 +206,18 @@ func toAPIError(err error, style Style) (*Error, string) {
 		key = "reason"
 	}
 	return New(ErrUncheckedException).WithStatus(http.StatusInternalServerError).
-		With(key, err.Error()).WithCause(err), ""
+		With(key, publicMessage(err)).WithCause(err), ""
+}
+
+// publicMessage is what a response may say about an unexpected error. A failed catalog
+// query carries the database's own text, which names its tables and columns, so it is
+// replaced by a fixed message; the full error is still logged with the request.
+func publicMessage(err error) string {
+	var query *icat.QueryError
+	if errors.As(err, &query) {
+		return "a query against the iRODS catalog failed"
+	}
+	return err.Error()
 }
 
 func messageOf(he *echo.HTTPError) string {
