@@ -63,15 +63,13 @@ distinction should collapse — every route should answer from one table.
 **Blocked on:** nothing structural — it is on this list only to keep the port diff-clean.
 Fix it in the same change as entry 1.
 
-## 4. `share-count` double-counts
+## 4. `share-count` double-counts -- withdrawn
 
-`mk-perms-for-item` selects `(object_id, user_name, access_type_id)` with no `DISTINCT` or
-`MAX`, so a user holding two access rows is counted twice and the share count shown in the
-UI is inflated.
-
-**Blocked on:** nothing structural. The fix is `DISTINCT ON (user_name) ... ORDER BY
-user_name, access_type_id DESC`. It changes a number users see, so it wants its own change
-and its own note, not a silent correction during the port.
+**Not a defect.** This entry said a user holding two access rows was counted twice. Neither
+service can count anyone twice: iRODS keeps at most one `r_objt_access` row per object and
+user, Clojure's object lookup combined collections and data objects with `UNION` (which
+removes the extra row a replicated data object would add), and `perms_for_items.sql` keeps one
+replica explicitly. Nothing to fix.
 
 ## 5. `GET /admin/config` does not mask the AMQP URI
 

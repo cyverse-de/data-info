@@ -141,3 +141,30 @@ future comparison:
 - **Data the harness did not create.** Every file it uploads gets a checksum, so it never saw a
   file without one; the md5 bug surfaced only when someone opened an older file in the UI.
 
+## What I would do next
+
+1. **Merge #106 and deployments#122**, in that order, once QA has run on it long enough.
+2. **Register the upload cleanup as a tracked async task** (deferred fix 20). Small, and the
+   only known behavioural gap left that is not a deliberate deviation.
+3. **Stop answering 500 for every error**, together with `apps` (deferred fix 1).
+
+## Traps worth knowing
+
+- **One preserved bug**, deliberately: an unrecognised `sort-field` returns a bare 500
+  (deferred fix 3). Do not "fix" it in passing.
+- **The status table is bug-for-bug.** `ERR_DOES_NOT_EXIST` and `ERR_NOT_READABLE` are 500s.
+  `apps` catches `[:status 500]` literally at four sites; changing this breaks job submission.
+- **Two connections, two answers.** Most validation checks existence over the admin
+  connection and access as the caller. Asking both as the caller collapses "you cannot see
+  it" into "it does not exist" and changes the error code.
+- **Terrain validates data-info's responses.** A field the service has always sent, even
+  empty, is required by terrain's schema; omitting it is a 500 in the UI, not a harmless
+  difference.
+- **`EmittedCodes()` overstates the vocabulary.** `ERR_TOO_MANY_PATHS` is never thrown. The
+  rest of the list deserves the same check.
+- **A `preStop` sleep plus 30s server drain plus 75s job drain fit inside the manifest's
+  120s grace period.** They are coupled: changing one without the other risks a SIGKILL
+  mid-drain, which leaves the job's paths locked until async-tasks' ten-minute stall timeout.
+- **The connection cap is per replica, the Data Store's limit is per node.** Anti-affinity
+  keeps the two replicas on separate nodes; raising replicas or `maxtotalconnections` has to
+  account for the other iRODS clients on the same node.
