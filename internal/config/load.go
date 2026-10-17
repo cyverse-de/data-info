@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/cyverse-de/data-info/internal/irodsclient"
 	"github.com/cyverse-de/go-mod/cfg"
@@ -307,7 +306,3 @@ func (c *Config) ICATConnectionString() string {
 	u.RawQuery = q.Encode()
 	return u.String()
 }
-
-// UploadTimeout and RequestTimeout return the upload and ordinary-request idle limits.
-func (c *Config) UploadTimeout() time.Duration  { return c.Timeouts.Upload }
-func (c *Config) RequestTimeout() time.Duration { return c.Timeouts.Request }

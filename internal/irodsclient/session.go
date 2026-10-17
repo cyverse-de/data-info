@@ -28,10 +28,6 @@ func (s *Session) ClientUser() string { return s.clientUser }
 // unproxied ordinary call gets CAT_INVALID_ARGUMENT for removals the account cannot make.
 func (s *Session) IsProxied() bool { return s.clientUser != "" }
 
-// FileSystem exposes the underlying client. Prefer Do, which adds cancellation and error
-// translation.
-func (s *Session) FileSystem() *irodsfs.FileSystem { return s.fs }
-
 // Close returns the session to the pool.
 func (s *Session) Close() {
 	if s.closed.Swap(true) {

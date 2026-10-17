@@ -8,9 +8,6 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// DefaultListingLimit is unused: listings reject a request that has no limit.
-const DefaultListingLimit = 1000
-
 // Listings serves the folder listing and navigation endpoints.
 type Listings struct {
 	deps Deps

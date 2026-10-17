@@ -49,20 +49,8 @@ func Text(name string, attrs []Attr, text string) *Element {
 // declaration is the prologue every one of these documents opens with, byte for byte.
 const declaration = `<?xml version="1.0" encoding="UTF-8"?>`
 
-// Write renders a document: the declaration and then the element, with no trailing newline
-// and no indentation.
-func Write(w io.Writer, root *Element) error {
-	out := &writer{w: w}
-
-	out.write(declaration)
-	out.element(root)
-	return out.err
-}
-
-// Render returns a document as a string.
-//
-// There is no error to return: the only thing Write can fail on is the writer, and a
-// strings.Builder does not fail.
+// Render returns a document as a string: the declaration and then the element, with no
+// trailing newline or indentation. Writing to a strings.Builder cannot fail.
 func Render(root *Element) string {
 	var out strings.Builder
 
