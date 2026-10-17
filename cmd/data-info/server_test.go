@@ -1,0 +1,445 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/cyverse-de/data-info/internal/config"
+	"github.com/cyverse-de/data-info/internal/handlers"
+	dimw "github.com/cyverse-de/data-info/internal/middleware"
+	"github.com/labstack/echo/v4"
+	"github.com/sirupsen/logrus"
+)
+
+const testConfigYAML = `
+anonfiles:
+  baseurl: https://example.org/anon-files/
+  mappings:
+    /iplant/home/: cyverse/home/
+kifshare:
+  externalurl: https://example.org/dl
+irods:
+  password: notprod
+icat:
+  password: notprod
+`
+
+func testConfig(t *testing.T) *config.Config {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "service.yml")
+	if err := os.WriteFile(path, []byte(testConfigYAML), 0o600); err != nil {
+		t.Fatalf("writing config: %v", err)
+	}
+	cfg, err := config.Load(config.Settings{
+		ConfigPath: path,
+		DotEnvPath: filepath.Join(dir, "absent.env"),
+		EnvPrefix:  "DATAINFOSERVERTEST_",
+	})
+	if err != nil {
+		t.Fatalf("loading config: %v", err)
+	}
+	return cfg
+}
+
+// stubProber reports a fixed result, so router tests never touch the network.
+func stubProber(err error) handlers.Prober {
+	return handlers.ProberFunc(func(context.Context) error { return err })
+}
+
+// testServer builds the real router with unreachable backends, which is the interesting
+// case for the status endpoints.
+func testServer(t *testing.T) *echo.Echo {
+	t.Helper()
+	return testServerWithDeps(t, Deps{
+		IRODSProbe: stubProber(errors.New("irods is unreachable")),
+		ICATProbe:  stubProber(errors.New("icat is unreachable")),
+	})
+}
+
+func testServerWithDeps(t *testing.T, deps Deps) *echo.Echo {
+	t.Helper()
+	log := logrus.New()
+	log.SetOutput(io.Discard)
+	return buildServer(testConfig(t), "1.2.3-test", logrus.NewEntry(log), deps)
+}
+
+func TestStatusEndpoint(t *testing.T) {
+	e := testServer(t)
+
+	tests := []struct {
+		name       string
+		target     string
+		wantStatus int
+		wantExpect string
+	}{
+		{"no expecting parameter", "/", http.StatusOK, ""},
+		{"expecting ourselves", "/?expecting=data-info", http.StatusOK, "data-info"},
+		{"expecting another service", "/?expecting=terrain", http.StatusInternalServerError, "terrain"},
+		{"parameter name is case-insensitive", "/?EXPECTING=data-info", http.StatusOK, "data-info"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tt.target, nil))
+
+			if rec.Code != tt.wantStatus {
+				t.Errorf("status = %d, want %d", rec.Code, tt.wantStatus)
+			}
+
+			var body map[string]any
+			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+				t.Fatalf("decoding body: %v (%s)", err, rec.Body.String())
+			}
+
+			// The response shape is a contract shared with terrain and the DE's
+			// monitoring, so assert on the exact key names.
+			for key, want := range map[string]any{
+				"service":     "data-info",
+				"description": "DE service for data information logic and iRODS interactions.",
+				"version":     "1.2.3-test",
+				"expecting":   tt.wantExpect,
+			} {
+				if body[key] != want {
+					t.Errorf("%s = %v, want %v", key, body[key], want)
+				}
+			}
+			if _, ok := body["docs-url"]; !ok {
+				t.Error("docs-url is missing")
+			}
+			if _, ok := body["iRODS"]; !ok {
+				t.Error("iRODS is missing")
+			}
+		})
+	}
+}
+
+// TestDocsURL pins docs-url's legacy shape: always http, always with the port.
+func TestDocsURL(t *testing.T) {
+	e := testServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Host = "data-info:60000"
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decoding body: %v", err)
+	}
+	if want := "http://data-info:60000/docs"; body["docs-url"] != want {
+		t.Errorf("docs-url = %v, want %v", body["docs-url"], want)
+	}
+}
+
+func TestHealthz(t *testing.T) {
+	e := testServer(t)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+}
+
+// TestReadyz covers what readiness depends on: the catalog, which fails it without
+// restarting the pod, and not iRODS, whose probe would spend the Data Store's per-node
+// connection budget every 20 seconds.
+func TestReadyz(t *testing.T) {
+	unreachable := errors.New("unreachable")
+	tests := []struct {
+		name   string
+		irods  error
+		icat   error
+		status int
+	}{
+		{"both reachable", nil, nil, http.StatusOK},
+		{"iRODS down does not fail readiness", unreachable, nil, http.StatusOK},
+		{"catalog down fails readiness", nil, unreachable, http.StatusServiceUnavailable},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			irodsProbed := false
+			irods := handlers.ProberFunc(func(context.Context) error {
+				irodsProbed = true
+				return tt.irods
+			})
+			e := testServerWithDeps(t, Deps{IRODSProbe: irods, ICATProbe: stubProber(tt.icat)})
+
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+
+			if rec.Code != tt.status {
+				t.Errorf("status = %d, want %d (%s)", rec.Code, tt.status, rec.Body.String())
+			}
+			if irodsProbed {
+				t.Error("readiness probed iRODS")
+			}
+
+			var body struct {
+				Ready    bool              `json:"ready"`
+				Backends map[string]string `json:"backends"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+				t.Fatalf("decoding body: %v", err)
+			}
+			if body.Ready != (tt.status == http.StatusOK) {
+				t.Errorf("ready = %v, want %v", body.Ready, tt.status == http.StatusOK)
+			}
+			if _, ok := body.Backends["icat"]; !ok {
+				t.Error(`backends is missing "icat"`)
+			}
+			if _, ok := body.Backends["irods"]; ok {
+				t.Error(`backends reports "irods", which readiness no longer checks`)
+			}
+		})
+	}
+}
+
+func TestAdminConfigMasksCredentials(t *testing.T) {
+	e := testServer(t)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/config", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var body map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decoding body: %v", err)
+	}
+
+	// Keys use the legacy data-info.* property names.
+	if body["data-info.port"] != "60000" {
+		t.Errorf("data-info.port = %q, want %q", body["data-info.port"], "60000")
+	}
+	for _, key := range []string{"data-info.irods.password", "data-info.icat.password"} {
+		if body[key] != "********" {
+			t.Errorf("%s = %q, want it masked", key, body[key])
+		}
+	}
+}
+
+func TestUnrecognizedPath(t *testing.T) {
+	e := testServer(t)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/no/such/thing", nil))
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+	if want := `{"success":false,"reason":"unrecognized service path"}`; rec.Body.String() != want {
+		t.Errorf("body = %q, want %q", rec.Body.String(), want)
+	}
+}
+
+func TestIsUploadRoute(t *testing.T) {
+	tests := []struct {
+		method string
+		path   string
+		want   bool
+	}{
+		{http.MethodPost, "/data", true},
+		{http.MethodPost, "/data/", true},
+		{http.MethodPut, "/data/:data-id", true},
+		{http.MethodGet, "/data", false},
+		{http.MethodPost, "/deleter", false},
+		{http.MethodPut, "/data/:data-id/name", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.method+" "+tt.path, func(t *testing.T) {
+			e := echo.New()
+			c := e.NewContext(httptest.NewRequest(tt.method, "/", nil), httptest.NewRecorder())
+			c.SetPath(tt.path)
+			if got := isUploadRoute(c); got != tt.want {
+				t.Errorf("isUploadRoute = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestUploadTimeoutExceedsRequestTimeout guards the split itself: if these ever collapse
+// to one value, large uploads start failing and only on large files.
+func TestUploadTimeoutExceedsRequestTimeout(t *testing.T) {
+	cfg := testConfig(t)
+	if cfg.Timeouts.Upload <= cfg.Timeouts.Request {
+		t.Errorf("upload timeout %s must exceed request timeout %s",
+			cfg.Timeouts.Upload, cfg.Timeouts.Request)
+	}
+	if cfg.Timeouts.Upload < time.Hour {
+		t.Errorf("upload timeout %s is too short for a large file", cfg.Timeouts.Upload)
+	}
+}
+
+func TestStatusReportsIRODSReachability(t *testing.T) {
+	tests := []struct {
+		name  string
+		probe error
+		want  bool
+	}{
+		{"reachable", nil, true},
+		{"unreachable", errors.New("connection refused"), false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := testServerWithDeps(t, Deps{IRODSProbe: stubProber(tt.probe), ICATProbe: stubProber(nil)})
+
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+
+			var body map[string]any
+			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+				t.Fatalf("decoding body: %v", err)
+			}
+			if body["iRODS"] != tt.want {
+				t.Errorf("iRODS = %v, want %v", body["iRODS"], tt.want)
+			}
+			// An iRODS outage must not make the status endpoint itself fail.
+			if rec.Code != http.StatusOK {
+				t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
+			}
+		})
+	}
+}
+
+// TestResponsesHaveNoTrailingNewline guards against echo's c.JSON, which appends a newline
+// that response bodies have never carried.
+func TestResponsesHaveNoTrailingNewline(t *testing.T) {
+	e := testServerWithDeps(t, Deps{IRODSProbe: stubProber(nil), ICATProbe: stubProber(nil)})
+
+	for _, target := range []string{"/", "/healthz", "/readyz", "/admin/config", "/no/such/thing"} {
+		t.Run(target, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
+
+			body := rec.Body.String()
+			if body == "" {
+				t.Fatal("empty body")
+			}
+			if strings.HasSuffix(body, "\n") {
+				t.Errorf("body ends with a newline: %q", body)
+			}
+		})
+	}
+}
+
+// TestStatusBodyMatchesCapturedShape keeps GET /'s key set and order matching a captured
+// response.
+func TestStatusBodyMatchesCapturedShape(t *testing.T) {
+	captured, err := os.ReadFile(filepath.Join("..", "..", "testdata", "contract", "status-clojure.json"))
+	if err != nil {
+		t.Fatalf("reading the captured status body: %v", err)
+	}
+
+	e := testServerWithDeps(t, Deps{IRODSProbe: stubProber(nil), ICATProbe: stubProber(nil)})
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+
+	if got, want := keyOrder(t, rec.Body.Bytes()), keyOrder(t, captured); got != want {
+		t.Errorf("key order = %s\n          want %s", got, want)
+	}
+}
+
+// keyOrder returns the top-level JSON keys in order of appearance.
+func keyOrder(t *testing.T, body []byte) string {
+	t.Helper()
+
+	dec := json.NewDecoder(bytes.NewReader(body))
+	if tok, err := dec.Token(); err != nil || tok != json.Delim('{') {
+		t.Fatalf("body is not a JSON object: %v", err)
+	}
+
+	var keys []string
+	depth := 0
+	for dec.More() || depth > 0 {
+		tok, err := dec.Token()
+		if err != nil {
+			t.Fatalf("scanning body: %v", err)
+		}
+		switch v := tok.(type) {
+		case json.Delim:
+			if v == '{' || v == '[' {
+				depth++
+			} else {
+				depth--
+			}
+		case string:
+			if depth == 0 {
+				keys = append(keys, v)
+				// Skip the value.
+				if _, err := dec.Token(); err != nil {
+					t.Fatalf("scanning value for %q: %v", v, err)
+				}
+			}
+		}
+		if depth == 0 && !dec.More() {
+			break
+		}
+	}
+	return strings.Join(keys, ",")
+}
+
+// TestBlankExpectingIsRejected: a blank expecting parameter is a 400, not treated as absent.
+func TestBlankExpectingIsRejected(t *testing.T) {
+	e := testServerWithDeps(t, Deps{IRODSProbe: stubProber(nil), ICATProbe: stubProber(nil)})
+
+	tests := []struct {
+		name       string
+		target     string
+		wantStatus int
+	}{
+		{"absent is fine", "/", http.StatusOK},
+		{"blank is rejected", "/?expecting=", http.StatusBadRequest},
+		{"whitespace is rejected", "/?expecting=%20", http.StatusBadRequest},
+		{"a real value is accepted", "/?expecting=data-info", http.StatusOK},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tt.target, nil))
+			if rec.Code != tt.wantStatus {
+				t.Errorf("status = %d, want %d (%s)", rec.Code, tt.wantStatus, rec.Body.String())
+			}
+		})
+	}
+}
+
+// TestRepeatedQueryParamsKeepTheirOrder covers the lowercasing middleware end to end.
+// Ranging over a parsed url.Values would randomise this, so a repeated parameter would
+// resolve differently from one request to the next.
+func TestRepeatedQueryParamsKeepTheirOrder(t *testing.T) {
+	e := echo.New()
+	e.Pre(dimw.LowercaseQueryParams())
+
+	var got []string
+	e.GET("/x", func(c echo.Context) error {
+		got = c.QueryParams()["info-type"]
+		return c.NoContent(http.StatusOK)
+	})
+
+	for i := 0; i < 50; i++ {
+		got = nil
+		e.ServeHTTP(httptest.NewRecorder(),
+			httptest.NewRequest(http.MethodGet, "/x?INFO-TYPE=csv&info-type=bam&Info-Type=vcf", nil))
+
+		if len(got) != 3 || got[0] != "csv" || got[1] != "bam" || got[2] != "vcf" {
+			t.Fatalf("run %d: got %v, want [csv bam vcf]", i, got)
+		}
+	}
+}

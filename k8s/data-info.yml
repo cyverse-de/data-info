@@ -15,41 +15,42 @@ spec:
       labels:
         de-app: data-info
     spec:
-      affinity:
-        podAntiAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            - labelSelector:
-                matchExpressions:
-                  - key: de-app
-                    operator: In
-                    values:
-                      - data-info
-              topologyKey: kubernetes.io/hostname
       restartPolicy: Always
+      # Covers the shutdown drain: 5s preStop + 30s serverGrace + 75s drainGrace
+      # (cmd/data-info/main.go). A SIGKILL mid-drain leaves job paths locked until the
+      # 10-minute stall timeout.
+      terminationGracePeriodSeconds: 120
       volumes:
-        - name: service-configs
+        - name: data-info-configs
           secret:
-            secretName: service-configs
+            secretName: data-info-configs
             items:
-              - key: data-info.properties
-                path: data-info.properties
+              - key: data-info.yml
+                path: data-info.yml
       containers:
         - name: data-info
           image: harbor.cyverse.org/de/data-info
           resources:
             requests:
-              cpu: "160m"
-              memory: "1Gi"
-              ephemeral-storage: "1Gi"
+              cpu: "100m"
+              memory: "128Mi"
+              ephemeral-storage: "128Mi"
             limits:
-              cpu: "4000m"
-              memory: "3Gi"
-              ephemeral-storage: "1Gi"
+              cpu: "2000m"
+              memory: "1Gi"
+              ephemeral-storage: "128Mi"
           args:
             - --config
-            - /etc/iplant/de/data-info.properties
+            - /etc/iplant/de/data-info.yml
+          lifecycle:
+            # Endpoint removal and SIGTERM race, so hold still long enough for kube-proxy to
+            # drop this pod before the server stops accepting. Kubernetes' own sleep handler
+            # rather than an exec: the image is distroless and has no shell to run one with.
+            preStop:
+              sleep:
+                seconds: 5
           volumeMounts:
-            - name: service-configs
+            - name: data-info-configs
               mountPath: /etc/iplant/de
               readOnly: true
           env:
@@ -58,44 +59,29 @@ spec:
                 configMapKeyRef:
                   name: timezone
                   key: timezone
-            - name: JAVA_TOOL_OPTIONS
-              valueFrom:
-                configMapKeyRef:
-                  name: java-tool-options
-                  key: high
-            - name: OTEL_TRACES_EXPORTER
-              valueFrom:
-                secretKeyRef:
-                  name: configs
-                  key: OTEL_TRACES_EXPORTER
-            - name: OTEL_EXPORTER_JAEGER_ENDPOINT
-              valueFrom:
-                secretKeyRef:
-                  name: configs
-                  key: OTEL_EXPORTER_JAEGER_ENDPOINT
           ports:
             - name: listen-port
               containerPort: 60000
+          # /healthz answers from memory, so liveness and the startup gate can poll it freely.
+          # Readiness checks only the catalog, which is why it alone runs on a 20s period. It
+          # leaves iRODS alone so the probes spend none of the Data Store's per-node connections.
           livenessProbe:
             httpGet:
-              path: /
+              path: /healthz
               port: 60000
-            initialDelaySeconds: 60
-            periodSeconds: 20
-            timeoutSeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
           startupProbe:
             httpGet:
-              path: /
+              path: /healthz
               port: 60000
-            initialDelaySeconds: 60
-            periodSeconds: 20
-            timeoutSeconds: 10
-            failureThreshold: 30
+            periodSeconds: 3
+            timeoutSeconds: 5
+            failureThreshold: 100
           readinessProbe:
             httpGet:
-              path: /
+              path: /readyz
               port: 60000
-            initialDelaySeconds: 60
             periodSeconds: 20
             timeoutSeconds: 10
 ---

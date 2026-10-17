@@ -1,0 +1,21 @@
+version: "2"
+run:
+  timeout: 5m
+linters:
+  settings:
+    errcheck:
+      # Also flag `_ = f()` that discards an error. Handle it, log it, or use
+      # //nolint:errcheck with a reason.
+      check-blank: true
+    staticcheck:
+      checks:
+        - all
+        - -ST1000 # package comments are required only on the packages that earn one
+        - -ST1003 # initialism casing (Id vs ID) is not enforced
+  exclusions:
+    rules:
+      # Tests write literal bodies and tear down fixtures; a failure there means the
+      # harness is broken, not the code under test.
+      - path: _test\.go$
+        linters:
+          - errcheck

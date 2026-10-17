@@ -1,0 +1,70 @@
+package apierror
+
+// Code is a DE error_code string. The vocabulary is shared across DE services and
+// appears verbatim in response bodies, so these values are a wire contract.
+type Code string
+
+// Codes from the DE's shared vocabulary. Only those data-info emits are declared.
+const (
+	ErrBadOrMissingField  Code = "ERR_BAD_OR_MISSING_FIELD"
+	ErrBadQueryParameter  Code = "ERR_BAD_QUERY_PARAMETER"
+	ErrBadRequest         Code = "ERR_BAD_REQUEST"
+	ErrConfigInvalid      Code = "ERR_CONFIG_INVALID"
+	ErrConflict           Code = "ERR_CONFLICT"
+	ErrDoesNotExist       Code = "ERR_DOES_NOT_EXIST"
+	ErrExists             Code = "ERR_EXISTS"
+	ErrForbidden          Code = "ERR_FORBIDDEN"
+	ErrIllegalArgument    Code = "ERR_ILLEGAL_ARGUMENT"
+	ErrIncompleteRename   Code = "ERR_INCOMPLETE_RENAME"
+	ErrInvalidJSON        Code = "ERR_INVALID_JSON"
+	ErrMissingQueryParam  Code = "ERR_MISSING_QUERY_PARAMETER"
+	ErrNotAFile           Code = "ERR_NOT_A_FILE"
+	ErrNotAFolder         Code = "ERR_NOT_A_FOLDER"
+	ErrNotAUser           Code = "ERR_NOT_A_USER"
+	ErrNotAuthorized      Code = "ERR_NOT_AUTHORIZED"
+	ErrNotFound           Code = "ERR_NOT_FOUND"
+	ErrNotOwner           Code = "ERR_NOT_OWNER"
+	ErrNotReadable        Code = "ERR_NOT_READABLE"
+	ErrNotWriteable       Code = "ERR_NOT_WRITEABLE"
+	ErrRequestFailed      Code = "ERR_REQUEST_FAILED"
+	ErrTicketDoesNotExist Code = "ERR_TICKET_DOES_NOT_EXIST"
+	ErrTicketExists       Code = "ERR_TICKET_EXISTS"
+	ErrTooManyResults     Code = "ERR_TOO_MANY_RESULTS"
+	ErrUnavailable        Code = "ERR_UNAVAILABLE"
+	ErrUncheckedException Code = "ERR_UNCHECKED_EXCEPTION"
+
+	// Codes outside the shared vocabulary. statusFor maps all of them to 500.
+	ErrBadBasenameLength Code = "ERR_BAD_BASENAME_LENGTH"
+	ErrBadDirnameLength  Code = "ERR_BAD_DIRNAME_LENGTH"
+	ErrBadPathLength     Code = "ERR_BAD_PATH_LENGTH"
+	ErrChunkTooSmall     Code = "ERR_CHUNK_TOO_SMALL"
+	ErrInvalidPage       Code = "ERR_INVALID_PAGE"
+	ErrPageNotPos        Code = "ERR_PAGE_NOT_POS"
+	ErrTooManyPaths      Code = "ERR_TOO_MANY_PATHS"
+)
+
+// IsServerFault reports whether the code means this service or a backend failed, rather than
+// that the caller's request was refused. It is independent of the HTTP status, which is 500
+// for many caller errors; see statusFor.
+func (c Code) IsServerFault() bool {
+	switch c {
+	case ErrConfigInvalid, ErrRequestFailed, ErrUnavailable, ErrUncheckedException:
+		return true
+	default:
+		return false
+	}
+}
+
+// EmittedCodes returns every code data-info can return except ErrUncheckedException, which
+// only an unrecognised error produces.
+func EmittedCodes() []Code {
+	return []Code{
+		ErrNotAUser, ErrDoesNotExist, ErrNotWriteable, ErrNotReadable, ErrExists,
+		ErrNotAFolder, ErrNotAFile, ErrTooManyPaths, ErrNotOwner, ErrNotAuthorized,
+		ErrTooManyResults, ErrBadOrMissingField, ErrBadPathLength, ErrPageNotPos,
+		ErrNotFound, ErrInvalidPage, ErrIncompleteRename, ErrChunkTooSmall,
+		ErrBadDirnameLength, ErrBadBasenameLength, ErrTicketExists, ErrTicketDoesNotExist,
+		ErrMissingQueryParam, ErrBadRequest, ErrUnavailable, ErrRequestFailed,
+		ErrInvalidJSON, ErrForbidden, ErrConflict, ErrConfigInvalid, ErrBadQueryParameter,
+	}
+}
