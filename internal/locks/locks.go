@@ -1,10 +1,6 @@
-// Package locks decides whether a path is already caught up in long-running work.
-//
-// There is no lock table. A path is "locked" when some async task that has not finished yet
-// names it, so the whole mechanism is a query plus a comparison -- which means it is
-// advisory, shared with every replica, and racy between the check and the task that follows
-// it. An in-process mutex would narrow the race without closing it, because the other replica
-// is a different process.
+// Package locks decides whether a path is held by unfinished async work. There is no lock
+// table: a path is locked while an unfinished task names it, so the check is advisory and racy
+// between checking and creating the task. An in-process mutex would not help across replicas.
 package locks
 
 import (
@@ -27,11 +23,8 @@ var lockingTypes = []string{
 	asynctasks.TypeRestore,
 }
 
-// farFuture is the end date the filter asks for.
-//
-// Together with IncludeNullEnd it selects "everything that has not finished", since no real
-// task ends after this. Asking for unfinished work directly is not something the service's
-// filter can express.
+// farFuture, with IncludeNullEnd, selects unfinished tasks; the service's filter cannot ask
+// for a null end date alone.
 var farFuture = time.Date(9999, time.December, 31, 23, 59, 59, 0, time.UTC)
 
 // Reader is the part of the async-tasks client this package needs.
@@ -39,10 +32,8 @@ type Reader interface {
 	ByFilter(ctx context.Context, filter asynctasks.Filter) ([]asynctasks.Task, error)
 }
 
-// Validate rejects paths that unfinished work already holds.
-//
-// It reports every conflicting path rather than the first, because a caller moving several
-// things wants to know which of them to retry.
+// Validate rejects paths that unfinished work already holds, naming every conflicting path so
+// the caller knows which to retry.
 func Validate(ctx context.Context, reader Reader, paths []string) error {
 	if len(paths) == 0 {
 		return nil
@@ -54,9 +45,8 @@ func Validate(ctx context.Context, reader Reader, paths []string) error {
 		EndDateSince:   &farFuture,
 	})
 	if err != nil {
-		// The detail names an internal service, its URL and whatever it said, none of
-		// which belongs in a response. It is wrapped as the cause so the error handler
-		// still logs it.
+		// The cause names an internal service and its reply, so it is logged but kept out
+		// of the response.
 		return apierror.New(apierror.ErrUnavailable).
 			With("reason", "could not determine whether these paths are in use").
 			WithCause(err)
@@ -110,9 +100,7 @@ func pathsOf(task asynctasks.Task) []string {
 
 	switch task.Type {
 	case asynctasks.TypeMove:
-		// A move locks its sources and where each of them will land, which is the
-		// destination collection joined to each source's own name -- not the destination
-		// itself, which usually already exists and is not being moved.
+		// A move locks its sources and where each lands, not the destination collection.
 		sources := stringsAt(data, "sources")
 		destination := stringAt(data, "destination")
 
@@ -129,8 +117,7 @@ func pathsOf(task asynctasks.Task) []string {
 		return append(stringsAt(data, "paths"), valuesOf(data, "trash-paths")...)
 
 	case asynctasks.TypeDeleteTrash:
-		// A list here, where a delete stores a map. The two are written by different code
-		// paths and were never made to agree.
+		// A list here, where a delete stores a map; the two were never made to agree.
 		return stringsAt(data, "trash-paths")
 
 	case asynctasks.TypeRestore:
@@ -150,23 +137,12 @@ func conflictsAny(path string, locked []string) bool {
 	return false
 }
 
-// Conflicts reports whether two paths cannot be worked on at the same time.
-//
-// They cannot when they are the same path, or when one contains the other: moving a
-// collection while something inside it is being moved separately leaves both operations
-// working on a tree that is changing underneath them.
-//
-// This is deliberately not what the Clojure service computes. Its two prefix tests compare a
-// path against another path plus a slash without requiring the match to end on a component
-// boundary, so "/a" collides with a locked "/ab" and refuses a request it should allow. The
-// version here is strictly more permissive than the Clojure service, never less, so it cannot
-// allow a pair the Clojure service would have refused for a real reason -- but it is a
-// behaviour change and is recorded as one in docs/deferred-fixes.md.
+// Conflicts reports whether two paths are the same or one contains the other, matching on
+// whole components so /a and /ab do not conflict (docs/deferred-fixes.md #15).
 func Conflicts(a, b string) bool {
 	a, b = strings.TrimRight(a, "/"), strings.TrimRight(b, "/")
 
-	// Neither is a path, so neither can hold or be held. Without this the prefix tests
-	// below would call an empty string a conflict with everything.
+	// An empty string is not a path; without this it would prefix-match everything.
 	if a == "" || b == "" {
 		return false
 	}
@@ -197,11 +173,8 @@ func stringAt(data map[string]any, key string) string {
 	return value
 }
 
-// stringsAt reads a list of strings out of a task's data.
-//
-// Task data arrives as decoded JSON, so a list is []any of strings rather than []string, and
-// anything that is not a string is skipped rather than failing the whole check: a lock that
-// refuses to answer because one task was written oddly would block every write in the DE.
+// stringsAt reads a list of strings from task data, skipping non-strings rather than failing:
+// a lock check broken by one odd task would block every write.
 func stringsAt(data map[string]any, key string) []string {
 	raw, ok := data[key].([]any)
 	if !ok {

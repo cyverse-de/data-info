@@ -2,10 +2,8 @@ package mediatype
 
 import "testing"
 
-// TestOfNameMatchesTheReference pins the values measured against the running Clojure
-// service. Several look wrong -- a .vcf is variant-call data, not a vCard -- and that is the
-// point: they are the wire contract, and a "correction" here would be a silent behaviour
-// change for callers that switch on the type.
+// TestOfNameMatchesTheReference pins the historical types. Several look wrong, but callers
+// switch on them.
 func TestOfNameMatchesTheReference(t *testing.T) {
 	cases := []struct {
 		path string
@@ -42,8 +40,7 @@ func TestOfNameMatchesTheReference(t *testing.T) {
 		{"/zone/home/u/reads.fastq", "text/plain"},
 		{"/zone/home/u/tree.newick", "text/plain"},
 
-		// A name Tika cannot read is where this diverges: the Clojure service opens the
-		// object and finds text, and there is nothing in a name-only table that could.
+		// Name-only detection cannot identify an extensionless text file.
 		{"/zone/home/u/README", Default},
 		{"/zone/home/u/data.unknownext", Default},
 

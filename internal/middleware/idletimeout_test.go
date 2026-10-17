@@ -12,8 +12,8 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// TestIdleTimeoutToleratesRecorders makes sure a writer that cannot take deadlines does
-// not fail the request; that is the case under httptest.NewRecorder.
+// TestIdleTimeoutToleratesRecorders checks that a writer that cannot take deadlines, such as
+// httptest.NewRecorder, does not fail the request.
 func TestIdleTimeoutToleratesRecorders(t *testing.T) {
 	e := echo.New()
 	e.Use(IdleTimeout(time.Second, time.Minute, func(echo.Context) bool { return false }))
@@ -30,15 +30,8 @@ func TestIdleTimeoutToleratesRecorders(t *testing.T) {
 	}
 }
 
-// TestIdleTimeoutFiresWhenTheStreamStalls covers the timeout doing its job. The handler
-// streams a chunk, then goes quiet for longer than the budget, then tries to write again.
-// The second write has to fail.
-//
-// Two details make this test meaningful rather than incidental. The stall happens
-// mid-stream rather than before the first write, and the write that follows it is large
-// enough to overflow net/http's response buffer. A handler that merely thinks for a while
-// and then returns a short body never reaches the socket at all -- the body sits in the
-// buffer -- so the deadline has nothing to bite on and the request completes normally.
+// TestIdleTimeoutFiresWhenTheStreamStalls stalls mid-stream for longer than the budget, then
+// writes enough to reach the socket; that write must fail.
 func TestIdleTimeoutFiresWhenTheStreamStalls(t *testing.T) {
 	const budget = 100 * time.Millisecond
 
@@ -56,9 +49,8 @@ func TestIdleTimeoutFiresWhenTheStreamStalls(t *testing.T) {
 
 		time.Sleep(5 * budget)
 
-		// Large enough to overflow net/http's response buffer and force a socket write.
-		// A short write would simply be buffered, and the deadline would have nothing to
-		// bite on until some later flush.
+		// Large enough to overflow net/http's response buffer; a short write would just be
+		// buffered, giving the deadline nothing to bite on.
 		_, err := c.Response().Write(make([]byte, 1<<20))
 		writeErr <- err
 		return nil
@@ -84,11 +76,8 @@ func TestIdleTimeoutFiresWhenTheStreamStalls(t *testing.T) {
 	}
 }
 
-// TestIdleTimeoutAllowsSlowButProgressingTransfer is the regression this middleware was
-// rewritten for. A download that keeps making progress must survive well past its budget,
-// because the Jetty timeout it replaces was an idle timeout, not a deadline. Under the
-// previous absolute-deadline implementation a large download on a non-upload route was
-// truncated once it outlived timeouts.request.
+// TestIdleTimeoutAllowsSlowButProgressingTransfer checks that a download that keeps making
+// progress outlives its idle budget.
 func TestIdleTimeoutAllowsSlowButProgressingTransfer(t *testing.T) {
 	const (
 		budget = 150 * time.Millisecond
@@ -130,8 +119,8 @@ func TestIdleTimeoutAllowsSlowButProgressingTransfer(t *testing.T) {
 	}
 }
 
-// TestIdleTimeoutExtendsWhileTheBodyIsRead is the upload half: a request body that arrives
-// slowly but steadily must not be cut off.
+// TestIdleTimeoutExtendsWhileTheBodyIsRead checks that a slow but steady upload body is not
+// cut off.
 func TestIdleTimeoutExtendsWhileTheBodyIsRead(t *testing.T) {
 	const budget = 150 * time.Millisecond
 

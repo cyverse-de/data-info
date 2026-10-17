@@ -1,9 +1,6 @@
-// Package asynctasks talks to the async-tasks service, which records long-running work so
-// that it survives the request that started it.
-//
-// The records are a contract, not private bookkeeping. Every replica of this service reads
-// them to decide whether a path is already being moved or deleted, so the type names, the keys
-// inside a task's data, and the meaning of an absent end date all have to match exactly.
+// Package asynctasks talks to the async-tasks service, which records long-running work. Every
+// replica reads those records to decide whether a path is busy, so task type names, data keys
+// and the meaning of an absent end date are a contract.
 package asynctasks
 
 import (
@@ -42,31 +39,17 @@ const (
 // changes.
 const BehaviorStatusChangeTimeout = "statuschangetimeout"
 
-// StallTimeout is how long a task may go without reporting before it is treated as dead.
-//
-// A move reports once per path per step, so a job that is alive has no trouble staying well
-// inside this. Reaching it means the process running the job is gone.
+// StallTimeout is how long a task may go without reporting before it is treated as dead. Live
+// jobs report once per path per step, so reaching it means the job's process is gone.
 const StallTimeout = "10m"
 
 // StatusStalled is the status a task is moved to when it stops reporting.
 const StatusStalled = "detected-stalled"
 
-// StallBehavior is the rule every task that holds a lock is created with.
-//
-// The "complete" flag is the whole point of it, and the Clojure service omits it. Without the
-// flag the timeout records that a task has stalled and stops there, leaving its end date null
-// -- and since an absent end date is exactly what holds the lock, a task whose process died
-// locks its paths for good rather than for ten minutes. With the flag the same timeout
-// completes the task, which releases them.
-//
-// The processor only times out a task whose latest status matches a rule's start_status, so
-// there is a rule for every status a live task can sit at. A task refused at Worker.Start stays
-// at registered, and one whose pod dies before its first progress post stays at started.
-//
-// The trade is real but small: a job that genuinely goes ten minutes without reporting has
-// its paths released while it is still working. Jobs here report per path per step, so that
-// window belongs to a process that is gone, not one that is busy. Recorded in
-// docs/deferred-fixes.md.
+// StallBehavior is the rule every lock-holding task is created with. Its "complete" flag makes
+// the timeout set the end date, so a task whose process died releases its paths rather than
+// holding them forever (docs/deferred-fixes.md #14). The processor matches only a task's
+// latest status, so there is one rule per status a live task can sit at.
 func StallBehavior() Behavior {
 	live := []string{StatusRegistered, StatusStarted, StatusRunning}
 
@@ -86,10 +69,8 @@ func StallBehavior() Behavior {
 	}
 }
 
-// Task is one unit of long-running work.
-//
-// An absent EndDate is what makes a task count as still running, and therefore what holds
-// the lock on its paths. Nothing else marks a task as finished.
+// Task is one unit of long-running work. An absent EndDate is the only mark of an unfinished
+// task, and is what holds the lock on its paths.
 type Task struct {
 	ID        string         `json:"id,omitempty"`
 	Type      string         `json:"type"`
@@ -121,9 +102,8 @@ type Filter struct {
 	Statuses  []string
 	Usernames []string
 
-	// IncludeNullEnd keeps tasks that have not finished. Selecting unfinished work needs
-	// this together with EndDateSince: the date alone would exclude the very tasks that
-	// matter, because theirs is null.
+	// IncludeNullEnd keeps unfinished tasks. Pair it with EndDateSince, which alone would
+	// exclude them because their end date is null.
 	IncludeNullEnd bool
 
 	EndDateSince   *time.Time
@@ -150,20 +130,14 @@ func New(base string, timeout time.Duration) (*Client, error) {
 	return &Client{base: parsed, http: &http.Client{Timeout: timeout}}, nil
 }
 
-// taskPath matches the prefix a task id may carry.
-//
-// Create answers with a Location header rather than a bare id, and this service passes that
-// value around and hands it back to callers as async-task-id, so an id arriving here may be
-// a path or a whole URL. Everything that addresses a task strips it back down first.
+// taskPath matches the prefix on ids that arrive as the Location path or URL Create returned.
 var taskPath = regexp.MustCompile(`.*/tasks/`)
 
 // NormalizeID reduces an id or a URI naming a task to the bare id.
 func NormalizeID(id string) string { return taskPath.ReplaceAllString(id, "") }
 
-// Create records a new task and returns the id minted for it.
-//
-// The value returned is the Location header verbatim, because that is what the Clojure
-// service returns and what callers see in an async-task-id field.
+// Create records a new task and returns its Location header verbatim; callers see that value
+// as async-task-id.
 func (c *Client) Create(ctx context.Context, task Task) (string, error) {
 	body, err := json.Marshal(task)
 	if err != nil {
@@ -217,11 +191,8 @@ func (c *Client) AddStatus(ctx context.Context, id string, status Status) error 
 	return c.addStatus(ctx, id, status, false)
 }
 
-// AddCompletedStatus records a task's final status and sets its end date.
-//
-// The end date is the point of it. An absent one is what holds the lock on a task's paths,
-// so a task whose terminal status never lands stays locked -- which is why callers retry
-// this far harder than they retry progress.
+// AddCompletedStatus records a task's final status and sets its end date, which releases the
+// lock on its paths; that is why callers retry it harder than progress.
 func (c *Client) AddCompletedStatus(ctx context.Context, id string, status Status) error {
 	return c.addStatus(ctx, id, status, true)
 }
@@ -275,9 +246,7 @@ func (c *Client) ByFilter(ctx context.Context, filter Filter) ([]Task, error) {
 	}
 	defer resp.Body.Close() //nolint:errcheck // the body is decoded below
 
-	// The service answers a filter matching nothing with a bare null rather than an empty
-	// array, which decodes to a nil slice. Callers range over the result, so that is
-	// exactly what they want -- but it means a nil result is not a signal of anything.
+	// A filter matching nothing returns JSON null, which decodes to a nil slice.
 	var tasks []Task
 	if err := json.NewDecoder(resp.Body).Decode(&tasks); err != nil {
 		return nil, fmt.Errorf("async-tasks: decoding a filtered task list: %w", err)
@@ -285,10 +254,7 @@ func (c *Client) ByFilter(ctx context.Context, filter Filter) ([]Task, error) {
 	return tasks, nil
 }
 
-// query renders a filter as the service's query parameters.
-//
-// The parameter names are the service's own spelling, which is not this package's: they use
-// underscores where the rest of the DE uses hyphens.
+// query renders a filter as the service's underscore-named query parameters.
 func (f Filter) query() url.Values {
 	values := url.Values{}
 

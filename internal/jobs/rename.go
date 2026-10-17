@@ -8,11 +8,8 @@ import (
 	"github.com/cyverse-de/data-info/internal/worker"
 )
 
-// Rename moves one path to one other path.
-//
-// It is a separate job from Move rather than a move of one thing, because the two record
-// different data and send different notifications -- and because the DE shows them
-// differently to the user.
+// Rename moves one path to another. It is separate from Move because it records different
+// task data and sends a different notification.
 type Rename struct{ Deps Deps }
 
 // Run implements worker.Job.

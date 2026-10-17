@@ -22,12 +22,8 @@ const (
 // Delete moves paths to the trash, or removes them outright when they are already there.
 type Delete struct{ Deps Deps }
 
-// Run implements worker.Job.
-//
-// This runs as the service's own account rather than as the user. Tickets belong to whoever
-// issued them and a user cannot delete another's, but a path being deleted must not leave
-// tickets behind that still point at it -- so the deletion is done with the account that can
-// see them all. The Clojure service does the same, and for the same reason.
+// Run implements worker.Job. It runs as the proxy account because a user cannot delete
+// tickets someone else issued, and a deleted path must not leave tickets behind.
 func (d Delete) Run(ctx context.Context, task *asynctasks.Task, progress worker.Progress) error {
 	requested, err := stringsFrom(task.Data, "paths")
 	if err != nil {
@@ -48,10 +44,8 @@ func (d Delete) Run(ctx context.Context, task *asynctasks.Task, progress worker.
 	return d.delete(ctx, scope, task.Username, requested, trashPaths, progress)
 }
 
-// Notify implements worker.Notifying.
-//
-// Two notifications, because the two outcomes read differently to a user: something moved to
-// the trash can be got back, and something deleted outright cannot.
+// Notify implements worker.Notifying. Trashed and deleted paths get separate notifications
+// because only the trashed ones can be got back.
 func (d Delete) Notify(ctx context.Context, task *asynctasks.Task, failed bool) {
 	requested, err := stringsFrom(task.Data, "paths")
 	if err != nil {
@@ -86,8 +80,8 @@ func (d Delete) delete(
 ) error {
 	progress(pathsetDeleted, actionBegin)
 
-	// Listed once, on the first path, rather than per path: iRODS cannot be asked for the
-	// tickets on one path, so each listing is every ticket the account can see.
+	// Listed once rather than per path: iRODS cannot list one path's tickets, so every listing
+	// returns every ticket the account can see.
 	var tickets []rods.Ticket
 	ticketsDeleted := make(map[string]bool)
 
@@ -112,9 +106,8 @@ func (d Delete) delete(
 
 		trashPath, toTrash := trashPaths[path]
 		if !toTrash {
-			// Already in the trash, so there is nowhere further to move it. Forced,
-			// because an unforced delete would put it in the proxy account's trash rather
-			// than removing it.
+			// Already in the trash. Forced, since an unforced delete would move it to the
+			// proxy account's trash.
 			if err := scope.Delete(ctx, path, true); err != nil {
 				return fmt.Errorf("deleting %q: %w", path, err)
 			}
@@ -122,17 +115,12 @@ func (d Delete) delete(
 			continue
 		}
 
-		// Trashing is a move, and it reports one: the Clojure service reaches it through the
-		// same function a rename does, so the trail carries begin, validated-path-lengths,
-		// did-rename and end for the path -- permission repair included, before the end --
-		// before anything specific to trashing appears.
+		// Trashing is a move, so moveOne's statuses precede the trash-specific ones.
 		if err := moveOne(ctx, scope, d.Deps, user, path, trashPath, progress); err != nil {
 			return err
 		}
 
-		// Recorded after the move, on the trashed object, so that restoring it can put it
-		// back where it came from. Without this a restore has nowhere to aim but the
-		// user's home.
+		// Lets a restore put the item back where it came from rather than in the user's home.
 		err := scope.SetAVU(ctx, trashPath, rods.AVU{
 			Attribute: service.TrashOriginAttribute,
 			Value:     path,
@@ -150,11 +138,8 @@ func (d Delete) delete(
 	return nil
 }
 
-// deleteTickets removes the tickets pointing at a path.
-//
-// A ticket outliving the thing it grants access to is a dangling grant, and iRODS does not
-// clean them up on delete. deleted records what earlier paths in the same request already
-// removed, since a ticket inside one requested collection may also be under another.
+// deleteTickets removes the tickets on a path, since iRODS leaves them dangling. deleted skips
+// tickets an earlier path in the same request already removed.
 func deleteTickets(ctx context.Context, scope *rods.Scope, tickets []rods.Ticket, deleted map[string]bool, path string) error {
 	for _, ticket := range tickets {
 		if deleted[ticket.Name] {
@@ -181,11 +166,9 @@ func partitionByTrash(requested []string, trashPaths map[string]string) (trashed
 	return trashed, deleted
 }
 
-// mapFrom reads a map of strings out of a task's data.
-//
-// Strict, and deliberately so. Absence from this map is the signal that a path is already in
-// the trash and should be removed outright, so data of the wrong shape read as an empty map
-// would force-delete everything the task named -- unrecoverably, and reporting success.
+// mapFrom reads a map of strings from task data. It is strict because absence from
+// trash-paths means "delete outright": misreading bad data as an empty map would irrecoverably
+// delete everything the task named.
 func mapFrom(data map[string]any, key string) (map[string]string, error) {
 	raw, ok := data[key]
 	if !ok {

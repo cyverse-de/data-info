@@ -1,10 +1,5 @@
-// Package jobs holds the work that outlives the request which asked for it: moves, renames,
-// deletions and restores.
-//
-// Each job is handed a task rather than arguments. The task is the record the whole DE reads
-// to decide whether a path is busy, so what a job operates on has to come from there and
-// nowhere else -- a job working on something the task does not name is work nothing else can
-// see.
+// Package jobs runs work that outlives its request: moves, renames, deletions and restores.
+// A job takes its inputs only from its async task, because the task is what lock checks see.
 package jobs
 
 import (
@@ -46,9 +41,7 @@ type Publisher interface {
 
 // Deps are what every job needs.
 type Deps struct {
-	// OpenScope gives a job its own view of the data store. A job cannot reuse the
-	// request's: that scope is closed when the request ends, which is long before the job
-	// does.
+	// OpenScope gives a job its own data-store scope; the request's closes before the job ends.
 	OpenScope func(ctx context.Context, user string) (*rods.Scope, error)
 
 	Notifier  Notifier
@@ -60,37 +53,28 @@ type Deps struct {
 	ProxyUser  string
 }
 
-// Progress action names. They appear in a task's status detail and someone reads them when a
-// job goes wrong, so they say what happened rather than which function ran.
+// Progress action names. People read them in a task's status when a job fails, so they say
+// what happened rather than which function ran.
 const (
 	actionBegin = "begin"
-	// actionErrorDeleting marks a path that could not be removed. The job carries on: the
-	// Clojure service collects the failures and reports them at the end rather than stopping.
+	// actionErrorDeleting marks a path EmptyTrash could not remove; it carries on regardless.
 	actionErrorDeleting = "error-deleting"
 	actionValidate      = "validated-path-lengths"
 	actionRenamed       = "did-rename"
 	actionEnd           = "end"
 )
 
-// The pseudo-paths a multi-path job brackets its trail with. They sit in the path position of
-// a status detail, where a real path goes, because the Clojure service puts them there: a
-// status reading "[instance] deleted paths: begin" is what a client sees before the first
-// path is touched. They are literal strings and not derived from anything, so they are
-// spelled here once.
+// Pseudo-paths that stand in for a path in a multi-path job's bracketing statuses, as in
+// "[instance] deleted paths: begin".
 const (
-	// pathsetDeleted brackets both a delete and a restore. The same string for both is the
-	// Clojure service's, not a copy-paste here: restore-paths-thread opens with "deleted
-	// paths" as well, and a client reading the trail sees it on either operation.
+	// pathsetDeleted brackets restores as well as deletes, as it did in the Clojure service.
 	pathsetDeleted = "deleted paths"
 	pathsetSeveral = "several paths"
 	pathsetTrash   = "delete trash"
 )
 
-// notify sends a completion notification, swallowing a failure.
-//
-// The operation is already done by the time this runs. Failing the job because the user could
-// not be told would report a failure that did not happen, and would leave a task recorded as
-// failed with its work complete.
+// notify sends a completion notification, logging rather than returning a failure: the
+// operation itself has already finished.
 func (d Deps) notify(ctx context.Context, message notifications.Message) {
 	if d.Notifier == nil {
 		return
@@ -103,11 +87,8 @@ func (d Deps) notify(ctx context.Context, message notifications.Message) {
 	}
 }
 
-// stringsFrom reads a list of strings out of a task's data.
-//
-// Task data is decoded JSON, so a list is []any. A job whose data is not the shape it expects
-// cannot do anything useful, so this is strict where the lock's reader is forgiving: the lock
-// must never fail over one odd task, and a job must never operate on a guess.
+// stringsFrom reads a list of strings from task data. Unlike the lock check's reader it is
+// strict: a job must never operate on a guess.
 func stringsFrom(data map[string]any, key string) ([]string, error) {
 	raw, ok := data[key]
 	if !ok {
@@ -147,10 +128,8 @@ func (d Deps) scopeFor(ctx context.Context, task *asynctasks.Task) (*rods.Scope,
 	return d.OpenScope(ctx, task.Username)
 }
 
-// moveOne moves a single path and repairs the permissions afterwards, reporting each step.
-//
-// The steps are the Clojure service's, and they are reported rather than merely performed
-// because a task's status history is the only record of how far a job got before it stopped.
+// moveOne moves one path and repairs its permissions, reporting each step: the task's status
+// history is the only record of how far a job got.
 func moveOne(
 	ctx context.Context,
 	scope *rods.Scope,

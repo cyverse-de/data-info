@@ -1,8 +1,5 @@
-// Package amqp publishes the events this service emits.
-//
-// There is exactly one: a request for the data-usage service to reindex a user after their
-// trash is emptied. That is why this is a publisher and not a client -- nothing here
-// consumes.
+// Package amqp publishes this service's one event: a request for the data-usage service to
+// reindex a user after their trash is emptied.
 package amqp
 
 import (
@@ -24,10 +21,8 @@ type Config struct {
 	AutoDelete bool
 }
 
-// envelope is the message body every publish carries.
-//
-// Consumers read both fields, so the shape is a contract even though this service publishes
-// only one kind of message.
+// envelope is the body of every published message. Consumers read both fields, so its shape
+// is a contract.
 type envelope struct {
 	Message     any   `json:"message"`
 	TimestampMS int64 `json:"timestamp_ms"`
@@ -38,11 +33,8 @@ type envelope struct {
 // already started then blocks with nothing to cancel it.
 const publishTimeout = 10 * time.Second
 
-// Publisher holds a connection to the broker.
-//
-// A channel is not safe for concurrent use, and reconnecting while another goroutine is
-// publishing would hand it a closed one, so every publish and every reconnect holds the same
-// lock. Publishing is rare enough that serialising it costs nothing.
+// Publisher holds a connection to the broker. Every publish and reconnect holds one lock: a
+// channel is not safe for concurrent use, and a reconnect would close one mid-publish.
 type Publisher struct {
 	cfg Config
 	log *logrus.Entry
@@ -61,11 +53,8 @@ type Publisher struct {
 	timeout time.Duration
 }
 
-// New builds a publisher and connects it.
-//
-// A broker that is down at startup is not fatal: the one event this service publishes is a
-// hint to another service, and refusing to start over it would take the data endpoints down
-// with it. The first publish reconnects.
+// New builds a publisher and connects it. A broker that is down at startup is not fatal, since
+// the event is only a hint to another service; the first publish reconnects.
 func New(cfg Config, log *logrus.Entry) (*Publisher, error) {
 	if cfg.URI == "" {
 		return nil, fmt.Errorf("amqp: no broker URI was configured")
@@ -84,13 +73,9 @@ func New(cfg Config, log *logrus.Entry) (*Publisher, error) {
 	return p, nil
 }
 
-// Publish sends a message, reconnecting and retrying once if the channel has gone away. It
-// waits at most publishTimeout, so a broker that stops reading cannot hold up the job that
-// published.
-//
-// It never returns an error. Everything this publishes is a hint to another service, and the
-// operation that produced it has already succeeded -- failing it afterwards would report a
-// failure that did not happen.
+// Publish sends a message, waiting at most publishTimeout so a broker that stops reading
+// cannot hold up the caller. It logs rather than returns failures: the event is a hint, and
+// the operation that produced it already succeeded.
 func (p *Publisher) Publish(ctx context.Context, routingKey string, message any) {
 	now := time.Now()
 
@@ -179,8 +164,7 @@ func (p *Publisher) reconnect() error {
 		return fmt.Errorf("amqp: opening a channel: %w", err)
 	}
 
-	// Declared on every connect, as the Clojure service does. It is idempotent, and it means
-	// a broker that has been rebuilt does not need this service restarted.
+	// Declared on every connect so a rebuilt broker does not need this service restarted.
 	err = channel.ExchangeDeclare(p.cfg.Exchange, "topic", p.cfg.Durable, p.cfg.AutoDelete, false, false, nil)
 	if err != nil {
 		channel.Close()    //nolint:errcheck // the connection is being abandoned
@@ -193,9 +177,8 @@ func (p *Publisher) reconnect() error {
 	return nil
 }
 
-// Close releases the connection. It gives up after the publish timeout if a publish blocked by
-// the broker still holds the lock, so that shutdown cannot hang on it; the process is
-// exiting, and the connection goes with it.
+// Close releases the connection, giving up after the publish timeout if a publish blocked by
+// the broker still holds the lock, so shutdown cannot hang on it.
 func (p *Publisher) Close() {
 	select {
 	case p.lock <- struct{}{}:

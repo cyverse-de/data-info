@@ -87,7 +87,6 @@ func TestLowercaseQueryParams(t *testing.T) {
 	}
 }
 
-// TestHasUpperIgnoresValues documents why the fast path only inspects names.
 func TestHasUpperIgnoresValues(t *testing.T) {
 	tests := []struct {
 		raw  string

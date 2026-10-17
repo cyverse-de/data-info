@@ -1,8 +1,5 @@
-// Package metadata talks to the metadata service, which holds the template AVUs the DE
-// manages.
-//
-// Those are separate from the AVUs iRODS itself stores. A data item has both, this service
-// owns neither half completely, and several endpoints return them merged.
+// Package metadata talks to the metadata service, which holds the DE's template AVUs. These
+// are separate from the AVUs iRODS stores, though several endpoints return the two merged.
 package metadata
 
 import (
@@ -54,12 +51,8 @@ func New(base string, timeout time.Duration) (*Client, error) {
 	return &Client{base: parsed, http: &http.Client{Timeout: timeout}}, nil
 }
 
-// ListAVUs returns the metadata service's view of an item, decoded only as far as is needed
-// to merge iRODS' own AVUs into it.
-//
-// The body is passed through rather than modelled. Its shape is the metadata service's to
-// change, several of its fields mean nothing here, and a struct would silently drop whatever
-// this service has not been taught about.
+// ListAVUs returns the metadata service's view of an item as a map rather than a struct, so
+// fields this service does not model survive the round trip.
 func (c *Client) ListAVUs(ctx context.Context, user, targetType, targetID string) (map[string]any, error) {
 	body, err := c.do(ctx, http.MethodGet, c.avusURL(user, targetType, targetID), nil)
 	if err != nil {

@@ -1,8 +1,5 @@
 // Package notifications tells the notification agent that a long-running data operation
-// finished, so the user sees it in the DE rather than having to watch a folder.
-//
-// The message bodies are user-visible text and the DE renders them verbatim, so the wording
-// here is copied from the Clojure service rather than improved on.
+// finished. The DE shows the text verbatim; its wording is copied from the Clojure service.
 package notifications
 
 import (
@@ -122,10 +119,7 @@ func Move(user string, sources, destinations []string, failed bool) Message {
 	}
 }
 
-// Rename reports a completed rename.
-//
-// Both lists hold exactly one path, and the wording says so; the signature keeps the lists
-// because the Clojure service's does, and because a rename is a move of one thing.
+// Rename reports a completed rename; each list holds exactly one path.
 func Rename(user string, sources, destinations []string, failed bool) Message {
 	source, destination := first(sources), first(destinations)
 
@@ -150,10 +144,8 @@ func Trash(user string, sources, destinations []string, failed bool) Message {
 	}
 }
 
-// Delete reports paths removed outright.
-//
-// The payload names the user's trash rather than what was deleted, because the deleted paths
-// no longer exist.
+// Delete reports paths removed outright. Its payload names the user's trash, since the deleted
+// paths no longer exist.
 func Delete(user string, sources []string, layout paths.Layout, failed bool) Message {
 	return Message{
 		Type:    notificationType,

@@ -64,8 +64,8 @@ func TestGetPropagatesError(t *testing.T) {
 	}
 }
 
-// TestGetContextBoundsOnlyTheWait is the distinction that matters when several callers
-// share a value: one giving up must not cancel the work the others are waiting for.
+// TestGetContextBoundsOnlyTheWait checks that one caller giving up does not cancel work
+// others are waiting for.
 func TestGetContextBoundsOnlyTheWait(t *testing.T) {
 	release := make(chan struct{})
 	v := Go(context.Background(), nil, func(context.Context) (int, error) {
@@ -127,9 +127,8 @@ func TestResolvedAndFailed(t *testing.T) {
 	}
 }
 
-// TestSemaphoreBoundsConcurrency covers the reason the semaphore is acquired inside the
-// goroutine: dispatching many lookups must not block the dispatcher, but only so many may
-// actually run.
+// TestSemaphoreBoundsConcurrency checks that dispatching never blocks, yet only as many
+// lookups run as the semaphore allows.
 func TestSemaphoreBoundsConcurrency(t *testing.T) {
 	const (
 		limit = 2
@@ -188,9 +187,8 @@ func TestAwaitReturnsFirstError(t *testing.T) {
 	}
 }
 
-// TestGoRecoversAPanic covers the computation's own goroutine, which no handler's recover
-// can reach: a panic there would end the process. It also has to release the semaphore, or
-// every later lookup would wait on a slot nobody returns.
+// TestGoRecoversAPanic covers the computation's goroutine, which no handler's recover can
+// reach. It must also release the semaphore, or later lookups would wait forever.
 func TestGoRecoversAPanic(t *testing.T) {
 	sem := semaphore.NewWeighted(1)
 

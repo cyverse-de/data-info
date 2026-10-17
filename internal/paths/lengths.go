@@ -1,7 +1,7 @@
 package paths
 
-// The limits iRODS names are held to. They come from clj-jargon, which the Clojure service
-// validated every write against, and they are what the ERR_BAD_*_LENGTH codes report.
+// Path length limits, taken from clj-jargon (the Clojure iRODS library); the ERR_BAD_*_LENGTH
+// codes report them.
 const (
 	// MaxPathLength bounds a whole path.
 	MaxPathLength = 1067
@@ -9,8 +9,7 @@ const (
 	// MaxDirLength bounds the collection part of a path.
 	MaxDirLength = 640
 
-	// MaxFilenameLength bounds the last component. It is what is left of a path once the
-	// collection has taken its share, which is how clj-jargon derives it.
+	// MaxFilenameLength bounds the last component: what a full-length collection leaves of a path.
 	MaxFilenameLength = MaxPathLength - MaxDirLength
 )
 
@@ -28,11 +27,8 @@ const (
 	LengthBasename LengthViolation = "basename"
 )
 
-// CheckLength reports the first limit a path exceeds.
-//
-// The order is the Clojure service's: the whole path first, then the collection, then the
-// last component. A path can break more than one, and which one is reported is part of what
-// callers see.
+// CheckLength reports the first limit a path exceeds. The check order matters: it decides
+// which error callers see for a path that breaks several limits.
 func CheckLength(p string) LengthViolation {
 	switch {
 	case len(p) > MaxPathLength:

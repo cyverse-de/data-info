@@ -9,21 +9,10 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// IdleTimeout applies a per-request idle timeout to the connection.
-//
-// This replaces the Clojure service's Jetty customizer (src/data_info/util/jetty.clj),
-// which called Endpoint.setIdleTimeout with a short budget for ordinary requests and a
-// long one for the upload endpoints.
-//
-// The semantics that matter are *idle*, not absolute. A plain deadline would cap the total
-// duration of a request, so a large download -- which is not an upload route and so gets
-// the short budget -- would be truncated mid-transfer once it exceeded the budget, no
-// matter how healthy the connection was. An idle timeout instead fires only when nothing
-// has moved for the whole budget, so a transfer that keeps making progress runs as long as
-// it needs to.
-//
-// isLong decides which budget a request gets. It runs after routing, so it can match on
-// the matched route rather than the raw path.
+// IdleTimeout fails a request once no bytes have moved for its budget: long for the requests
+// isLong selects (uploads), normal otherwise. It is idle-based rather than a fixed deadline so
+// a large download that keeps progressing on the normal budget is not cut off. isLong runs
+// after routing, so it can match on the route.
 func IdleTimeout(normal, long time.Duration, isLong func(echo.Context) bool) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
@@ -36,8 +25,8 @@ func IdleTimeout(normal, long time.Duration, isLong func(echo.Context) bool) ech
 			ext := &extender{rc: rc, budget: budget}
 
 			if !ext.extend() {
-				// The writer cannot take deadlines -- an httptest recorder, say. Nothing
-				// to enforce, so serve the request rather than failing it.
+				// The writer cannot take deadlines (e.g. an httptest recorder), so serve
+				// the request unenforced.
 				return next(c)
 			}
 
@@ -57,9 +46,8 @@ type extender struct {
 	rc     *http.ResponseController
 	budget time.Duration
 
-	// last is when the deadline was most recently set. Refreshing on every read and
-	// write would mean two syscalls per buffer, so it is refreshed only once the budget
-	// is a quarter spent -- close enough to an idle timeout, cheap enough to ignore.
+	// last is when the deadline was last set. It is refreshed only once a quarter of the
+	// budget is spent, to avoid two syscalls per buffer.
 	last time.Time
 }
 

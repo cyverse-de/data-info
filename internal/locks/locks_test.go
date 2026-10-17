@@ -34,14 +34,11 @@ func TestConflicts(t *testing.T) {
 		{"an ancestor of a locked path", "/z/home/u", "/z/home/u/a/b", true},
 		{"unrelated siblings", "/z/home/u/a", "/z/home/u/b", false},
 
-		// An empty string is not a path. Treated as one it is a prefix of everything, so a
-		// single blank entry in a request would collide with the whole zone.
+		// Treated as a path, an empty string would collide with the whole zone.
 		{"an empty path against a real one", "", "/z/home/u/a", false},
 		{"two empty paths", "", "", false},
 
-		// The Clojure service compares against a path plus a slash without requiring the
-		// match to end on a component boundary, so it calls these conflicts. They are not:
-		// /ab is not inside /a, in either direction.
+		// Prefix matches must end on a component boundary: /ab is not inside /a.
 		{"a sibling whose name extends the other", "/z/home/u/a", "/z/home/u/ab", false},
 		{"the same, reversed", "/z/home/u/ab", "/z/home/u/a", false},
 		{"a deep path under a same-prefixed sibling", "/z/home/u/ab/c", "/z/home/u/a", false},
@@ -52,8 +49,7 @@ func TestConflicts(t *testing.T) {
 			if got := Conflicts(tc.a, tc.b); got != tc.want {
 				t.Errorf("Conflicts(%q, %q) = %v, want %v", tc.a, tc.b, got, tc.want)
 			}
-			// The relation has to be symmetric, or which argument came from the request
-			// would change the answer.
+			// Symmetric, so it does not matter which argument came from the request.
 			if got := Conflicts(tc.b, tc.a); got != tc.want {
 				t.Errorf("Conflicts(%q, %q) = %v, want %v (not symmetric)", tc.b, tc.a, got, tc.want)
 			}
@@ -129,8 +125,7 @@ func TestLockedPaths(t *testing.T) {
 			want: nil,
 		},
 		{
-			// A task written oddly must not take the whole lock check down with it: that
-			// would block every write in the DE.
+			// One oddly written task must not break the check and block every write.
 			name: "data of the wrong shape is skipped rather than failing",
 			task: asynctasks.Task{
 				Type: asynctasks.TypeMove,
@@ -239,8 +234,7 @@ func TestValidate(t *testing.T) {
 	}
 }
 
-// Selecting unfinished work needs both halves of the filter. The date alone excludes exactly
-// the tasks that matter, because theirs is null.
+// Selecting unfinished work needs IncludeNullEnd as well as the end date.
 func TestValidateAsksForUnfinishedWork(t *testing.T) {
 	reader := &fakeReader{}
 

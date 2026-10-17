@@ -251,9 +251,8 @@ func TestNewRejectsAnUnusableBaseURL(t *testing.T) {
 	}
 }
 
-// The "complete" flag is what makes the stall timeout release a dead task's paths. Without it
-// the timeout records the stall and stops, leaving the end date null -- which is exactly what
-// holds the lock. The Clojure service omits it; this asserts that we do not.
+// Without the "complete" flag a stall timeout leaves the end date null, locking a dead task's
+// paths forever.
 func TestStallBehaviorCompletesTheTask(t *testing.T) {
 	behavior := StallBehavior()
 
@@ -261,8 +260,7 @@ func TestStallBehaviorCompletesTheTask(t *testing.T) {
 		t.Errorf("type = %q, want %q", behavior.Type, BehaviorStatusChangeTimeout)
 	}
 
-	// Round-tripped through JSON, because that is how async-tasks reads it: the processor
-	// decodes the data into its own struct, so what matters is the wire shape.
+	// Checked on the wire, since the async-tasks processor decodes it into its own struct.
 	encoded, err := json.Marshal(behavior)
 	if err != nil {
 		t.Fatalf("encoding the behavior: %v", err)
@@ -283,8 +281,7 @@ func TestStallBehaviorCompletesTheTask(t *testing.T) {
 		t.Fatalf("decoding the behavior: %v", err)
 	}
 
-	// Every status a live task can sit at needs a rule, or a task stuck there is never timed
-	// out and locks its paths for good.
+	// A live status without a rule is never timed out.
 	want := []string{StatusRegistered, StatusStarted, StatusRunning}
 	if len(decoded.Data.Statuses) != len(want) {
 		t.Fatalf("statuses = %d, want %d", len(decoded.Data.Statuses), len(want))

@@ -22,10 +22,8 @@ type Layout struct {
 // UserHome is a user's home collection.
 func (l Layout) UserHome(user string) string { return join(l.Home, user) }
 
-// TrashBase is the collection all trash lives under.
-//
-// iRODS puts it at /<zone>/trash/home, which is a sibling of the home collection rather
-// than a child, so it is derived from the zone rather than from Home.
+// TrashBase is the collection all trash lives under: /<zone>/trash/home, a sibling of Home
+// rather than a child, so it is derived from the zone.
 func (l Layout) TrashBase() string { return join("/"+l.Zone, "trash", "home") }
 
 // UserTrash is a user's trash collection.
@@ -47,11 +45,8 @@ func (l Layout) IsCommunityData(p string) bool { return equal(p, l.CommunityData
 // InTrash reports whether a path is anywhere under the trash collection.
 func (l Layout) InTrash(p string) bool { return strings.HasPrefix(p, l.TrashBase()) }
 
-// Label is what the UI calls a path.
-//
-// The three special collections get names rather than their basename, because their
-// basenames are meaningless to a user: a user's trash is named after them, and the home
-// collection is where other people's shares appear.
+// Label is what the UI calls a path. Special collections get names because their basenames
+// mean nothing to a user.
 func (l Layout) Label(user, p string) string {
 	switch {
 	case l.IsUserTrash(user, p):
@@ -66,7 +61,7 @@ func (l Layout) Label(user, p string) string {
 }
 
 // IsBasePath reports whether a path is one of the special collections a path list may not be
-// built from. The user's own home is not one, matching the Clojure not-base-path.
+// built from. The user's own home is not one.
 func (l Layout) IsBasePath(user, p string) bool {
 	return l.IsUserTrash(user, p) ||
 		l.IsTrashBase(p) ||
@@ -74,10 +69,8 @@ func (l Layout) IsBasePath(user, p string) bool {
 		l.IsCommunityData(p)
 }
 
-// Base is the last element of an iRODS path.
-//
-// path rather than filepath throughout this package: iRODS paths always use forward
-// slashes, so on a platform with a different separator filepath would give wrong answers.
+// Base is the last element of an iRODS path. This package uses path, not filepath, because
+// iRODS paths always use forward slashes.
 func Base(p string) string { return path.Base(strings.TrimRight(p, "/")) }
 
 // Dir is everything but the last element of an iRODS path.

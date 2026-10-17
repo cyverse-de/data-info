@@ -11,8 +11,7 @@ import (
 	"github.com/cyverse-de/data-info/internal/worker"
 )
 
-// usageRoutingKeyPrefix is where a request to recount a user's storage is published. The
-// data-usage service consumes it; nothing else does.
+// usageRoutingKeyPrefix routes a request for the data-usage service to recount a user's storage.
 const usageRoutingKeyPrefix = "index.usage.data.user."
 
 // Progress action names for restoring.
@@ -24,14 +23,8 @@ const (
 // EmptyTrash removes everything in a user's trash for good.
 type EmptyTrash struct{ Deps Deps }
 
-// Run implements worker.Job.
-//
-// Like Delete this runs as the service's own account, so that objects the user can no longer
-// act on -- ones that arrived in their trash through a shared collection -- still go.
-//
-// A failure on one path does not stop the others. Emptying a trash is all-or-nothing to the
-// user, and stopping at the first problem would leave them with a trash that is neither empty
-// nor what it was, and no way to tell which.
+// Run implements worker.Job. It runs as the proxy account so items that reached the trash
+// through a shared collection can still be removed, and it tries every path before failing.
 func (e EmptyTrash) Run(ctx context.Context, task *asynctasks.Task, progress worker.Progress) error {
 	trashPaths, err := stringsFrom(task.Data, "trash-paths")
 	if err != nil {
@@ -62,9 +55,7 @@ func (e EmptyTrash) Run(ctx context.Context, task *asynctasks.Task, progress wor
 			progress(path, actionErrorDeleting)
 		}
 
-		// Reported whether or not the delete worked. The Clojure service puts this outside
-		// the try that catches the failure, so a path that could not be removed still gets an
-		// end-delete after its error-deleting.
+		// Reported even after a failure, so error-deleting is always followed by end-delete.
 		progress(path, actionEndDelete)
 	}
 
@@ -75,8 +66,8 @@ func (e EmptyTrash) Run(ctx context.Context, task *asynctasks.Task, progress wor
 		runErr = fmt.Errorf("%d of %d paths could not be removed from the trash", failures, len(trashPaths))
 	}
 
-	// Published either way. The user's usage has changed whether or not every path went,
-	// and the service that tracks it has no other way to find out.
+	// Published even after a failure: some paths may have gone, and data-usage has no other
+	// way to find out.
 	if e.Deps.Publisher != nil {
 		e.Deps.Publisher.Publish(ctx, usageRoutingKeyPrefix+task.Username, "Update requested by data-info")
 	}
@@ -153,9 +144,7 @@ func (r Restore) restore(
 
 		progress(path, actionBeginRestore)
 
-		// Re-checked here rather than trusted from the plan. The plan was made when the
-		// request arrived and the job may run much later, by which time something else may
-		// be sitting where this is going.
+		// Re-checked because the plan was made when the request arrived, possibly long ago.
 		stat, err := scope.Stat(ctx, destination).Get(ctx)
 		if err != nil {
 			return err
@@ -179,11 +168,8 @@ func (r Restore) restore(
 	return nil
 }
 
-// restoreParents recreates the collections something was deleted out of.
-//
-// The user is made the owner of each one that had to be created, stopping at the first that
-// already existed and at their own home. Without that they would own the restored item inside
-// collections they cannot write to, which is the same as not having it back.
+// restoreParents recreates missing parent collections and makes the user own each one it
+// created (up to their home), so they can write where the restored item lands.
 func (r Restore) restoreParents(ctx context.Context, scope *rods.Scope, user, destination string) error {
 	parent := paths.Dir(destination)
 
