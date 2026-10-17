@@ -301,8 +301,7 @@ func (f *Fake) CountChildrenBatch(ctx context.Context, q icat.BatchChildCountQue
 	return out, nil
 }
 
-// PagedFolder implements icat.Reader, sorting and paging in memory. Unlike the real store,
-// it does not support a negative (unlimited) Limit.
+// PagedFolder implements icat.Reader, sorting and paging in memory.
 func (f *Fake) PagedFolder(ctx context.Context, q icat.ListingQuery) ([]icat.ListingRow, error) {
 	f.PagedFolderCalls.Add(1)
 	if err := f.wait(ctx); err != nil {
@@ -310,6 +309,9 @@ func (f *Fake) PagedFolder(ctx context.Context, q icat.ListingQuery) ([]icat.Lis
 	}
 	if f.Err != nil {
 		return nil, f.Err
+	}
+	if q.Limit == 0 {
+		return nil, fmt.Errorf("icattest: a positive limit is required, or a negative one for no limit")
 	}
 
 	f.mu.Lock()
@@ -351,7 +353,10 @@ func (f *Fake) PagedFolder(ctx context.Context, q icat.ListingQuery) ([]icat.Lis
 	if q.Offset >= len(children) {
 		return nil, nil
 	}
-	end := min(q.Offset+q.Limit, len(children))
+	end := len(children)
+	if q.Limit > 0 {
+		end = min(q.Offset+q.Limit, end)
+	}
 
 	page := make([]icat.ListingRow, 0, end-q.Offset)
 	for _, row := range children[q.Offset:end] {
