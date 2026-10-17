@@ -57,9 +57,14 @@ func (m Move) move(
 	sources, destinations []string,
 	progress worker.Progress,
 ) error {
-	// Bracketed as the Clojure service bracketed it: the set-level validated status comes
-	// before any check, and moveOne length-checks each path.
+	// Every destination is checked before anything moves, so one over-long name fails the
+	// whole move rather than stranding it part way.
 	progress(pathsetSeveral, actionBegin)
+	for _, destination := range destinations {
+		if err := checkLength(destination); err != nil {
+			return err
+		}
+	}
 	progress(pathsetSeveral, actionValidate)
 
 	for i, source := range sources {
