@@ -43,7 +43,7 @@ func (l Layout) IsSharing(p string) bool { return equal(p, l.Home) }
 func (l Layout) IsCommunityData(p string) bool { return equal(p, l.CommunityData) }
 
 // InTrash reports whether a path is anywhere under the trash collection.
-func (l Layout) InTrash(p string) bool { return strings.HasPrefix(p, l.TrashBase()) }
+func (l Layout) InTrash(p string) bool { return IsWithin(p, l.TrashBase()) }
 
 // Label is what the UI calls a path. Special collections get names because their basenames
 // mean nothing to a user.
@@ -84,6 +84,13 @@ func Clean(p string) string { return path.Clean(p) }
 func Join(elements ...string) string { return join(elements...) }
 
 func join(elements ...string) string { return path.Join(elements...) }
+
+// IsWithin reports whether p is base or lies under it, matching whole components so that
+// /a/bc is not within /a/b.
+func IsWithin(p, base string) bool {
+	p, base = strings.TrimRight(p, "/"), strings.TrimRight(base, "/")
+	return p == base || strings.HasPrefix(p, base+"/")
+}
 
 // equal compares two paths ignoring a trailing slash on either.
 func equal(a, b string) bool {

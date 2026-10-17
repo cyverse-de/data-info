@@ -150,9 +150,7 @@ func Conflicts(a, b string) bool {
 		return false
 	}
 
-	return a == b ||
-		strings.HasPrefix(a, b+"/") ||
-		strings.HasPrefix(b, a+"/")
+	return paths.IsWithin(a, b) || paths.IsWithin(b, a)
 }
 
 // stringAt reads one string out of a task's data.

@@ -7,6 +7,7 @@ import (
 	"github.com/cyverse-de/data-info/internal/apierror"
 	"github.com/cyverse-de/data-info/internal/clients/asynctasks"
 	"github.com/cyverse-de/data-info/internal/jobs"
+	"github.com/cyverse-de/data-info/internal/paths"
 	"github.com/cyverse-de/data-info/internal/rods"
 	"github.com/cyverse-de/data-info/internal/service"
 	"github.com/labstack/echo/v4"
@@ -150,7 +151,7 @@ func (h *Writes) deletePaths(
 	for _, path := range requested {
 		// Only the caller's own trash counts; their item in someone else's trash goes to theirs
 		// and stays recoverable.
-		if path == userTrash || strings.HasPrefix(path, userTrash+"/") {
+		if paths.IsWithin(path, userTrash) {
 			continue
 		}
 
