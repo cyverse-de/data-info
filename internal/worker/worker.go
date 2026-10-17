@@ -1,14 +1,7 @@
-// Package worker runs the work that outlives the request which asked for it.
-//
-// Everything here exists to keep one invariant: a task that starts must reach a terminal
-// status. An absent end date is what holds the lock on a task's paths, so a job that dies
-// without reporting leaves those paths unusable.
-//
-// The async-tasks stall timeout is the other half of that, and only since this service began
-// registering it with "complete" set (asynctasks.StallBehavior): it releases the paths of a
-// task that stops reporting, which covers what a graceful shutdown cannot -- SIGKILL, an OOM,
-// a node disappearing. This still matters because it is the difference between releasing
-// those paths immediately and releasing them ten minutes later.
+// Package worker runs work that outlives its request and sees every started task to a
+// terminal status, since a task without an end date keeps its paths locked. The async-tasks
+// stall timeout (asynctasks.StallBehavior) releases a task a crash leaves behind, but only
+// ten minutes later.
 package worker
 
 import (
@@ -38,18 +31,12 @@ const (
 // waiting only delays that.
 const fetchTimeout = 10 * time.Second
 
-// terminalDeadline bounds the whole retry sequence for a terminal status.
-//
-// The retry budget alone does not: a hundred attempts against an unreachable service, each
-// waiting out its own HTTP timeout, would hold the job's goroutine for the best part of an
-// hour and block any shutdown for just as long. The budget decides how hard to try; this
-// decides when trying has stopped being useful.
+// terminalDeadline caps the terminal-status retries; without it, terminalRetries attempts each
+// waiting out an HTTP timeout could block shutdown for most of an hour.
 const terminalDeadline = 2 * time.Minute
 
-// progressBuffer is how many progress updates may be waiting to be sent before new ones are
-// dropped. Progress is reported per path, so a job over a large tree can produce them far
-// faster than they can be posted; dropping is the intended behaviour, because a status the
-// caller never sees is better than a job that runs at the speed of an HTTP round trip.
+// progressBuffer is how many progress updates may queue before new ones are dropped, so a job
+// over a large tree never runs at the speed of an HTTP round trip.
 const progressBuffer = 64
 
 // progressFlushDeadline bounds how long a finished job waits for its buffered progress to be
@@ -88,8 +75,7 @@ type Job interface {
 }
 
 // Notifying is a Job that tells its user how it went. Notify runs after the terminal status is
-// recorded, as the Clojure service's end-fn did, so a user acting on the notification straight
-// away does not find the task's paths still locked.
+// recorded, so a user acting on the notification doesn't find the paths still locked.
 type Notifying interface {
 	Notify(ctx context.Context, task *asynctasks.Task, failed bool)
 }
@@ -120,7 +106,6 @@ type Runner struct {
 	mu       sync.Mutex
 	stopping bool
 
-	// heartbeatInterval and heartbeatMaxSilence; see WithHeartbeat.
 	heartbeatInterval   time.Duration
 	heartbeatMaxSilence time.Duration
 }
@@ -128,13 +113,8 @@ type Runner struct {
 // Option configures a Runner.
 type Option func(*Runner)
 
-// WithHeartbeat sets how often a job that has posted nothing is reported as still running,
-// and how long a job may stay silent before that stops.
-//
-// The heartbeat is what keeps the stall timeout from releasing the paths of a job that is
-// busy in one long iRODS call, such as a recursive delete, which reports nothing until it
-// returns. It shows only that the process is alive, not that the call is progressing, so
-// maxSilence caps it: past that, a job is treated as hung and the stall timeout releases it.
+// WithHeartbeat sets how often a silent job is reported as running, so the stall timeout
+// doesn't release one busy in a long iRODS call. After maxSilence the job is treated as hung.
 func WithHeartbeat(interval, maxSilence time.Duration) Option {
 	return func(r *Runner) {
 		r.heartbeatInterval = interval
@@ -161,8 +141,7 @@ func NewRunner(tasks Tasks, log *logrus.Entry, instance string, opts ...Option) 
 	return r
 }
 
-// InstanceID names this process the way the Clojure service names it: by hostname, which in a
-// cluster is the pod name.
+// InstanceID names this process by hostname, which in a cluster is the pod name.
 func InstanceID() string {
 	if host, err := os.Hostname(); err == nil && host != "" {
 		return host
@@ -198,10 +177,8 @@ func (r *Runner) Start(taskID, name string, job Job) error {
 func (r *Runner) run(taskID, name string, job Job) {
 	log := r.log.WithFields(logrus.Fields{"task": asynctasks.NormalizeID(taskID), "job": name})
 
-	// Not r.ctx. Shutdown cancels that, and a job started by a request that was still in
-	// flight when the listener closed would then fail to read its own task -- leaving the
-	// record with no end date and its paths locked by the very shutdown meant to release
-	// them.
+	// Not r.ctx: Shutdown cancels it, and a job started by a request still in flight would
+	// then fail to read its task and leave its paths locked.
 	fetchCtx, cancelFetch := context.WithTimeout(context.WithoutCancel(r.ctx), fetchTimeout)
 	task, err := r.tasks.GetByID(fetchCtx, taskID)
 	cancelFetch()

@@ -5,10 +5,9 @@
 # env name is the key path uppercased with dots replaced by underscores, prefixed with
 # DISCOENV_. So irods.password is DISCOENV_IRODS_PASSWORD.
 #
-# Secrets belong in the environment or the dotenv file, not here. The two passwords below
-# are required: unlike the Clojure service, which defaulted both to "notprod", this service
-# refuses to start without them. anonfiles.baseurl, anonfiles.mappings and
-# kifshare.externalurl are required too, matching the Clojure service.
+# Secrets belong in the environment or the dotenv file, not here. Required, with no default:
+# irods.password, icat.password, anonfiles.baseurl, anonfiles.mappings and
+# kifshare.externalurl. The service refuses to start without them.
 
 port: 60000
 

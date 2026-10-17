@@ -4,8 +4,7 @@ package apierror
 // appears verbatim in response bodies, so these values are a wire contract.
 type Code string
 
-// Codes defined by clojure-commons (clojure_commons/error_codes.clj). Only the subset
-// data-info actually emits is declared here; add others as endpoints need them.
+// Codes from the DE's shared vocabulary. Only those data-info emits are declared.
 const (
 	ErrBadOrMissingField  Code = "ERR_BAD_OR_MISSING_FIELD"
 	ErrBadQueryParameter  Code = "ERR_BAD_QUERY_PARAMETER"
@@ -34,9 +33,7 @@ const (
 	ErrUnavailable        Code = "ERR_UNAVAILABLE"
 	ErrUncheckedException Code = "ERR_UNCHECKED_EXCEPTION"
 
-	// Codes used by the Clojure service that clojure-commons never defined. They are
-	// bare strings there, so http-status-for has no entry for them and they can only
-	// ever produce a 500. Reproduced deliberately; see statusFor.
+	// Codes outside the shared vocabulary. statusFor maps all of them to 500.
 	ErrBadBasenameLength Code = "ERR_BAD_BASENAME_LENGTH"
 	ErrBadDirnameLength  Code = "ERR_BAD_DIRNAME_LENGTH"
 	ErrBadPathLength     Code = "ERR_BAD_PATH_LENGTH"

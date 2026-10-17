@@ -125,8 +125,7 @@ func TestStatusEndpoint(t *testing.T) {
 	}
 }
 
-// TestDocsURL pins the shape clojure-commons' get-docs-status produced: always http, and
-// always with the port.
+// TestDocsURL pins docs-url's legacy shape: always http, always with the port.
 func TestDocsURL(t *testing.T) {
 	e := testServer(t)
 
@@ -286,7 +285,6 @@ func TestUploadTimeoutExceedsRequestTimeout(t *testing.T) {
 	}
 }
 
-// TestStatusReportsIRODSReachability covers the iRODS flag in both directions.
 func TestStatusReportsIRODSReachability(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -340,8 +338,8 @@ func TestResponsesHaveNoTrailingNewline(t *testing.T) {
 	}
 }
 
-// TestStatusBodyMatchesCapturedShape compares GET / against the response captured from the
-// running QA service, so the key set and their order cannot drift.
+// TestStatusBodyMatchesCapturedShape keeps GET /'s key set and order matching a captured
+// response.
 func TestStatusBodyMatchesCapturedShape(t *testing.T) {
 	captured, err := os.ReadFile(filepath.Join("..", "..", "testdata", "contract", "status-clojure.json"))
 	if err != nil {
@@ -357,8 +355,7 @@ func TestStatusBodyMatchesCapturedShape(t *testing.T) {
 	}
 }
 
-// keyOrder returns the top-level JSON keys in the order they appear, which is what a
-// byte-level diff against the Clojure service is sensitive to.
+// keyOrder returns the top-level JSON keys in order of appearance.
 func keyOrder(t *testing.T, body []byte) string {
 	t.Helper()
 
@@ -397,9 +394,7 @@ func keyOrder(t *testing.T, body []byte) string {
 	return strings.Join(keys, ",")
 }
 
-// TestBlankExpectingIsRejected matches the Clojure route, which types expecting as an
-// optional NonBlankString. Supplying the parameter with a blank value fails schema
-// coercion there rather than being treated as absent.
+// TestBlankExpectingIsRejected: a blank expecting parameter is a 400, not treated as absent.
 func TestBlankExpectingIsRejected(t *testing.T) {
 	e := testServerWithDeps(t, Deps{IRODSProbe: stubProber(nil), ICATProbe: stubProber(nil)})
 

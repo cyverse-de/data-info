@@ -2,13 +2,10 @@ package metadatafiles
 
 import "testing"
 
-// Both golden files here were produced by clojure.data.xml, which wrote every one of these
-// documents that already exists in the data store. They pin the two things a Go port gets
-// wrong by default: which characters are escaped, and when an element is self-closed.
+// TestEmptyElementsMatchTheReference pins when an element self-closes. Both goldens here came
+// from clojure.data.xml, which wrote the existing documents.
 func TestEmptyElementsMatchTheReference(t *testing.T) {
-	// An element given no content is self-closed; one given the empty string is not. Getting
-	// this backwards produced a resource map that differed from the Clojure service on every
-	// rdf:type element.
+	// No content self-closes; an empty string does not.
 	got := Render(Elem("root", nil,
 		Elem("nochildren", []Attr{{Name: "a", Value: "1"}}),
 		Text("emptystring", nil, ""),
@@ -22,8 +19,8 @@ func TestEmptyElementsMatchTheReference(t *testing.T) {
 	}
 }
 
-// The standard library escapes quotation marks, apostrophes, tabs and newlines that the
-// Clojure service leaves alone, which is why encoding/xml cannot write these documents.
+// encoding/xml escapes quotes, apostrophes, tabs and newlines that the existing files leave
+// literal.
 func TestEscapingMatchesTheReference(t *testing.T) {
 	const tricky = "amp& lt< gt> quote\" apos' tab\there nl\nthere cr\rthere"
 
@@ -50,8 +47,6 @@ func TestAttributeOrderIsPreserved(t *testing.T) {
 	}
 }
 
-// Absent children are passed as nil so a document's optional parts can be written as a flat
-// list rather than a chain of conditionals.
 func TestNilChildrenAreDropped(t *testing.T) {
 	got := Render(Elem("x", nil, nil, Text("kept", nil, "yes"), nil))
 

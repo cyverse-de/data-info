@@ -10,9 +10,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// requiredYAML is the smallest configuration that validates: the three settings the
-// Clojure service declared with defprop-str, plus the two passwords. Everything else in a
-// test that uses it is exercising a default.
+// requiredYAML is the smallest configuration that validates: the settings with no default,
+// plus the two passwords. Everything else in a test that uses it is exercising a default.
 const requiredYAML = `
 anonfiles:
   baseurl: https://example.org/anon-files/
@@ -323,8 +322,8 @@ icat:
 	}
 }
 
-// TestLegacyMapValuesAreStrings covers the properties-file shape callers diff against:
-// numbers and booleans came back quoted.
+// TestLegacyMapValuesAreStrings: every LegacyMap value is a string, numbers and booleans
+// included.
 func TestLegacyMapValuesAreStrings(t *testing.T) {
 	m := mustLoadYAML(t, requiredYAML).LegacyMap()
 

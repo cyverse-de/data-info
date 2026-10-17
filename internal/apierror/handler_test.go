@@ -151,8 +151,7 @@ func TestHTTPErrorHandler(t *testing.T) {
 	}
 }
 
-// TestUnrecognizedPath pins the not-found body, which is deliberately not the error
-// envelope -- it matches data_info.util.service/unrecognized-path-response.
+// TestUnrecognizedPath pins the not-found body, which is deliberately not the error envelope.
 func TestUnrecognizedPath(t *testing.T) {
 	e := newTestEcho()
 	rec := httptest.NewRecorder()
@@ -167,7 +166,6 @@ func TestUnrecognizedPath(t *testing.T) {
 	}
 }
 
-// TestCanceledRequestWritesNothing covers the client-hung-up case.
 func TestCanceledRequestWritesNothing(t *testing.T) {
 	e := newTestEcho()
 	e.GET("/x", func(echo.Context) error { return context.Canceled })
@@ -180,12 +178,8 @@ func TestCanceledRequestWritesNothing(t *testing.T) {
 	}
 }
 
-// TestContentTypeMatchesTheReference pins the header every response carries.
-//
-// All three answers were measured against the running QA service on 2026-08-24 rather than
-// reasoned about, because two of them are surprising: an error that reaches the Clojure
-// service's default exception handler carries no content type at all, and the
-// unrecognised-path body is labelled text/html despite being JSON.
+// TestContentTypeMatchesTheReference pins each error's Content-Type, including the
+// surprising ones: none for a StyleOK handler error, text/html for the JSON not-found body.
 func TestContentTypeMatchesTheReference(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -240,9 +234,7 @@ func TestContentTypeMatchesTheReference(t *testing.T) {
 	}
 }
 
-// TestUnrecognizedPathIsLabelledHTML covers the content type on the not-found body, which is
-// text/html for a body that is plainly JSON. It comes from compojure's route/not-found with
-// nothing overriding the default, and callers see it on every unknown path.
+// TestUnrecognizedPathIsLabelledHTML pins the text/html label on the JSON not-found body.
 func TestUnrecognizedPathIsLabelledHTML(t *testing.T) {
 	e := newTestEcho()
 	rec := httptest.NewRecorder()
@@ -253,12 +245,8 @@ func TestUnrecognizedPathIsLabelledHTML(t *testing.T) {
 	}
 }
 
-// TestWrongMethodIsAnUnrecognizedPath covers a status difference, not just a header.
-//
-// compojure matches a route on its method and path together, so a request with the wrong
-// method does not match and falls through to route/not-found. echo answers 405 by default,
-// which would have been a different status and a different body for the same request --
-// verified against the running service, which answers DELETE on a GET route with a 404.
+// TestWrongMethodIsAnUnrecognizedPath pins that a wrong method gets the unknown-path 404, not
+// echo's default 405.
 func TestWrongMethodIsAnUnrecognizedPath(t *testing.T) {
 	e := newTestEcho()
 	e.GET("/x", func(c echo.Context) error { return c.NoContent(http.StatusOK) })
@@ -278,12 +266,8 @@ func TestWrongMethodIsAnUnrecognizedPath(t *testing.T) {
 	}
 }
 
-// TestNoContentTypeMeansNoHeader covers the difference between not setting a content type and
-// saying there is none.
-//
-// net/http sniffs the bytes written and supplies one when the header is absent, so the
-// obvious implementation sent "text/plain; charset=utf-8" on every response the Clojure
-// service sends bare. A shadow run against QA reported it on twenty-two cases.
+// TestNoContentTypeMeansNoHeader checks that net/http doesn't sniff in a Content-Type when
+// none is wanted.
 func TestNoContentTypeMeansNoHeader(t *testing.T) {
 	e := newTestEcho()
 	e.GET("/x", func(echo.Context) error { return New(ErrDoesNotExist) }, WithStyle(StyleOK))
@@ -314,12 +298,8 @@ func TestNoContentTypeMeansNoHeader(t *testing.T) {
 	}
 }
 
-// TestHeadContentTypeDependsOnWhoRejected covers both halves of the HEAD contract.
-//
-// A request rejected before the handler is rendered by the validation middleware and carries
-// a content type; one the handler answers itself carries none, because id-entry returns
-// ring's bare not-found and unprocessable-entity. A shadow run reported each half in turn --
-// first setting no type at all, then setting it on both.
+// TestHeadContentTypeDependsOnWhoRejected: a HEAD rejected by validation carries the JSON
+// Content-Type, and one the handler rejects carries none.
 func TestHeadContentTypeDependsOnWhoRejected(t *testing.T) {
 	tests := []struct {
 		name string
@@ -361,9 +341,8 @@ func TestHeadContentTypeDependsOnWhoRejected(t *testing.T) {
 	}
 }
 
-// TestWrongMethodSendsNoAllowHeader completes the method-mismatch port. echo's router sets
-// Allow before the handler runs; the Clojure service sends none, because it does not treat a
-// mismatched method as a method problem at all.
+// TestWrongMethodSendsNoAllowHeader checks that echo's Allow header is dropped, since a wrong
+// method answers as an unknown path.
 func TestWrongMethodSendsNoAllowHeader(t *testing.T) {
 	e := newTestEcho()
 	e.GET("/x", func(c echo.Context) error { return c.NoContent(http.StatusOK) })

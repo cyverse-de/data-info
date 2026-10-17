@@ -30,8 +30,6 @@ spec:
       containers:
         - name: data-info
           image: harbor.cyverse.org/de/data-info
-          # A quarter of the Clojure service's memory and a tenth of its CPU floor. The JVM
-          # numbers were sized around a heap and a JIT; this process has neither.
           resources:
             requests:
               cpu: "100m"

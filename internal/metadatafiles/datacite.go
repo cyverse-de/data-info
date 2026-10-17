@@ -5,12 +5,8 @@ import (
 	"strings"
 )
 
-// The DataCite schema this service emits.
-//
-// Kernel 3, not 4. The library the Clojure service calls has a 4.2 implementation as well,
-// but the service requires the kernel-3 namespace, and every file already in the data store
-// carries it -- so that is what this writes. Changing it is a DataONE-visible decision, not a
-// port detail.
+// DataCite kernel 3, which every existing file in the data store carries. Moving to 4.x is a
+// DataONE-visible change.
 const (
 	dataciteNamespace  = "http://datacite.org/schema/kernel-3"
 	xsiNamespace       = "http://www.w3.org/2001/XMLSchema-instance"
@@ -31,8 +27,8 @@ func (e *MissingAttributesError) Error() string {
 	return "missing required attributes: " + strings.Join(e.Attributes, ", ")
 }
 
-// requiredAttributes are what a DataCite document cannot be built without. The order is the
-// one the Clojure service reports them in.
+// requiredAttributes are what a DataCite document cannot be built without, in the order they
+// are reported missing.
 var requiredAttributes = []string{
 	"Identifier", "identifierType",
 	"datacite.creator", "creatorAffiliation",
@@ -42,11 +38,8 @@ var requiredAttributes = []string{
 	"datacite.resourcetype",
 }
 
-// BuildDataCite renders a data set's AVUs as a DataCite document.
-//
-// The element order is fixed by the schema and reproduced exactly: the six required elements
-// in their required order, then the optional ones in the order the Clojure service generates
-// them. Reordering would produce a document DataONE rejects.
+// BuildDataCite renders a data set's AVUs as a DataCite document. Its element order matches
+// the existing files; don't reorder.
 func BuildDataCite(avus []AVU) (string, error) {
 	if missing := missingAttributes(avus); len(missing) > 0 {
 		return "", &MissingAttributesError{Attributes: missing}
@@ -364,8 +357,7 @@ func (a association) rows(avus []AVU) [][]string {
 		out = append(out, row)
 	}
 
-	// Leading rows that are entirely blank are dropped, which is what the Clojure service
-	// does.
+	// Only leading all-blank rows are dropped, matching the legacy Clojure service.
 	for len(out) > 0 && allBlank(out[0]) {
 		out = out[1:]
 	}

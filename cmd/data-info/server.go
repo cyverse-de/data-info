@@ -84,14 +84,8 @@ func buildServer(cfg *config.Config, version string, log *logrus.Entry, deps Dep
 	return e
 }
 
-// registerDataRoutes mounts the data endpoints.
-//
-// The error style on each route is not decoration. The Clojure service wrote its handlers
-// two ways, and they answer differently for the same error_code: a route wrapped in svc/trap
-// uses the status table, while one returning (ok ...) lets the thrown map reach the default
-// exception handler, which answers 500 whatever the code. So ERR_NOT_OWNER is 403 on
-// /permissions-gatherer and 500 on /path-info. Marking the routes wrongly would change
-// statuses that the port is meant to preserve exactly.
+// registerDataRoutes mounts the data endpoints. Routes given ok are StyleOK, so a route's style
+// changes its statuses: ERR_NOT_OWNER is 403 on /permissions-gatherer but 500 on /path-info.
 func registerDataRoutes(e *echo.Echo, cfg *config.Config, log *logrus.Entry, deps Deps) {
 	if deps.ICAT == nil || deps.IRODS == nil {
 		// Nothing to serve them with. The status endpoints still work, which is what a
@@ -151,7 +145,6 @@ func registerDataRoutes(e *echo.Echo, cfg *config.Config, log *logrus.Entry, dep
 	listings := handlers.NewListings(hd)
 	writes := handlers.NewWrites(hd)
 
-	// (ok ...) routes in the Clojure service: every error_code answers 500.
 	ok := apierror.WithStyle(apierror.StyleOK)
 	e.POST("/stat-gatherer", stats.GatherPlain, ok)
 	e.POST("/path-info", stats.Gather, ok)
@@ -160,7 +153,6 @@ func registerDataRoutes(e *echo.Echo, cfg *config.Config, log *logrus.Entry, dep
 	e.POST("/creatability-marker", reads.Creatability, ok)
 	e.GET("/navigation/root", listings.Root, ok)
 
-	// svc/trap routes: the status table applies.
 	e.POST("/permissions-gatherer", reads.Permissions)
 	e.POST("/data/directories", writes.CreateDirectories)
 	e.GET("/users/:username/groups", reads.UserGroups)
@@ -188,14 +180,7 @@ func registerDataRoutes(e *echo.Echo, cfg *config.Config, log *logrus.Entry, dep
 	// StyleTrap, unlike /navigation/path/:zone/*: a missing limit answers 400.
 	e.GET("/data/path/:zone/*", listings.FolderListing)
 
-	// The upload routes are trap-wrapped in the Clojure service, but every error they can
-	// raise comes from the multipart middleware that stores the file, which sits outside the
-	// trap -- so those errors reach the default handler and answer 500 whatever their code.
-	// Verified against the running service, which answers a forbidden filename with a 500
-	// where the status table says 400.
-	//
-	// Both spellings of the create route, because the Clojure route is a "/" inside a /data
-	// context and compojure matches it with and without the trailing slash.
+	// Both spellings of the create route are part of the API.
 	e.POST("/data", writes.Upload, ok)
 	e.POST("/data/", writes.Upload, ok)
 	e.PUT("/data/:data-id", writes.Overwrite, ok)
@@ -223,15 +208,11 @@ func registerDataRoutes(e *echo.Echo, cfg *config.Config, log *logrus.Entry, dep
 	e.PUT("/data/:data-id/permissions/:share-with/:permission", writes.AddPermission)
 	e.DELETE("/data/:data-id/permissions/:unshare-with", writes.RemovePermission)
 
-	// Tickets. These are (ok ...) routes in the Clojure service, so every error code answers
-	// 500.
 	tickets := handlers.NewTickets(hd)
 	e.POST("/tickets", tickets.Add, ok)
 	e.POST("/ticket-lister", tickets.List, ok)
 	e.POST("/ticket-deleter", tickets.Delete, ok)
 
-	// Groups. These are (ok ...) routes too, except that the forbidden response pins its own
-	// status because the route documents a 403 explicitly.
 	groups := handlers.NewGroups(hd)
 	e.POST("/groups", groups.Create, ok)
 	e.GET("/groups/:group-name", groups.Get, ok)
@@ -321,13 +302,9 @@ func networkDeps(pool *irodsclient.Pool, store icat.Store) Deps {
 	}
 }
 
-// cachedProber reuses a probe result for a while.
-//
-// GET / reports backend health on every call and is hit by both k8s probes on every pod,
-// plus anything else watching the service. An uncached catalog probe would take a
-// connection from the same modest pool the bulk queries depend on, every time -- so under
-// the load where readiness matters most, the probe would queue behind real work, exceed its
-// timeout, and flap. The iRODS probe is cached for the same reason.
+// cachedProber reuses a probe result for ttl. Both k8s probes hit GET / on every pod, and an
+// uncached catalog probe would compete with bulk queries for pool connections and flap under
+// load.
 func cachedProber(ttl time.Duration, probe func(context.Context) error) handlers.Prober {
 	var (
 		mu     sync.Mutex

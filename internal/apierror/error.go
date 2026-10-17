@@ -1,9 +1,6 @@
-// Package apierror reproduces the DE error envelope: a JSON object whose error_code
-// names the failure and whose remaining keys carry failure-specific detail.
-//
-// The envelope, the error_code vocabulary and the HTTP statuses are all wire contract
-// shared with terrain, apps, analyses and search. This package is a deliberate,
-// behaviour-preserving port of the Clojure implementation, warts included; see statusFor.
+// Package apierror renders the DE error envelope: a JSON object whose error_code names the
+// failure and whose other keys carry detail. The envelope, codes and statuses are a wire
+// contract with terrain, apps, analyses and search.
 package apierror
 
 import (
@@ -13,15 +10,9 @@ import (
 	"sort"
 )
 
-// Error is a DE error response. Extra holds the failure-specific keys, which are
-// emitted at the top level of the JSON object alongside error_code.
-//
-// Extra is an open map rather than a struct because the key names are inherited from
-// Clojure and include hyphenated ones such as "ticket-id", and because different
-// endpoints attach different keys for the same code. Reproducing them exactly matters:
-// callers read them. Notably util/validators.clj and clj_irods/validate.clj disagree
-// about "path" versus "paths" for the same condition, and both are live on different
-// endpoints, so do not normalise them here.
+// Error is a DE error response. Extra's keys are emitted at the top level alongside
+// error_code; callers read them, and endpoints differ on names for the same code (some
+// hyphenated, "path" versus "paths"), so don't normalise them.
 type Error struct {
 	Code   Code
 	Style  Style
@@ -29,10 +20,8 @@ type Error struct {
 	Status int // when non-zero, overrides the status implied by Code and Style
 	Cause  error
 
-	// Schema marks a request that failed the shape its endpoint declares, as opposed to one
-	// whose handler threw. The Clojure service renders the two through different middleware
-	// and they answer with different headers, so the distinction has to survive to the point
-	// the response is written. See contentTypeFor.
+	// Schema marks a request-validation failure rather than a handler error; the two answer
+	// with different headers (see contentTypeFor).
 	Schema bool
 }
 
@@ -50,8 +39,7 @@ func (e *Error) With(key string, val any) *Error {
 	return e
 }
 
-// WithStyle selects the error path this endpoint reproduces. Handlers rarely call this;
-// the router sets it per route group.
+// WithStyle sets the error's Style. Handlers rarely call this; the router sets it per route.
 func (e *Error) WithStyle(s Style) *Error {
 	e.Style = s
 	return e
@@ -94,9 +82,7 @@ func (e *Error) Error() string {
 
 func (e *Error) Unwrap() error { return e.Cause }
 
-// MarshalJSON emits error_code first, then the extra keys in sorted order. It is written
-// by hand because the extra keys are an open set with names Go struct tags cannot express
-// alongside one another, and because byte-level stability is asserted in tests.
+// MarshalJSON emits error_code first, then Extra's keys sorted, so bodies are byte-stable.
 func (e *Error) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	buf.WriteByte('{')

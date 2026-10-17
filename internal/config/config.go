@@ -1,28 +1,14 @@
-// Package config holds data-info's runtime configuration.
-//
-// Values are loaded with go-mod/cfg (koanf), whose precedence is
-// yaml < dotenv < environment. Secrets therefore have an environment fallback and need
-// never appear on the command line.
-//
-// The keys here are the modern nested YAML names. The Clojure service read a flat
-// data-info.* properties file, and GET /admin/config still reports those legacy names --
-// see legacy.go for why.
-//
-// Every key segment is a single lowercase word, matching the newest DE services
-// (amqp.queueprefix, datausage.refreshinterval). That is not a style preference: go-mod/cfg
-// builds its environment keys by replacing every underscore with the delimiter, so a
-// segment containing an underscore cannot be set from the environment at all. Keeping the
-// segments single-word means every setting -- notably irods.password, icat.password and
-// amqp.uri -- has a DISCOENV_ override and no secret needs to be written to a file.
+// Package config loads data-info's configuration via go-mod/cfg (yaml < dotenv < environment).
+// Key segments are single lowercase words because go-mod/cfg turns every underscore in an
+// environment name into a delimiter, so a segment containing one could not be set from the
+// environment, where secrets belong.
 package config
 
 import (
 	"time"
 )
 
-// Default values, matching the Clojure service's defprop-opt* declarations. A constant
-// exists only where the Clojure code had a default; the three properties it declared with
-// defprop-str are required here too.
+// Defaults for optional settings. Required settings have none.
 const (
 	DefaultPort              = 60000
 	DefaultRequestTimeout    = 200 * time.Second
@@ -89,8 +75,8 @@ func DefaultIRODSAdminUsers() []string { return []string{"rods", "rodsadmin"} }
 type Config struct {
 	Port int `koanf:"port"`
 
-	// Timeouts replaces the Clojure service's Jetty idle-timeout customizer. Upload
-	// applies only to POST /data and PUT /data/{data-id}, which stream whole files.
+	// Timeouts.Upload applies only to POST /data and PUT /data/{data-id}, which stream whole
+	// files; Timeouts.Request applies to everything else.
 	Timeouts Timeouts `koanf:"timeouts"`
 
 	// PermsFilter names accounts stripped from permission listings and share counts.
@@ -134,9 +120,6 @@ type AnonFiles struct {
 	// Mappings maps an iRODS path prefix onto an anon-files URL fragment; the longest
 	// matching prefix wins. Required, and required to be non-empty: an empty map would
 	// silently produce unusable URLs rather than failing.
-	//
-	// The Clojure service took this as a JSON string inside a properties value. Here it
-	// is a real nested mapping, so it is readable in YAML and validated on load.
 	Mappings map[string]string `koanf:"mappings"`
 }
 
@@ -211,21 +194,12 @@ type ICAT struct {
 	Password string `koanf:"password"`
 	Database string `koanf:"database"`
 
-	// SSLMode is libpq's sslmode. It defaults to disable, which is what the DE deploys
-	// today, but it is a setting rather than a constant so a deployment can require TLS
-	// to the catalog without a code change.
+	// SSLMode is libpq's sslmode.
 	SSLMode string `koanf:"sslmode"`
 }
 
 // TypeDetect names the AVU attribute holding a data object's info type. Detection itself
 // belongs to the info-typer service; data-info only reads and writes the attribute.
-//
-// The Clojure service also had data-info.type-detect.read-amount, the number of bytes it
-// sipped from an upload to sniff the type. It is deliberately not ported: the sniffing it
-// governed moved to info-typer along with heuristomancer, so carrying the setting here
-// would be dead configuration. A deployment that tuned it should move the value to
-// info-typer.filetype-read-amount. Expect it to show up as a missing key when
-// GET /admin/config is diffed against the Clojure service.
 type TypeDetect struct {
 	TypeAttribute string `koanf:"attribute"`
 }

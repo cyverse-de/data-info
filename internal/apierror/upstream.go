@@ -6,10 +6,8 @@ import (
 	"fmt"
 )
 
-// UpstreamError is an error response from another DE service, relayed to the caller as it was
-// received. clojure-commons returns a clj-http error response as the ring response itself, from
-// trap and from the default exception handler alike, so the caller sees the other service's
-// status and body.
+// UpstreamError is an error response from another DE service, relayed to the caller with its
+// status, content type and body unchanged.
 type UpstreamError struct {
 	Service     string
 	Status      int

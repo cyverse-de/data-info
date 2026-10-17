@@ -1,14 +1,6 @@
-// Package metadatafiles builds the XML documents this service writes into the data store.
-//
-// These files leave the DE: DataONE reads them, and it is sensitive to namespace prefixes,
-// attribute order and escaping. So the documents are emitted a token at a time by the writer
-// here rather than marshalled from structs.
-//
-// encoding/xml cannot be used for this. It reorders attributes, it chooses its own namespace
-// prefixes, and it escapes more characters than the Clojure service does -- a quotation mark
-// in a title would come out as &#34; where the deployed service emits it literally. The
-// escaping rules below were measured against clojure.data.xml, which is what wrote every one
-// of these files that already exists.
+// Package metadatafiles writes the DataCite and ORE XML documents DataONE harvests. It emits
+// tokens directly because encoding/xml reorders attributes, picks its own namespace prefixes,
+// and escapes characters that the existing files carry literally.
 package metadatafiles
 
 import (
@@ -31,9 +23,7 @@ type Element struct {
 	Text     string
 	Children []*Element
 
-	// hasText separates an element holding the empty string from one holding nothing. The
-	// two are written differently -- <x></x> against <x/> -- and the field exists because
-	// an empty Text alone cannot tell them apart.
+	// hasText distinguishes the empty string (<x></x>) from no content (<x/>).
 	hasText bool
 }
 
@@ -50,10 +40,8 @@ func Elem(name string, attrs []Attr, children ...*Element) *Element {
 	return &Element{Name: name, Attrs: attrs, Children: kept}
 }
 
-// Text builds an element containing text.
-//
-// Text always writes an open and a close tag, even for the empty string. Only an element
-// given no content at all is self-closed, which is the distinction the Clojure service draws.
+// Text builds an element containing text. It always writes open and close tags, even for the
+// empty string.
 func Text(name string, attrs []Attr, text string) *Element {
 	return &Element{Name: name, Attrs: attrs, Text: text, hasText: true}
 }
@@ -106,9 +94,6 @@ func (x *writer) element(e *Element) {
 		x.write(" " + attr.Name + `="` + escapeAttr(attr.Value) + `"`)
 	}
 
-	// An element given no content at all is self-closed; one given the empty string is not.
-	// The Clojure service draws exactly that line, and these documents are compared byte for
-	// byte, so it is drawn here too.
 	if !e.hasText && len(e.Children) == 0 {
 		x.write("/>")
 		return
@@ -126,22 +111,16 @@ func (x *writer) element(e *Element) {
 	x.write("</" + e.Name + ">")
 }
 
-// textEscapes are what the Clojure service escapes in element content.
-//
-// Notably absent: the quotation mark, the apostrophe, and the whitespace characters. Go's own
-// encoder escapes all of those, which is why it cannot be used here.
+// textEscapes leaves quotes, apostrophes and whitespace literal, as the existing files have
+// them.
 var textEscapes = strings.NewReplacer(
 	"&", "&amp;",
 	"<", "&lt;",
 	">", "&gt;",
 )
 
-// attrEscapes are what the Clojure service escapes in an attribute value.
-//
-// The quotation mark is escaped here and not in text, because it would otherwise close the
-// value. A literal newline or tab in an attribute value is left alone, which an XML parser
-// will normalise to a space on the way back in -- that is the Clojure service's behaviour and
-// these files are compared as bytes, so it is reproduced rather than corrected.
+// attrEscapes adds the quotation mark, which would otherwise close the value. Newlines and tabs
+// stay literal to match the existing files, though a parser reads them back as spaces.
 var attrEscapes = strings.NewReplacer(
 	"&", "&amp;",
 	"<", "&lt;",

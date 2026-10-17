@@ -9,13 +9,12 @@ import (
 	"time"
 )
 
-// maskedValue is what clojure-commons' mask-prop substitutes for a masked setting.
+// maskedValue replaces a masked setting's value.
 const maskedValue = "********"
 
-// maskFilters reproduce clojure-commons' masking. data-info passes one filter of its own,
-// and mask-config always appends #"password" and #"pass", so any key containing those is
-// masked too. A filter matches anywhere in the key, not just at the start. They miss
-// amqp.uri, whose password is in its userinfo, so that one goes through maskURIPassword.
+// maskFilters reproduce the legacy clojure-commons masking: data-info's own filter plus
+// "password" and "pass", each matched anywhere in the key. They miss amqp.uri, whose password
+// is in its userinfo, so maskURIPassword handles that one.
 var maskFilters = []*regexp.Regexp{
 	regexp.MustCompile(`(?:irods|icat)[-.](?:user|pass)`),
 	regexp.MustCompile(`password`),
@@ -89,8 +88,7 @@ func (c *Config) LegacyMap() map[string]string {
 	return m
 }
 
-// maskURIPassword hides the password in a URI's userinfo. The Clojure service returned the
-// AMQP URI in the clear, broker password and all; see deferred fix 5.
+// maskURIPassword hides the password in a URI's userinfo.
 func maskURIPassword(raw string) string {
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -109,11 +107,11 @@ func masked(key string) bool {
 	return false
 }
 
-// millis renders a duration the way the Clojure Jetty settings expressed one.
+// millis renders a duration in whole milliseconds, the unit of the legacy jetty.* keys.
 func millis(d time.Duration) string { return strconv.FormatInt(d.Milliseconds(), 10) }
 
-// marshalMappings renders the anon-files mappings as the JSON object the Clojure service
-// carried inside a single properties value.
+// marshalMappings renders the anon-files mappings as one JSON string, the legacy property's
+// shape.
 func marshalMappings(m map[string]string) string {
 	if len(m) == 0 {
 		return "{}"

@@ -344,9 +344,8 @@ func TestAnUnreadableTaskIsStillReleased(t *testing.T) {
 	}
 }
 
-// Reading the task must not use the context Shutdown cancels. A job started by a request that
-// was still in flight when the listener closed would otherwise fail to read its own task and
-// leave it locked -- caused by the shutdown meant to release it.
+// Reading the task must not use the context Shutdown cancels, or a job started by a request
+// still in flight would fail to read its task and leave it locked.
 func TestATaskStartedDuringShutdownIsStillRead(t *testing.T) {
 	tasks := &fakeTasks{}
 	runner := testRunner(tasks)
@@ -400,13 +399,8 @@ func TestProgressIsSafeFromSeveralGoroutines(t *testing.T) {
 	shutdown(t, runner)
 }
 
-// TestProgressIsFlushedBeforeTheTerminalStatus covers the status trail, which is contract:
-// terrain's move poller reads it to show a user what an operation is doing.
-//
-// A fast job finishes before the background sender has posted anything, so discarding the
-// buffer at that point loses the whole trail. A shadow run against QA reported exactly that
-// -- a rename came back as "begin" then "completed", three statuses short of the Clojure
-// service.
+// TestProgressIsFlushedBeforeTheTerminalStatus: terrain's move poller reads the status trail,
+// so a fast job's buffered progress must be posted before its terminal status.
 func TestProgressIsFlushedBeforeTheTerminalStatus(t *testing.T) {
 	tasks := &fakeTasks{}
 	runner := testRunner(tasks)
@@ -703,8 +697,8 @@ func TestAShutdownSaysTheJobWasInterrupted(t *testing.T) {
 	}
 }
 
-// TestHeartbeatsAreOneIntervalApart pins the spacing. A ticker checking for silence on its own
-// cadence spaced them two intervals apart, which halves the margin under the stall timeout.
+// TestHeartbeatsAreOneIntervalApart pins the spacing; two-interval gaps would halve the margin
+// under the stall timeout.
 func TestHeartbeatsAreOneIntervalApart(t *testing.T) {
 	const interval = 40 * time.Millisecond
 

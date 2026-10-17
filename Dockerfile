@@ -8,26 +8,17 @@ RUN go mod download
 
 COPY . .
 
-# Statically linked, because the runtime image has no libc to link against. Nothing here
-# needs cgo: the iRODS client and the postgres driver are both pure Go.
-#
-# No -X stamping of the version. The service reports a constant it holds in source, the way
-# project.clj declares the Clojure service's, so the build needs no arguments to produce a
-# binary that identifies itself -- and none of the DE's build paths pass any.
+# Static: the runtime image has no libc, and nothing here needs cgo. The version is a constant
+# in cmd/data-info/main.go, so there is no -X stamping.
 RUN CGO_ENABLED=0 go build \
       -trimpath \
       -ldflags "-s -w" \
       -o /out/data-info \
       ./cmd/data-info
 
-# Distroless rather than a shell image. There is nothing to exec into, which is the point:
-# this service holds iRODS and catalog credentials, and the smaller the runtime the less
-# there is to reach them with.
-#
-# Worth knowing for anyone debugging it: this image does ship an /etc/mime.types, Debian's,
-# and its answers are not the ones the DE has always given -- it calls .vcf text/vcard where
-# data-info reports text/x-vcard. That is why internal/mediatype carries its own table rather
-# than letting the standard library's mime package seed itself from that file.
+# Distroless: no shell, so less to reach the iRODS and catalog credentials with. Its
+# /etc/mime.types disagrees with the DE's types (.vcf is text/vcard, not text/x-vcard), which
+# is why internal/mediatype carries its own table.
 FROM gcr.io/distroless/static-debian12:nonroot
 
 COPY --from=build /out/data-info /bin/data-info

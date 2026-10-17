@@ -5,17 +5,15 @@ import (
 	"testing"
 )
 
-// TestStatusFor asserts the whole status table. It exists so that the preserved
-// clojure-commons behaviour -- notably ERR_DOES_NOT_EXIST answering 500 rather than 404 --
-// cannot be "fixed" by accident. If you are here because this test failed, read the
-// comment on statusFor before changing anything.
+// TestStatusFor pins the whole status table so its deliberate 500s can't change by accident.
+// Read statusFor before changing it.
 func TestStatusFor(t *testing.T) {
 	tests := []struct {
 		code Code
 		trap int
 		ok   int
 	}{
-		// Codes clojure-commons maps off the 500 default.
+		// Codes mapped off the 500 default.
 		{ErrBadOrMissingField, http.StatusBadRequest, http.StatusInternalServerError},
 		{ErrIllegalArgument, http.StatusBadRequest, http.StatusInternalServerError},
 		{ErrInvalidJSON, http.StatusBadRequest, http.StatusInternalServerError},
@@ -28,7 +26,7 @@ func TestStatusFor(t *testing.T) {
 		{ErrNotFound, http.StatusNotFound, http.StatusInternalServerError},
 		{ErrConflict, http.StatusConflict, http.StatusInternalServerError},
 
-		// Codes that fall to the 500 default. These are the preserved warts.
+		// Codes that fall to the 500 default.
 		{ErrDoesNotExist, http.StatusInternalServerError, http.StatusInternalServerError},
 		{ErrNotReadable, http.StatusInternalServerError, http.StatusInternalServerError},
 		{ErrNotWriteable, http.StatusInternalServerError, http.StatusInternalServerError},
@@ -45,8 +43,7 @@ func TestStatusFor(t *testing.T) {
 		{ErrUncheckedException, http.StatusInternalServerError, http.StatusInternalServerError},
 		{ErrConfigInvalid, http.StatusInternalServerError, http.StatusInternalServerError},
 
-		// Codes clojure-commons never defined, so http-status-for has no entry and
-		// they can only ever be 500.
+		// Codes outside the shared vocabulary: always 500.
 		{ErrTooManyPaths, http.StatusInternalServerError, http.StatusInternalServerError},
 		{ErrBadPathLength, http.StatusInternalServerError, http.StatusInternalServerError},
 		{ErrBadDirnameLength, http.StatusInternalServerError, http.StatusInternalServerError},
@@ -85,7 +82,6 @@ func TestStatusForCoversEveryEmittedCode(t *testing.T) {
 		covered[c] = true
 	}
 
-	// The 31 codes the Clojure service emits, taken from a grep of its source.
 	for _, c := range EmittedCodes() {
 		if !covered[c] {
 			t.Errorf("code %s is in EmittedCodes but has no status assertion", c)

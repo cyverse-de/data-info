@@ -11,28 +11,15 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// progressReporter returns a Progress that posts in the background, and a function that
-// stops it and waits, briefly, for what is already buffered.
-//
-// The wait is bounded rather than absent or unlimited, and the bound is the whole design. The
-// status trail is contract -- terrain's move poller reads it to show progress -- so
-// discarding the buffer outright loses it: a fast job finishes before the sender has posted
-// anything, and a rename came back with "begin" followed by "completed", three statuses short
-// of what the Clojure service reports. Waiting without a bound is the other failure: the
-// terminal status is the only thing that releases the job's paths, so a degraded async-tasks
-// would hold them for as long as it stayed degraded.
-//
-// So: drain until progressFlushDeadline, then give up and let the terminal status through.
-// A healthy async-tasks accepts these in milliseconds, which is the case that matters.
+// progressReporter returns a Progress that posts in the background, and a stop func that
+// drains the buffer for up to progressFlushDeadline. The drain exists because terrain's move
+// poller reads the status trail; the bound, because the terminal status that releases the
+// paths must not wait on a degraded async-tasks.
 func (r *Runner) progressReporter(log *logrus.Entry, taskID string) (Progress, func()) {
 	updates := make(chan asynctasks.Status, progressBuffer)
 
-	// closed says the channel is shut and no further send may be attempted; stopped says
-	// the sender should discard rather than post what is left. They are separate because
-	// stopping accepts no new updates while still draining the ones already queued, and
-	// only a flush that runs out of time sets the second.
-	//
-	// Both are guarded by mu on the writer side so that no send can race the close.
+	// closed stops new sends; stopped tells the sender to discard what is queued, and is set
+	// only when the flush times out. Both are written under mu so no send races the close.
 	var (
 		mu      sync.RWMutex
 		closed  bool
@@ -112,21 +99,17 @@ func (r *Runner) progressReporter(log *logrus.Entry, taskID string) (Progress, f
 	return progress, stop
 }
 
-// send posts a job's progress updates until the channel closes, and posts a heartbeat
-// whenever the job has gone a heartbeat interval without one.
-//
-// Heartbeats are posted from this goroutine, not another, so they are serialised with the
-// progress updates: one can never be in flight while another is, and none can follow the
-// terminal status, which is posted only after this returns.
+// send posts a job's progress updates until the channel closes, and a heartbeat whenever the
+// job has gone a heartbeat interval without one. Sharing this goroutine serialises heartbeats
+// with progress posts, so none can follow the terminal status.
 func (r *Runner) send(
 	log *logrus.Entry,
 	taskID string,
 	updates <-chan asynctasks.Status,
 	state func() (closing, discard bool),
 ) {
-	// A timer reset after every post, not a ticker: a ticker checking "silent for an
-	// interval" on its own cadence narrowly misses and waits a whole extra tick, which
-	// spaced heartbeats two intervals apart.
+	// A timer reset after every post, not a ticker: a ticker's own cadence narrowly misses
+	// the silence check and spaces heartbeats two intervals apart.
 	quiet := time.NewTimer(r.heartbeatInterval)
 	defer quiet.Stop()
 
@@ -184,11 +167,8 @@ func (r *Runner) heartbeat(log *logrus.Entry, taskID, lastDetail string) {
 	}
 }
 
-// post records a status, retrying.
-//
-// A terminal status is posted outside the runner's context. Shutdown cancels that context to
-// stop the job, and using it here would cancel the very report that unlocks the job's paths
-// -- turning a clean shutdown into the exact leak it is meant to prevent.
+// post records a status, retrying. A terminal status uses a context Shutdown doesn't cancel,
+// since it is what unlocks the job's paths.
 func (r *Runner) post(log *logrus.Entry, taskID string, status asynctasks.Status, terminal bool, attempts int) {
 	ctx := r.ctx
 	if terminal {
@@ -202,7 +182,7 @@ func (r *Runner) post(log *logrus.Entry, taskID string, status asynctasks.Status
 		if attempt > 0 {
 			select {
 			case <-ctx.Done():
-				// Only reachable for non-terminal statuses, which nothing depends on.
+				// Shutdown cancelled a non-terminal post, or a terminal one ran past terminalDeadline.
 				return
 			case <-time.After(retryPause):
 			}

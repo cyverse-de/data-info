@@ -49,16 +49,9 @@ func Load(s Settings) (*Config, error) {
 func fromKoanf(k *koanf.Koanf) (*Config, error) {
 	c := defaults()
 
-	// ZeroFields matters here. mapstructure's default is to merge a decoded slice into
-	// the existing one element by element, so a one-element permsfilter decoded over the
-	// two-element default would yield the configured value followed by a leftover
-	// "rodsadmin" -- a configured list silently gaining entries nobody asked for. With
-	// ZeroFields the slice and map fields are replaced outright. Scalars are unaffected:
-	// mapstructure only touches fields the input actually contains, so the defaults set
-	// above still survive for anything the deployment leaves out.
-	//
-	// The hooks are koanf's own defaults, restated because supplying a DecoderConfig
-	// replaces them wholesale.
+	// ZeroFields makes decoded slices and maps replace the defaults rather than merge element
+	// by element (a one-entry permsfilter would otherwise keep "rodsadmin"); unset scalars
+	// keep their defaults. The hooks restate koanf's own, which a DecoderConfig replaces.
 	if err := k.UnmarshalWithConf("", c, koanf.UnmarshalConf{
 		DecoderConfig: &mapstructure.DecoderConfig{
 			DecodeHook: mapstructure.ComposeDecodeHookFunc(
@@ -177,7 +170,7 @@ func (c *Config) Validate() error {
 		add("anonuser must not be empty")
 	}
 
-	// The three the Clojure service declared with defprop-str, i.e. required.
+	// Required, with no defaults.
 	requireURL(add, "anonfiles.baseurl", c.AnonFiles.BaseURL)
 	requireURL(add, "kifshare.externalurl", c.Kifshare.ExternalURL)
 	if len(c.AnonFiles.Mappings) == 0 {

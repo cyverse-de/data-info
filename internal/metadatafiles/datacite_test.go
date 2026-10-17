@@ -63,9 +63,7 @@ func TestBuildDataCiteMatchesTheReference(t *testing.T) {
 			golden: "datacite-full.xml",
 		},
 		{
-			// The escaping is where a Go port most easily diverges: the standard library's
-			// encoder escapes quotation marks, apostrophes, tabs and newlines that the
-			// Clojure service leaves alone.
+			// encoding/xml would escape the quotes, apostrophes, tabs and newlines here.
 			name: "characters that need escaping",
 			avus: []AVU{
 				avu("Identifier", "10.5072/FK2<&>\"'"),
@@ -140,8 +138,7 @@ func TestBuildDataCiteReportsMissingAttributes(t *testing.T) {
 	}
 }
 
-// A blank value is not a value: an attribute recorded with an empty string is as good as
-// absent, which is how the Clojure service decides what is missing.
+// An attribute with a blank value counts as missing.
 func TestABlankRequiredValueCountsAsMissing(t *testing.T) {
 	avus := minimalAVUs()
 	for i := range avus {

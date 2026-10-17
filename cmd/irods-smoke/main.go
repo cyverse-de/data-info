@@ -1,13 +1,5 @@
-// Command irods-smoke exercises the iRODS client against a live server and times the
-// operations the service's bulk endpoints depend on.
-//
-// It exists to answer one question early: whether reads that the plan moves from catalog
-// SQL onto the iRODS protocol are fast enough at the sizes data-info actually sees.
-// /path-info and /permissions-gatherer accept up to max_paths_in_request paths, so a
-// per-path round trip that looks fine once is not obviously fine a thousand times. Finding
-// that out here is much cheaper than finding it out after the endpoints are written.
-//
-// It only reads. Nothing it does creates, modifies or deletes anything.
+// Command irods-smoke times the iRODS operations data-info's bulk endpoints rely on against a
+// live server, to show whether per-path round trips hold up at bulk sizes. It only reads.
 package main
 
 import (
@@ -172,9 +164,8 @@ func measure(ctx context.Context, s *irodsclient.Session, cfg *config.Config, ta
 		return fmt.Sprintf("%d groups", len(groups)), nil
 	})
 
-	// The bulk shapes. These are the ones that decide whether reads can move off catalog
-	// SQL: /path-info and /permissions-gatherer accept up to max_paths_in_request paths,
-	// and each becomes a round trip here where SQL answered the whole set at once.
+	// Bulk shapes: /path-info and /permissions-gatherer take up to max_paths_in_request paths,
+	// and each is a round trip here.
 	sample := children
 	if len(sample) > bulk {
 		sample = sample[:bulk]
@@ -209,9 +200,7 @@ func measure(ctx context.Context, s *irodsclient.Session, cfg *config.Config, ta
 
 func perPath(n int) string { return fmt.Sprintf("%d paths", n) }
 
-// forEach runs fn over every entry, at most parallel at a time. Sequential round trips are
-// the worst case for these shapes, so the concurrency is worth measuring: it is the only
-// lever available if a per-path operation has to stay on the iRODS protocol.
+// forEach runs fn over every entry, at most parallel at a time.
 func forEach(ctx context.Context, entries []*irodsclient.Entry, parallel int, fn func(string) error) error {
 	if parallel < 1 {
 		parallel = 1
