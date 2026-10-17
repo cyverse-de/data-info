@@ -194,7 +194,7 @@ func TestTabularSeparatorMayBeWhitespace(t *testing.T) {
 		{"a tab, which is what a TSV preview sends", "%09"},
 		{"a space", "%20"},
 		{"a comma, the ordinary case", "%2C"},
-		{"a doubly-encoded tab, which decodes twice as the Clojure service does", "%2509"},
+		{"a doubly-encoded tab, which is decoded twice", "%2509"},
 	}
 
 	for _, tt := range tests {

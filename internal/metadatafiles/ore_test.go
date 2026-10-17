@@ -4,7 +4,7 @@ import "testing"
 
 // The golden came from org.cyverse/oai-ore 1.0.4, which wrote the existing resource maps.
 // The comparison is byte for byte, namespace order included.
-func TestBuildOREMatchesTheReference(t *testing.T) {
+func TestBuildOREMatchesTheGolden(t *testing.T) {
 	const base = "https://mn.example.org/mn/v1/object/"
 
 	file := func(id string) ArchivedFile { return ArchivedFile{ID: id, URI: base + id} }

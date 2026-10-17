@@ -178,9 +178,9 @@ func TestCanceledRequestWritesNothing(t *testing.T) {
 	}
 }
 
-// TestContentTypeMatchesTheReference pins each error's Content-Type, including the
+// TestErrorContentTypes pins each error's Content-Type, including the
 // surprising ones: none for a StyleOK handler error, text/html for the JSON not-found body.
-func TestContentTypeMatchesTheReference(t *testing.T) {
+func TestErrorContentTypes(t *testing.T) {
 	tests := []struct {
 		name    string
 		style   Style

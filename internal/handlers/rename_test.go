@@ -189,7 +189,7 @@ func TestAFailedMoveRecordsNoTask(t *testing.T) {
 }
 
 // A valid move records one move task with the stall behavior and returns its id.
-func TestAMoveLocksItsSourcesAndDestinations(t *testing.T) {
+func TestAMoveRecordsOneTask(t *testing.T) {
 	deps, fake, creator := moveDeps(t)
 	fake.AddCollection(testHome+"/dest", icat.AccessOwn)
 	fake.AddCollection(testHome+"/owned", icat.AccessOwn)

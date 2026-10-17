@@ -2,9 +2,9 @@ package mediatype
 
 import "testing"
 
-// TestOfNameMatchesTheReference pins the historical types. Several look wrong, but callers
+// TestOfNameKeepsHistoricalTypes pins the historical types. Several look wrong, but callers
 // switch on them.
-func TestOfNameMatchesTheReference(t *testing.T) {
+func TestOfNameKeepsHistoricalTypes(t *testing.T) {
 	cases := []struct {
 		path string
 		want string

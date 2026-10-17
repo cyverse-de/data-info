@@ -288,7 +288,7 @@ func TestUploadPartRejectsANonMultipartRequest(t *testing.T) {
 
 // Upload routes report a missing user or path as a null list entry; callers parse these keys,
 // so the exact body is asserted.
-func TestUploadReportsNilsTheWayTheReferenceDoes(t *testing.T) {
+func TestUploadReportsMissingValuesAsNulls(t *testing.T) {
 	deps, fake := testDeps(t)
 	fake.SetUUID("11111111-1111-1111-1111-111111111111", testHome+"/a.txt")
 	writes := NewWrites(deps)

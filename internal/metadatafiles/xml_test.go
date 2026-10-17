@@ -2,9 +2,9 @@ package metadatafiles
 
 import "testing"
 
-// TestEmptyElementsMatchTheReference pins when an element self-closes. Both goldens here came
+// TestEmptyElementsMatchTheGoldens pins when an element self-closes. Both goldens here came
 // from clojure.data.xml, which wrote the existing documents.
-func TestEmptyElementsMatchTheReference(t *testing.T) {
+func TestEmptyElementsMatchTheGoldens(t *testing.T) {
 	// No content self-closes; an empty string does not.
 	got := Render(Elem("root", nil,
 		Elem("nochildren", []Attr{{Name: "a", Value: "1"}}),
@@ -21,7 +21,7 @@ func TestEmptyElementsMatchTheReference(t *testing.T) {
 
 // encoding/xml escapes quotes, apostrophes, tabs and newlines that the existing files leave
 // literal.
-func TestEscapingMatchesTheReference(t *testing.T) {
+func TestEscapingMatchesTheGoldens(t *testing.T) {
 	const tricky = "amp& lt< gt> quote\" apos' tab\there nl\nthere cr\rthere"
 
 	got := Render(Elem("root", []Attr{{Name: "a", Value: tricky}},

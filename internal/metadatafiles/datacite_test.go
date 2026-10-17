@@ -36,7 +36,7 @@ func minimalAVUs() []AVU {
 	}
 }
 
-func TestBuildDataCiteMatchesTheReference(t *testing.T) {
+func TestBuildDataCiteMatchesTheGolden(t *testing.T) {
 	cases := []struct {
 		name   string
 		avus   []AVU
