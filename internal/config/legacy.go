@@ -14,12 +14,8 @@ const maskedValue = "********"
 
 // maskFilters reproduce clojure-commons' masking. data-info passes one filter of its own,
 // and mask-config always appends #"password" and #"pass", so any key containing those is
-// masked too. A filter matches anywhere in the key, not just at the start.
-//
-// Note what this does NOT cover: amqp.uri embeds the broker password in its userinfo, and
-// the key "data-info.amqp.uri" matches none of these patterns, so the credential is
-// returned in the clear. That is today's behaviour and is reproduced deliberately; see
-// docs/deferred-fixes.md entry 5.
+// masked too. A filter matches anywhere in the key, not just at the start. They miss
+// amqp.uri, whose password is in its userinfo, so that one goes through maskURIPassword.
 var maskFilters = []*regexp.Regexp{
 	regexp.MustCompile(`(?:irods|icat)[-.](?:user|pass)`),
 	regexp.MustCompile(`password`),
@@ -103,7 +99,6 @@ func (c *Config) LegacyMap() map[string]string {
 	return m
 }
 
-// masked reports whether a property's value should be replaced before it is returned.
 // maskURIPassword hides the password in a URI's userinfo. The Clojure service returned the
 // AMQP URI in the clear, broker password and all; see deferred fix 5.
 func maskURIPassword(raw string) string {
@@ -114,6 +109,7 @@ func maskURIPassword(raw string) string {
 	return u.Redacted()
 }
 
+// masked reports whether a property's value should be replaced before it is returned.
 func masked(key string) bool {
 	for _, f := range maskFilters {
 		if f.MatchString(key) {

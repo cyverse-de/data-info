@@ -1,6 +1,3 @@
-# The service's image. The Clojure tree lives on main until cutover and builds its own image
-# from the Dockerfile there, so the two never need to coexist in one checkout: data-info
-# builds from main and data-info-next from this branch, each from the plain name.
 FROM golang:1.26 AS build
 
 WORKDIR /src
