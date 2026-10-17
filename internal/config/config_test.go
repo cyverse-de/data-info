@@ -290,8 +290,8 @@ func TestConfiguredListReplacesDefault(t *testing.T) {
 	}
 }
 
-// TestLegacyMapMasksSecrets pins the GET /admin/config behaviour, including the one it
-// gets wrong. See docs/deferred-fixes.md entry 5.
+// TestLegacyMapMasksSecrets pins which GET /admin/config values are masked, including the
+// AMQP URI's password.
 func TestLegacyMapMasksSecrets(t *testing.T) {
 	c := mustLoadYAML(t, withRequired(t, `
 amqp:

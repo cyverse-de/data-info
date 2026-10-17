@@ -63,7 +63,7 @@ irods:
   maxretries: 10
   retrysleep: 1s
   usetrash: true
-  # Exempt from inherit-bit removal when unsharing.
+  # Accounts whose access is structural; sharing changes and permission repairs leave them alone.
   adminusers:
     - rods
     - rodsadmin

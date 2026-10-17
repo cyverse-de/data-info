@@ -50,8 +50,8 @@ func TestQualification(t *testing.T) {
 	}
 }
 
-// Administering groups is not something an ordinary account may do, and the route documents a
-// 403 for it rather than the 500 its other errors get.
+// Ordinary accounts may not administer groups. This test router is trap-style, so ERR_FORBIDDEN
+// is a 403 here; production registers these routes StyleOK, where it answers 500.
 func TestGroupAdministrationIsRefusedToOrdinaryUsers(t *testing.T) {
 	deps, fake := testDeps(t)
 	fake.AddUser("groupadmin", icat.UserKindGroupAdmin)

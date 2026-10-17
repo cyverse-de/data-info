@@ -2,9 +2,9 @@
 //
 // There is no lock table. A path is "locked" when some async task that has not finished yet
 // names it, so the whole mechanism is a query plus a comparison -- which means it is
-// advisory, shared with every replica and with the Clojure service, and racy between the
-// check and the task that follows it. The Clojure service has the same race; an in-process
-// mutex would narrow it without closing it, because the other replica is a different process.
+// advisory, shared with every replica, and racy between the check and the task that follows
+// it. An in-process mutex would narrow the race without closing it, because the other replica
+// is a different process.
 package locks
 
 import (
@@ -69,9 +69,6 @@ func Validate(ctx context.Context, reader Reader, paths []string) error {
 
 	var conflicting []string
 	for _, path := range paths {
-		// An empty path is not a path. Left in, it would match every absolute path in the
-		// system, because "" is a prefix of all of them -- turning one bad entry in a
-		// request into a conflict against everything.
 		if strings.TrimRight(path, "/") == "" {
 			continue
 		}
@@ -86,11 +83,8 @@ func Validate(ctx context.Context, reader Reader, paths []string) error {
 	return apierror.New(apierror.ErrConflict).With("paths", conflicting)
 }
 
-// LockedPaths collects every path the given tasks hold.
-//
-// Which keys hold paths differs by task type, and the keys are a contract with whoever wrote
-// the task -- including a Clojure replica during a rollback -- so they are spelled here
-// exactly as they are stored.
+// LockedPaths collects every path the given tasks hold. Which data keys hold paths depends on
+// the task type.
 func LockedPaths(tasks []asynctasks.Task) []string {
 	seen := map[string]bool{}
 

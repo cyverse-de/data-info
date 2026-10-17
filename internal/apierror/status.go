@@ -21,10 +21,7 @@ const (
 	// This is the majority of endpoints and the zero value.
 	StyleTrap Style = iota
 
-	// StyleOK reproduces the (ok ...) routes, where every error_code answers 500:
-	// /existence-marker, /creatability-marker, the /groups routes,
-	// GET /navigation/root, GET /navigation/path/{zone}/*, /stat-gatherer, /path-info,
-	// /stat-lister, /tickets, /ticket-lister and /ticket-deleter.
+	// StyleOK answers 500 for every error_code. registerDataRoutes marks which routes use it.
 	StyleOK
 )
 

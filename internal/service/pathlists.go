@@ -92,10 +92,8 @@ func keepEntry(entry PathListEntry, q PathListQuery, pattern *regexp.Regexp) boo
 	return !q.FoldersOnly
 }
 
-// KeepInfoType reports whether a file's type is one the request asked for.
-//
-// Applied only to the files named directly in a request. Files found by walking a folder are
-// filtered by the catalog query instead, which is cheaper and gives the same answer.
+// KeepInfoType reports whether a directly named file's info type was asked for; files found
+// by walking a folder are filtered in the catalog query instead.
 func KeepInfoType(infoType string, wanted []string) bool {
 	if len(wanted) == 0 {
 		return true

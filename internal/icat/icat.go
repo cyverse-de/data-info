@@ -60,7 +60,7 @@ type Reader interface {
 	// zone has no such account.
 	LookupUser(ctx context.Context, user, zone string) (UserKind, error)
 
-	// UserGroupNames returns the names of the groups a user belongs to, including the
+	// UserGroupNames returns the names of the groups a user belongs to, excluding the
 	// group of one that iRODS records for the user themselves.
 	UserGroupNames(ctx context.Context, user, zone string) ([]string, error)
 

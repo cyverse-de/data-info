@@ -325,10 +325,8 @@ func (h *Stats) Listing(c echo.Context) error {
 		return err
 	}
 
-	// Both are required *by the schema* here, where the folder listing declares limit as
-	// optional and checks it in the handler. The difference shows in the answer: a missing
-	// limit is a schema failure and a 400 on this route, and ERR_MISSING_QUERY_PARAMETER on
-	// that one -- which its own error style then answers with a 500.
+	// Both are schema-required, so a missing one is a 400 schema failure even on this StyleOK
+	// route, unlike the folder listing's ERR_MISSING_QUERY_PARAMETER.
 	limit, err := requiredIntParam(c, "limit")
 	if err != nil {
 		return err

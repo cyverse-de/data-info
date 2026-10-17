@@ -2,8 +2,7 @@
 // finished, so the user sees it in the DE rather than having to watch a folder.
 //
 // The message bodies are user-visible text and the DE renders them verbatim, so the wording
-// here is copied from the Clojure service rather than improved on. Only the notification
-// agent reads the payload, and it keys on the action.
+// here is copied from the Clojure service rather than improved on.
 package notifications
 
 import (
@@ -20,7 +19,7 @@ import (
 	"github.com/cyverse-de/data-info/internal/paths"
 )
 
-// Actions the DE distinguishes. They appear in the payload and the UI switches on them.
+// Actions a notification's payload can name.
 const (
 	ActionMove       = "move"
 	ActionRename     = "rename"
@@ -42,7 +41,7 @@ type Message struct {
 	Payload Payload `json:"payload"`
 }
 
-// Payload is what the DE's UI reads to decide what to refresh.
+// Payload is the machine-readable part of a Message.
 type Payload struct {
 	Action string   `json:"action"`
 	Paths  []string `json:"paths"`
@@ -153,8 +152,8 @@ func Trash(user string, sources, destinations []string, failed bool) Message {
 
 // Delete reports paths removed outright.
 //
-// The payload names the user's trash rather than what was deleted, because the paths in a
-// payload tell the UI what to refresh and the deleted ones no longer exist.
+// The payload names the user's trash rather than what was deleted, because the deleted paths
+// no longer exist.
 func Delete(user string, sources []string, layout paths.Layout, failed bool) Message {
 	return Message{
 		Type:    notificationType,

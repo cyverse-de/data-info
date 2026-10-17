@@ -188,8 +188,7 @@ func TestAFailedMoveRecordsNoTask(t *testing.T) {
 	}
 }
 
-// The paths a move locks are the sources and where each of them will land, not the
-// destination collection -- which already exists and is not being moved.
+// A valid move records one move task with the stall behavior and returns its id.
 func TestAMoveLocksItsSourcesAndDestinations(t *testing.T) {
 	deps, fake, creator := moveDeps(t)
 	fake.AddCollection(testHome+"/dest", icat.AccessOwn)

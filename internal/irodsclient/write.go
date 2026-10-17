@@ -19,10 +19,9 @@ const transferBufferSize = 4 << 20
 // WriteFile streams r into a new data object at path and returns the number of bytes
 // written.
 //
-// The whole copy runs inside one Do, so cancelling the request abandons the transfer and
-// discards the session rather than leaving a half-written object attached to a connection
-// the next caller would inherit. Nothing is buffered on local disk: the reader here is the
-// request's own multipart part.
+// The whole copy runs as one cancellable call, so cancelling the request abandons the
+// transfer and discards the session rather than leaving a half-written object attached to
+// a connection the next caller would inherit. Nothing is buffered on local disk.
 func WriteFile(ctx context.Context, s *Session, path string, r io.Reader, resource string) (int64, error) {
 	return doLeased(ctx, s, path, transferConn, func(fsys *irodsfs.FileSystem) (int64, error) {
 		handle, err := fsys.CreateFile(path, resource, "w")

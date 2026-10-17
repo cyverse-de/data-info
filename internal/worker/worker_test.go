@@ -315,9 +315,7 @@ func TestStartIsRefusedDuringShutdown(t *testing.T) {
 	}
 }
 
-// A task that cannot be read has no username and no data, so the job cannot run and nothing
-// else will pick it up. Recording it as failed is what releases its paths; leaving it alone
-// would lock them for good.
+// A task that can't be read can't run, so it is recorded as failed to release its paths now.
 func TestAnUnreadableTaskIsStillReleased(t *testing.T) {
 	tasks := &fakeTasks{get: errors.New("no such task")}
 	runner := testRunner(tasks)

@@ -189,7 +189,8 @@ func TestIntegrationPermsForItems(t *testing.T) {
 	t.Logf("%d access entries over %d distinct users", len(perms), len(seen))
 }
 
-// TestIntegrationReadOnlyTransaction confirms the database enforces what WithTx declares.
+// TestIntegrationReadOnlyTransaction checks that a query runs inside WithTx's read-only
+// transaction.
 func TestIntegrationReadOnlyTransaction(t *testing.T) {
 	store := itStore(t)
 	ctx := itContext(t)

@@ -61,8 +61,6 @@ func TestConflicts(t *testing.T) {
 	}
 }
 
-// The keys inside a task's data are a contract with whoever wrote the task, which during a
-// rollback is a Clojure replica. Each shape here is the one that service writes.
 func TestLockedPaths(t *testing.T) {
 	cases := []struct {
 		name string
@@ -302,8 +300,7 @@ func TestValidateReportsAReadFailure(t *testing.T) {
 	}
 }
 
-// A blank entry among the requested paths must not be treated as a path. Left in, it matches
-// every absolute path in the system.
+// A blank requested path is ignored rather than treated as conflicting.
 func TestValidateIgnoresBlankPaths(t *testing.T) {
 	reader := &fakeReader{tasks: []asynctasks.Task{{
 		Type: asynctasks.TypeRename,

@@ -306,11 +306,9 @@ func (f *Fake) CountChildrenBatch(ctx context.Context, q icat.BatchChildCountQue
 	return out, nil
 }
 
-// PagedFolder implements icat.Reader.
-//
-// It sorts and pages in memory the way the real query does, so a test can check that an
-// endpoint asked for the right page and passed the order through, rather than only that it
-// returned something.
+// PagedFolder implements icat.Reader, sorting and paging in memory so a test can check the
+// page and order an endpoint asked for. Unlike the real store, it does not support a
+// negative (unlimited) Limit.
 func (f *Fake) PagedFolder(ctx context.Context, q icat.ListingQuery) ([]icat.ListingRow, error) {
 	f.PagedFolderCalls.Add(1)
 	if err := f.wait(ctx); err != nil {

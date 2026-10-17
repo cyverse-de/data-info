@@ -218,8 +218,7 @@ func ListUserGroups(ctx context.Context, s *Session, user, zone string) ([]strin
 	})
 }
 
-// ServerVersion reports the connected iRODS server's version, which decides how some
-// catalog queries have to be written.
+// ServerVersion reports the connected iRODS server's release version.
 func ServerVersion(ctx context.Context, s *Session) (string, error) {
 	v, err := Do(ctx, s, func(fsys *irodsfs.FileSystem) (*types.IRODSVersion, error) {
 		return fsys.GetServerVersion()

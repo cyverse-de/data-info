@@ -1,5 +1,4 @@
-// Package handlers holds data-info's HTTP handlers, one file per Clojure routes/*
-// namespace.
+// Package handlers holds data-info's HTTP handlers.
 package handlers
 
 import (

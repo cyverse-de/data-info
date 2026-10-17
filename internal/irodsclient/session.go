@@ -34,9 +34,8 @@ func (s *Session) ClientUser() string { return s.clientUser }
 // access from a non-inheriting parent.
 func (s *Session) IsProxied() bool { return s.clientUser != "" }
 
-// FileSystem exposes the underlying client for the few callers that need it directly,
-// such as file handles that outlive a single call. Prefer Do, which adds cancellation and
-// error translation.
+// FileSystem exposes the underlying client. Prefer Do, which adds cancellation and error
+// translation.
 func (s *Session) FileSystem() *irodsfs.FileSystem { return s.fs }
 
 // Close returns the session to the pool.

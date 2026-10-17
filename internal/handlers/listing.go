@@ -8,7 +8,7 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// DefaultListingLimit is how many entries a listing returns when the caller does not say.
+// DefaultListingLimit is unused: listings reject a request that has no limit.
 const DefaultListingLimit = 1000
 
 // Listings serves the folder listing and navigation endpoints.

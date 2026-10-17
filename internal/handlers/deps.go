@@ -40,8 +40,7 @@ type Deps struct {
 	// PermsFilter names accounts left out of permission listings and share counts.
 	PermsFilter map[string]bool
 
-	// BadChars are the characters a listing flags in a name by default when the caller
-	// does not supply its own set.
+	// BadChars are the characters refused in the names of new files and folders.
 	BadChars string
 
 	// ProxyUser is the account the service authenticates as. It is not the caller: it is used

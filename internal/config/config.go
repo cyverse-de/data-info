@@ -100,8 +100,7 @@ type Config struct {
 	// and protected from deletion as a base path.
 	CommunityData string `koanf:"communitydata"`
 
-	// BadChars are rejected in new file and folder names, and are the default
-	// bad-chars for listings.
+	// BadChars are rejected in new file and folder names. Listings take theirs from the request.
 	BadChars string `koanf:"badchars"`
 
 	// MaxPathsInRequest bounds bulk requests; exceeding it is ERR_TOO_MANY_RESULTS.
@@ -181,7 +180,7 @@ type IRODS struct {
 	// UseTrash controls whether deletes move to trash rather than removing outright.
 	UseTrash bool `koanf:"usetrash"`
 
-	// AdminUsers are exempt from inherit-bit removal during unsharing.
+	// AdminUsers hold structural access that sharing changes and permission repairs leave alone.
 	AdminUsers []string `koanf:"adminusers"`
 
 	// MaxSessions bounds how many distinct users' sessions are kept, and MaxConnections

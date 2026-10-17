@@ -19,6 +19,7 @@
 -- $5 info types to keep, or NULL for all
 -- $6 whether an object with no info type is kept when $5 is set
 -- $7 limit, $8 offset
+-- $9 the AVU attribute holding an object's info type
 -- $10 entity type: any, file or folder
 -- The sort column and direction are interpolated by the caller from a fixed table; they are
 -- identifiers and cannot be parameters.

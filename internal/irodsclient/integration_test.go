@@ -9,9 +9,7 @@
 //	DATA_INFO_IT_IRODS_HOST=... DATA_INFO_IT_IRODS_USER=... DATA_INFO_IT_IRODS_PASSWORD=... \
 //	DATA_INFO_IT_IRODS_ZONE=... go test -tags=integration ./internal/irodsclient/
 //
-// Everything here is read-only. Tests that create or delete anything belong with the write
-// path and must carry the scratch-collection guardrails described in the plan, because the
-// zone these run against is shared.
+// Everything here is read-only, because the zone these run against is shared.
 package irodsclient
 
 import (
@@ -194,8 +192,6 @@ func TestIntegrationListUserGroups(t *testing.T) {
 	}
 }
 
-// TestIntegrationProbe runs last: it opens its own session by design, and on a server that
-// is at its connection limit that is the call most likely to be refused.
 func TestIntegrationProbe(t *testing.T) {
 	pool := itPool(t)
 	if err := pool.Probe(itContext(t)); err != nil {

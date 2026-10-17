@@ -1,9 +1,8 @@
 // Package asynctasks talks to the async-tasks service, which records long-running work so
 // that it survives the request that started it.
 //
-// The records are a cross-service contract, not private bookkeeping. Every replica of this
-// service reads them to decide whether a path is already being moved or deleted, and so does
-// the Clojure implementation for as long as both are deployed -- so the type names, the keys
+// The records are a contract, not private bookkeeping. Every replica of this service reads
+// them to decide whether a path is already being moved or deleted, so the type names, the keys
 // inside a task's data, and the meaning of an absent end date all have to match exactly.
 package asynctasks
 

@@ -12,11 +12,10 @@ import (
 // TCP dial it exercises authentication, which is what the Clojure irods-running? check did
 // by opening a Jargon connection and stat-ing the home collection.
 //
-// The result is cached briefly, because GET / reports iRODS health on every call without
-// authentication. The probe itself runs in the background on its own budget, and a caller
-// waits for it only as long as the caller's own context allows: the budget is longer than
-// the kubelet's readiness timeout, and a probe that held a lock for all of it would queue
-// every later health check behind it.
+// The result is cached for ProbeCacheTTL, because GET / reports iRODS health on every call
+// without authentication. The probe runs in the background on its own budget and a caller
+// waits only as long as its own context allows, so a slow probe never queues later health
+// checks behind it.
 func (p *Pool) Probe(ctx context.Context) error {
 	p.probeMu.Lock()
 	if !p.probeAt.IsZero() && time.Since(p.probeAt) < p.cfg.ProbeCacheTTL {
@@ -63,18 +62,11 @@ func (p *Pool) runProbe(ctx context.Context, running chan struct{}) {
 // construction because connections are established lazily, inside the first operation --
 // NewFileSystem does no I/O, so there is nothing to retry at that point.
 //
-// Only the probe retries. Repeating an arbitrary operation is not safe: a failure that
-// looks like a refused connection may be a connection dropped part way through a write,
-// and this layer cannot tell the two apart. Retrying reads is worth revisiting once the
-// read paths exist and can say for themselves whether they are idempotent.
+// Only the probe retries: a failure that looks like a refused connection may be a
+// connection dropped part way through a write, and this layer cannot tell the two apart.
 func (p *Pool) probeWithRetries(ctx context.Context) error {
-	// Detached from the caller once, for the whole loop including its backoff. GET /
-	// gives its probe a couple of seconds, which is long enough for a healthy server and
-	// short enough that ordinary latency would look like a failure and discard a working
-	// session. Inheriting the caller's cancellation would also abort the wait between
-	// attempts and report that cancellation as the health result rather than what iRODS
-	// actually said. The cached result means this runs rarely, so a longer budget costs
-	// little.
+	// Detached from the caller for the whole loop, backoff included: a caller's deadline
+	// must neither poison the admin session nor be reported as the health result.
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), p.cfg.ProbeTimeout)
 	defer cancel()
 

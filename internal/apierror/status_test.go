@@ -68,8 +68,8 @@ func TestStatusFor(t *testing.T) {
 	}
 }
 
-// TestStatusForCoversEveryEmittedCode fails if a code is declared without a decision
-// being recorded in TestStatusFor above.
+// TestStatusForCoversEveryEmittedCode fails if EmittedCodes gains a code missing from the
+// list below. Keep that list in step with TestStatusFor.
 func TestStatusForCoversEveryEmittedCode(t *testing.T) {
 	covered := map[Code]bool{}
 	for _, c := range []Code{

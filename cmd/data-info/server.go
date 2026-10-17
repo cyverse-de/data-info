@@ -36,9 +36,8 @@ func isUploadRoute(c echo.Context) bool {
 	return uploadRoutes[c.Request().Method+" "+c.Path()]
 }
 
-// Deps are the backends the server talks to. They are passed in rather than constructed
-// here so tests can exercise the real router without reaching the network, and so the
-// iRODS and ICAT clients can replace the reachability probes when they land.
+// Deps are the server's backends, injected so tests can exercise the real router without a
+// network.
 type Deps struct {
 	IRODSProbe handlers.Prober
 	ICATProbe  handlers.Prober
@@ -186,9 +185,7 @@ func registerDataRoutes(e *echo.Echo, cfg *config.Config, log *logrus.Entry, dep
 	e.GET("/data/by-path/chunks/*", chunks.ChunkByPath)
 	e.GET("/data/by-path/chunks-tabular/*", chunks.TabularChunkByPath)
 
-	// Trap-style, unlike its neighbour above: the data routes are wrapped in svc/trap in the
-	// Clojure service, so their codes map through the status table rather than all answering
-	// 500. Verified against the running service, which answers a missing limit with a 400.
+	// StyleTrap, unlike /navigation/path/:zone/*: a missing limit answers 400.
 	e.GET("/data/path/:zone/*", listings.FolderListing)
 
 	// The upload routes are trap-wrapped in the Clojure service, but every error they can
@@ -302,16 +299,12 @@ func permsFilterOf(cfg *config.Config) map[string]bool {
 // pool does internally.
 const ProbeCacheTTL = 5 * time.Second
 
-// ProbeTimeout bounds a backend check. GET / probes iRODS on every call, so an
-// unreachable backend has to fail fast rather than hold the request open; DNS for a
-// nonexistent host can otherwise take far longer than the dial itself.
+// ProbeTimeout bounds the ICAT ping behind GET /, so an unreachable catalog fails fast rather
+// than holding the request open; DNS for a nonexistent host can take far longer than the dial.
 const ProbeTimeout = 3 * time.Second
 
-// networkDeps builds the probes used in a running service.
-//
-// iRODS is probed through the client, which exercises authentication as well as
-// reachability -- the same ground the Clojure irods-running? check covered by opening a
-// Jargon connection. ICAT is still a bare TCP dial until the catalog client lands.
+// networkDeps builds the production probes. iRODS is probed through the pool so
+// authentication is exercised too.
 func networkDeps(pool *irodsclient.Pool, store icat.Store) Deps {
 	return Deps{
 		IRODS: pool,
@@ -394,13 +387,9 @@ func irodsPoolConfig(cfg *config.Config, log *logrus.Entry) irodsclient.Config {
 	}
 }
 
-// newHTTPServer wraps the router in a server whose timeouts suit streaming.
-//
-// ReadTimeout and WriteTimeout are deliberately zero. They are whole-request deadlines,
-// and a multi-gigabyte upload or download legitimately outlives any value worth setting
-// globally. Per-request deadlines are applied instead, long for the upload routes and
-// short for everything else, reproducing the split the Clojure service configured on
-// Jetty.
+// newHTTPServer leaves ReadTimeout and WriteTimeout unset because multi-gigabyte transfers
+// outlive any whole-request deadline. dimw.IdleTimeout applies per-route idle limits
+// instead.
 func newHTTPServer(cfg *config.Config, h http.Handler) *http.Server {
 	return &http.Server{
 		Addr:              ":" + strconv.Itoa(cfg.Port),

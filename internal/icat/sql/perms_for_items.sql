@@ -21,11 +21,8 @@ objs AS (
                                 FROM r_data_main d2
                                WHERE d2.data_id = d.data_id)
 )
--- No DISTINCT, matching the Clojure query. What stops an object appearing twice here is
--- the replica filter above: r_data_main holds a row per replica, and the Clojure object
--- lookup does not exclude the extras. r_objt_access is keyed by object and user, so a user
--- cannot hold two access rows on one object. Whether share counts deduplicate is a decision
--- for the caller; see docs/deferred-fixes.md.
+-- No DISTINCT is needed: the replica filter above leaves one row per data object, and
+-- r_objt_access holds at most one row per object and user.
 SELECT objs.object_id,
        objs.full_path,
        u.user_name,

@@ -58,13 +58,8 @@ func (c Code) IsServerFault() bool {
 	}
 }
 
-// EmittedCodes is every code data-info can return.
-//
-// A function rather than a package-level slice so a caller cannot mutate the canonical
-// list.
-//
-// ErrUncheckedException is deliberately absent. It is what an unrecognised panic becomes,
-// so a run that elicits it has found a defect rather than covered a case.
+// EmittedCodes returns every code data-info can return except ErrUncheckedException, which
+// only an unrecognised error produces.
 func EmittedCodes() []Code {
 	return []Code{
 		ErrNotAUser, ErrDoesNotExist, ErrNotWriteable, ErrNotReadable, ErrExists,

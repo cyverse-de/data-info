@@ -15,7 +15,7 @@ import (
 // data-usage service consumes it; nothing else does.
 const usageRoutingKeyPrefix = "index.usage.data.user."
 
-// Progress action names for emptying the trash and restoring.
+// Progress action names for restoring.
 const (
 	actionBeginRestore = "begin-restore"
 	actionEndRestore   = "end-restore"

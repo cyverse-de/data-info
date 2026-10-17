@@ -81,11 +81,8 @@ type Tasks interface {
 // Calls never block and are dropped under load, so a job may use it as freely as it likes.
 type Progress func(path, action string)
 
-// Job is the work a task stands for.
-//
-// A job must return when its context is cancelled. That is not a nicety: shutdown cancels it,
-// and a job that ignores the cancellation is one whose paths stay locked after the pod goes
-// away.
+// Job is the work a task stands for. Run must return when ctx is cancelled, or shutdown
+// cannot release the task's paths.
 type Job interface {
 	Run(ctx context.Context, task *asynctasks.Task, progress Progress) error
 }
@@ -210,10 +207,8 @@ func (r *Runner) run(taskID, name string, job Job) {
 	cancelFetch()
 
 	if err != nil {
-		// The job cannot run without the task's username and data, and nothing else will
-		// pick it up. Recording it as failed is therefore the honest outcome and the safe
-		// one: it releases paths that nothing is touching. Leaving it alone would lock
-		// them for good.
+		// Nothing else will run this task, so record it as failed now rather than leave its
+		// paths locked until the stall timeout.
 		log.WithError(err).Error("could not read the task to run; " +
 			"recording it as failed so that its paths are released")
 		r.post(log, taskID, asynctasks.Status{
@@ -289,12 +284,9 @@ func notify(ctx context.Context, log *logrus.Entry, n Notifying, task *asynctask
 	n.Notify(ctx, task, failed)
 }
 
-// Shutdown stops accepting jobs, cancels the ones running, and waits for them to report.
-//
-// This is what keeps a rollout from locking paths. Each job sees its context cancelled,
-// returns, and is recorded as failed -- which sets the end date and releases its paths. A job
-// that does not return in time is abandoned, and its paths stay locked, so the deadline here
-// wants to be generous relative to how long a job takes to notice cancellation.
+// Shutdown stops accepting jobs, cancels the running ones, and waits until ctx for them to
+// record a terminal status. A job still running at the deadline keeps its paths locked until
+// the stall timeout.
 func (r *Runner) Shutdown(ctx context.Context) error {
 	r.mu.Lock()
 	r.stopping = true

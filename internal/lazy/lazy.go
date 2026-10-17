@@ -115,7 +115,7 @@ type Semaphore interface {
 	Release(n int64)
 }
 
-// Await resolves several values concurrently and returns the first error.
+// Await waits on each value in argument order and returns the first error in that order.
 //
 // The values have already started; this only waits. It exists so a caller can express
 // "I need all of these" without writing the same loop each time.

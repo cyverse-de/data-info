@@ -223,7 +223,7 @@ func TestAdminConfigMasksCredentials(t *testing.T) {
 		t.Fatalf("decoding body: %v", err)
 	}
 
-	// Legacy property names, because callers diff this against the Clojure service.
+	// Keys use the legacy data-info.* property names.
 	if body["data-info.port"] != "60000" {
 		t.Errorf("data-info.port = %q, want %q", body["data-info.port"], "60000")
 	}
@@ -319,10 +319,8 @@ func TestStatusReportsIRODSReachability(t *testing.T) {
 	}
 }
 
-// TestResponsesHaveNoTrailingNewline pins a byte-level contract detail. echo's c.JSON
-// encodes with a json.Encoder and appends a newline; cheshire/encode, which produced the
-// Clojure bodies, does not. Responses are diffed byte for byte during the port, so a
-// stray newline is a real difference.
+// TestResponsesHaveNoTrailingNewline guards against echo's c.JSON, which appends a newline
+// that response bodies have never carried.
 func TestResponsesHaveNoTrailingNewline(t *testing.T) {
 	e := testServerWithDeps(t, Deps{IRODSProbe: stubProber(nil), ICATProbe: stubProber(nil)})
 

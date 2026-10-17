@@ -65,8 +65,8 @@ func (m Move) move(
 	sources, destinations []string,
 	progress worker.Progress,
 ) error {
-	// A multi-path move is bracketed the way the Clojure service brackets it, and the length
-	// validation it reports up front covers the whole list rather than each source.
+	// A multi-path move is bracketed the way the Clojure service brackets it. The set-level
+	// validated status is posted before anything is checked; moveOne length-checks each path.
 	progress(pathsetSeveral, actionBegin)
 	progress(pathsetSeveral, actionValidate)
 

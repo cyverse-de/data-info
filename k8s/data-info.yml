@@ -16,11 +16,9 @@ spec:
         de-app: data-info
     spec:
       restartPolicy: Always
-      # Well above the default 30s. On SIGTERM the service stops accepting requests, then
-      # cancels its async jobs and waits for each to post a terminal status -- and that post
-      # is what carries the end date that releases the job's path lock. A SIGKILL in the
-      # middle of it leaves those paths locked for every later request, so the drain is given
-      # room to finish: 5s preStop plus the binary's own 30s server drain and 75s job drain.
+      # Covers the shutdown drain: 5s preStop + 30s serverGrace + 75s drainGrace
+      # (cmd/data-info/main.go). A SIGKILL mid-drain leaves job paths locked until the
+      # 10-minute stall timeout.
       terminationGracePeriodSeconds: 120
       volumes:
         - name: data-info-configs

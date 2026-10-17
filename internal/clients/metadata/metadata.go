@@ -2,9 +2,7 @@
 // manages.
 //
 // Those are separate from the AVUs iRODS itself stores. A data item has both, this service
-// owns neither half completely, and several endpoints return them merged -- which is why the
-// two are named apart everywhere here: irods-avus for what iRODS holds, and everything else
-// for what the metadata service does.
+// owns neither half completely, and several endpoints return them merged.
 package metadata
 
 import (

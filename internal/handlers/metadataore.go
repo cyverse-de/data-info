@@ -12,11 +12,8 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// SaveORE handles POST /data/{data-id}/ore/save.
-//
-// It writes the two files DataONE reads: a resource map saying what the data set contains, and
-// a DataCite record describing it. Both go in a directory beside the data set rather than in
-// it, so that harvesting the data set does not harvest its own metadata.
+// SaveORE handles POST /data/{data-id}/ore/save, writing the DataONE resource map and DataCite
+// record into the data set's metadata directory (see metadataDirFor).
 func (a *AVUs) SaveORE(c echo.Context) error {
 	ctx := c.Request().Context()
 

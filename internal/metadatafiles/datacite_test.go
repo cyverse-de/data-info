@@ -8,11 +8,8 @@ import (
 	"testing"
 )
 
-// The golden files in testdata were produced by the Clojure service itself --
-// org.cyverse/metadata-files 2.1.2, the library the deployed service calls -- rather than
-// written by hand. These documents go into the data store and DataONE reads them, so the
-// comparison is byte for byte: a different namespace prefix, a different attribute order or a
-// differently escaped quotation mark is a different document.
+// golden reads a testdata file. The goldens came from org.cyverse/metadata-files 2.1.2, which
+// wrote the existing documents, so comparisons are byte for byte.
 func golden(t *testing.T, name string) string {
 	t.Helper()
 

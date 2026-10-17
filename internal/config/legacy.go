@@ -22,18 +22,8 @@ var maskFilters = []*regexp.Regexp{
 	regexp.MustCompile(`pass`),
 }
 
-// LegacyMap renders the configuration under the flat data-info.* property names the
-// Clojure service used, with the same masking, for GET /admin/config.
-//
-// Every value is a string. The Clojure service read a Java properties file, so even
-// numbers and booleans came back quoted, and callers diffing the two services' output
-// depend on that.
-//
-// Two deliberate differences from the Clojure output. It returned the entire loaded
-// properties file, so any key present in the deployment but unused by the code -- such as
-// the orphaned data-info.copy-key -- appeared as well; this returns only settings the
-// service actually has. And key order is unspecified in both, since neither serializes a
-// sorted map.
+// LegacyMap renders the configuration under the legacy flat data-info.* property names,
+// every value a string and secrets masked, for GET /admin/config.
 func (c *Config) LegacyMap() map[string]string {
 	m := map[string]string{
 		"data-info.port":                   strconv.Itoa(c.Port),

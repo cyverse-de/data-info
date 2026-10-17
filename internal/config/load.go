@@ -315,6 +315,6 @@ func (c *Config) ICATConnectionString() string {
 	return u.String()
 }
 
-// UploadTimeout and RequestTimeout exist so handlers need not reach into the struct.
+// UploadTimeout and RequestTimeout return the upload and ordinary-request idle limits.
 func (c *Config) UploadTimeout() time.Duration  { return c.Timeouts.Upload }
 func (c *Config) RequestTimeout() time.Duration { return c.Timeouts.Request }

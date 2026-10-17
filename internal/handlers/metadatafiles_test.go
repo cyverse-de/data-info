@@ -123,8 +123,7 @@ func TestMetadataDirFor(t *testing.T) {
 	}
 }
 
-// The metadata service's response is passed through untouched except for the AVU list, which
-// is merged with what iRODS holds.
+// templateAVUs keeps only the AVU entries that are objects.
 func TestTemplateAVUs(t *testing.T) {
 	got := templateAVUs(map[string]any{
 		"avus": []any{

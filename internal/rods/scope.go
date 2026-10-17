@@ -68,8 +68,10 @@ const (
 //
 // Where each fact comes from:
 //
-//	catalog   stat, object type, size, timestamps, uuid, info type, permission, access lists
-//	protocol  metadata (AVUs), user existence, group membership, and everything that writes
+//	catalog   stat, object type, size, timestamps, uuid, info type, permission, access lists,
+//	          user existence and kind, a user's groups
+//	protocol  metadata (AVUs), tickets, group administration, file contents, and everything
+//	          that writes
 //
 // The split is not aesthetic. Measurement showed a stat costs about 10ms over the protocol
 // and an access list about 20ms, per path, while the catalog answers a thousand paths in

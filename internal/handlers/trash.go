@@ -303,9 +303,6 @@ func (h *Writes) Restore(c echo.Context) error {
 }
 
 // requireNotHome refuses to delete a user's own home collection.
-//
-// It is the one path whose deletion cannot be undone by restoring it, because everything the
-// user has lives under it -- including the trash the deletion would try to use.
 func (h *Writes) requireNotHome(user string, requested []string) error {
 	home := h.deps.Layout.UserHome(user)
 

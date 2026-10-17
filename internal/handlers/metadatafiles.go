@@ -193,8 +193,8 @@ func (a *AVUs) collect(
 	return item, nil
 }
 
-// templateAVUs pulls the AVU list out of the metadata service's response, which is otherwise
-// passed through untouched.
+// templateAVUs extracts the AVU list from a metadata-service response, skipping entries that
+// aren't objects.
 func templateAVUs(response map[string]any) []service.AVU {
 	raw, ok := response["avus"].([]any)
 	if !ok {

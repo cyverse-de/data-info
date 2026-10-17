@@ -32,10 +32,7 @@ type multiMoveResponse struct {
 	User    string   `json:"user"`
 	Sources []string `json:"sources"`
 	Dest    string   `json:"dest"`
-
-	// TaskID is absent when nothing had to be done, which is how a caller tells a move that
-	// was started from one that was a no-op.
-	TaskID string `json:"async-task-id,omitempty"`
+	TaskID  string   `json:"async-task-id,omitempty"`
 }
 
 // moveResponse is what the endpoints moving one path return.
@@ -43,6 +40,8 @@ type moveResponse struct {
 	User   string `json:"user"`
 	Source string `json:"source"`
 	Dest   string `json:"dest"`
+
+	// TaskID is absent when the rename was a no-op.
 	TaskID string `json:"async-task-id,omitempty"`
 }
 

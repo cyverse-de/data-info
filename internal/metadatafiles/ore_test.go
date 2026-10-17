@@ -2,10 +2,8 @@ package metadatafiles
 
 import "testing"
 
-// The golden was produced by org.cyverse/oai-ore 1.0.4, the library the deployed service
-// calls. DataONE reads these files to decide what to harvest, so the comparison is byte for
-// byte -- including the order the namespaces are declared in, which is not meaningful to a
-// parser and is meaningful to a diff.
+// The golden came from org.cyverse/oai-ore 1.0.4, which wrote the existing resource maps.
+// The comparison is byte for byte, namespace order included.
 func TestBuildOREMatchesTheReference(t *testing.T) {
 	const base = "https://mn.example.org/mn/v1/object/"
 

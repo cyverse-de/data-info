@@ -72,7 +72,7 @@ func pagedUUIDs(ctx context.Context, qr queryer, q UUIDListingQuery) ([]ListingR
 	if column == "" {
 		column = DefaultSortColumn
 	}
-	// Guard the interpolation, as paged_folder.sql does: the sort column and direction are
+	// Guard the interpolation, as pagedFolder does: the sort column and direction are
 	// identifiers and cannot be parameters, so a value that did not come from the fixed
 	// table must never reach the statement.
 	if !isKnownSortColumn(column) {

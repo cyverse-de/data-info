@@ -223,10 +223,9 @@ func waitForProbe(t *testing.T, p *Pool) {
 	}
 }
 
-// TestProbeIgnoresTheCallersDeadline covers the other half of that choice. GET / gives its
-// probe a couple of seconds; if the probe inherited that, ordinary latency would look like
-// a failure and discard the session every admin request uses. The caller stops waiting, but
-// the probe carries on to a result of its own.
+// TestProbeIgnoresTheCallersDeadline: the caller stops waiting, but the probe carries on to
+// a result of its own rather than poisoning the admin session or recording the caller's
+// cancellation.
 func TestProbeIgnoresTheCallersDeadline(t *testing.T) {
 	pool := testPool(t, func(c *Config) {
 		c.ProbeTimeout = 200 * time.Millisecond
@@ -256,9 +255,8 @@ func TestProbeIgnoresTheCallersDeadline(t *testing.T) {
 	}
 }
 
-// TestProbeDoesNotHoldCallersPastTheirDeadline is the readiness case: the kubelet gives
-// /readyz 10 seconds, less than the probe's budget. A probe against a server that accepts
-// connections and never answers must not keep that caller, or the ones after it, waiting.
+// TestProbeDoesNotHoldCallersPastTheirDeadline: against a server that accepts connections
+// and never answers, each caller returns at its own deadline, not the probe's.
 func TestProbeDoesNotHoldCallersPastTheirDeadline(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

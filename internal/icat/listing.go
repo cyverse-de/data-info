@@ -13,11 +13,8 @@ var sqlPagedFolder string
 // SortColumn names a column a listing may be ordered by.
 type SortColumn string
 
-// sortColumns maps the sort-field vocabulary onto catalog columns.
-//
-// These five names and no others: the paging schema declares sort-field as an enum of them,
-// so a request naming a catalog column directly is rejected before the handler runs. Adding
-// the column names here would make this service accept a request the Clojure service refuses.
+// sortColumns maps the API's sort-field names onto catalog columns. Raw column names are
+// deliberately absent, so ResolveSortColumn rejects a request that names one.
 var sortColumns = map[string]SortColumn{
 	"datecreated":  "create_ts",
 	"datemodified": "modify_ts",
@@ -123,7 +120,7 @@ type ListingQuery struct {
 	Offset int
 }
 
-// ListingRow is one entry of a listing. It carries the same columns as Row plus the total.
+// ListingRow is a Row returned by a listing query.
 type ListingRow = Row
 
 // PagedFolder returns a sorted page of a collection's children.

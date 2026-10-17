@@ -55,11 +55,8 @@ type Config struct {
 	// let an unauthenticated caller drive iRODS load.
 	ProbeCacheTTL time.Duration
 
-	// MaxRetries and RetrySleep govern retrying a refused connection. An iRODS server
-	// under load closes new connections rather than queueing them, and it does so to
-	// healthy clients, so a single refusal is not a reason to fail a request. Jargon
-	// retried for the same reason, and the Clojure service configured it with
-	// data-info.irods.max-retries and .retry-sleep.
+	// MaxRetries and RetrySleep govern the health probe's retries of a refused connection;
+	// a busy iRODS server refuses new connections even from healthy clients.
 	MaxRetries int
 	RetrySleep time.Duration
 

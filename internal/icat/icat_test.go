@@ -120,9 +120,8 @@ func TestTimestampConversion(t *testing.T) {
 	}
 }
 
-// TestQueriesAreParameterised guards the whole reason these live in .sql files. The Clojure
-// originals concatenated request values into the statement text; a single quoted literal
-// creeping back in here would reopen that.
+// TestQueriesAreParameterised catches request values interpolated into these queries as
+// string literals.
 func TestQueriesAreParameterised(t *testing.T) {
 	queries := map[string]string{
 		"user_group_ids":  sqlUserGroupIDs,
