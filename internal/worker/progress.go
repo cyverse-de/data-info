@@ -221,7 +221,8 @@ func (r *Runner) post(log *logrus.Entry, taskID string, status asynctasks.Status
 	entry := log.WithError(err).WithField("status", status.Status)
 	if terminal {
 		entry.Error("could not record the task's final status after every retry; " +
-			"the task has no end date, so its paths stay locked until it is completed by hand")
+			"the task has no end date, so its paths stay locked until the async-tasks stall timeout " +
+			"completes it, about ten minutes; this usually means async-tasks was unreachable")
 		return
 	}
 	entry.Warn("could not record a progress status; the task itself is unaffected")

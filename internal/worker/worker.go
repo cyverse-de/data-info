@@ -304,6 +304,6 @@ func (r *Runner) Shutdown(ctx context.Context) error {
 	case <-finished:
 		return nil
 	case <-ctx.Done():
-		return fmt.Errorf("worker: jobs were still running at shutdown; their paths stay locked: %w", ctx.Err())
+		return fmt.Errorf("worker: jobs were still running at shutdown; their paths stay locked until the async-tasks stall timeout: %w", ctx.Err())
 	}
 }

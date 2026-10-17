@@ -88,7 +88,7 @@ func TestStatusForCoversEveryEmittedCode(t *testing.T) {
 	// The 31 codes the Clojure service emits, taken from a grep of its source.
 	for _, c := range EmittedCodes() {
 		if !covered[c] {
-			t.Errorf("code %s is emitted by the Clojure service but has no status assertion", c)
+			t.Errorf("code %s is in EmittedCodes but has no status assertion", c)
 		}
 	}
 }
