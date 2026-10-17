@@ -51,8 +51,7 @@ func TestTranslate(t *testing.T) {
 			wantCode: apierror.ErrExists,
 		},
 		{
-			// Deliberately not ERR_FORBIDDEN: that would answer 403 where the Clojure
-			// validators answer 500 for the same condition.
+			// Not ERR_FORBIDDEN: that would change the status from 500 to 403.
 			name:     "catalog refuses access",
 			err:      types.NewIRODSError(common.CAT_NO_ACCESS_PERMISSION),
 			wantCode: apierror.ErrNotReadable,
@@ -102,8 +101,8 @@ func pathOf(extra map[string]any) string {
 	return ""
 }
 
-// TestTranslateConnectionErrors covers the analogue of catch-jargon-io-exceptions: a
-// failure to reach iRODS at all is ERR_UNAVAILABLE, not a failure of the request.
+// TestTranslateConnectionErrors: failing to reach iRODS at all is ERR_UNAVAILABLE, not a
+// failure of the request.
 func TestTranslateConnectionErrors(t *testing.T) {
 	for _, err := range []error{
 		types.NewConnectionError(),

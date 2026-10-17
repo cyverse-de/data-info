@@ -7,6 +7,7 @@ import (
 	"github.com/cyverse-de/data-info/internal/lazy"
 )
 
+// ChildCounts reports how many files and subfolders a collection holds that the user can see.
 func (s *Scope) ChildCounts(_ context.Context, path string) *lazy.Value[ChildCounts] {
 	path = normalizePath(path)
 
@@ -28,10 +29,8 @@ func (s *Scope) ChildCounts(_ context.Context, path string) *lazy.Value[ChildCou
 	})
 }
 
-// PathsForUUIDs resolves data ids to paths.
-//
-// Ids that resolve to nothing are simply absent from the result; the caller decides whether
-// that is an error, since some endpoints are asked to ignore missing entries.
+// PathsForUUIDs resolves data ids to paths. Ids that resolve to nothing are absent from the
+// result; whether that is an error is the caller's call.
 func (s *Scope) PathsForUUIDs(_ context.Context, uuids []string) *lazy.Value[map[string]string] {
 	return lazy.Go(s.ctx, s.catalogSem, func(ctx context.Context) (map[string]string, error) {
 		if len(uuids) == 0 {
@@ -87,11 +86,8 @@ func (s *Scope) ChildCountsFor(_ context.Context, paths []string) *lazy.Value[ma
 	})
 }
 
-// Listing returns a sorted page of a collection's children.
-//
-// The rows are published into the scope, so a handler that lists a folder and then asks
-// about individual entries answers from the listing rather than querying again -- which is
-// what makes formatting a page cost one query rather than one per entry.
+// Listing returns a sorted page of a collection's children. The rows are published, so
+// per-entry lookups afterwards answer from this page rather than querying again.
 func (s *Scope) Listing(_ context.Context, q ListingQuery) *lazy.Value[[]icat.ListingRow] {
 	q.Path = normalizePath(q.Path)
 	q.User = s.opts.User
@@ -119,13 +115,9 @@ func (s *Scope) Listing(_ context.Context, q ListingQuery) *lazy.Value[[]icat.Li
 	})
 }
 
-// Subfolders returns every subfolder of a collection.
-//
-// This is a separate query rather than a filtered listing. The paged listing builds its
-// intermediate results over every data object in the collection before deciding what to keep,
-// so using it for a tree view would make a hot endpoint far more expensive on a folder
-// holding many files. It is also unpaged, as the Clojure service is, so a folder with many
-// subfolders is not silently truncated.
+// Subfolders returns every subfolder of a collection, unpaged so none are truncated. It is a
+// dedicated query because the paged listing scans every data object first, which is costly
+// for a tree view of a folder holding many files.
 func (s *Scope) Subfolders(_ context.Context, path string) *lazy.Value[[]icat.ListingRow] {
 	path = normalizePath(path)
 	groups := s.groupIDs(s.ctx)
@@ -148,11 +140,8 @@ func (s *Scope) Subfolders(_ context.Context, path string) *lazy.Value[[]icat.Li
 	})
 }
 
-// UUIDListing returns a sorted page of the items carrying a set of data ids.
-//
-// The rows are published into the scope, so decorating each entry afterwards -- with a
-// label, a share count, whatever the caller asked for -- answers from this page rather than
-// querying the catalog again per entry.
+// UUIDListing returns a sorted page of the items carrying a set of data ids. The rows are
+// published, so decorating each entry afterwards answers from this page.
 func (s *Scope) UUIDListing(_ context.Context, q UUIDListingQuery) *lazy.Value[[]icat.ListingRow] {
 	q.User = s.opts.User
 	q.Zone = s.deps.Zone

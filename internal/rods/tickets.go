@@ -19,26 +19,16 @@ func (s *Scope) Tickets(ctx context.Context) ([]Ticket, error) {
 	return irodsclient.ListTickets(ctx, sess)
 }
 
-// TicketsForPath lists the tickets issued on exactly this path.
-//
-// Not on its ancestors. A ticket on a collection is a grant on that collection, and it stays
-// valid for everything else in it -- reporting it here would inflate a listing, and removing
-// it when one file inside is deleted would revoke access to the rest.
-//
-// iRODS cannot be asked for the tickets on a path, so everything is listed and filtered here.
-// That is fine at the DE's ticket counts; if it ever stops being fine, the filter belongs in
-// the client library rather than in a cache here.
+// TicketsForPath lists the tickets issued on exactly this path, not its ancestors: a
+// collection's ticket still covers the rest of the collection, so deleting one file must
+// not remove it.
 func (s *Scope) TicketsForPath(ctx context.Context, path string) ([]Ticket, error) {
 	return s.ticketsMatching(ctx, path, false)
 }
 
-// TicketsUnder picks out of a listing from Tickets the ones on a path and on everything
-// inside it.
-//
-// For deletion only. Removing a collection takes its contents with it, so a ticket on
-// something inside is left pointing at nothing -- iRODS does not clean those up and the
-// Clojure service does not either. Including them here is a deliberate improvement on that.
-// It takes a listing rather than making one so that a bulk delete lists once, not per path.
+// TicketsUnder picks from a Tickets listing the ones on path and everything inside it, for
+// deletion, since iRODS leaves tickets on removed descendants dangling. It takes a listing
+// so that a bulk delete lists once.
 func TicketsUnder(all []Ticket, path string) []Ticket {
 	return matchTickets(all, path, true)
 }
@@ -65,17 +55,9 @@ func matchTickets(all []Ticket, path string, includeDescendants bool) []Ticket {
 	return out
 }
 
-// GetTicket returns one ticket by name, or nil when there is none.
-//
-// Resolved by listing and matching rather than by asking for the one ticket. The client's
-// direct lookup builds a GenQuery with a condition on the ticket-string column without
-// selecting it, and iRODS 4.3.1 answers that with nothing -- so a ticket this service had
-// just created came back as missing. Verified against QA: the listing finds it and the direct
-// lookup does not.
-//
-// The cost is one query for every ticket the account owns rather than one for the ticket
-// asked about. At the DE's ticket counts that is not worth a workaround with a subtler
-// failure; if it becomes worth it, the fix belongs in the client library.
+// GetTicket returns one ticket by name, or nil when there is none. It lists and matches
+// because go-irodsclient's direct lookup filters on the ticket-string column without
+// selecting it, which iRODS 4.3.1 answers with nothing, even for a ticket just created.
 func (s *Scope) GetTicket(ctx context.Context, name string) (*Ticket, error) {
 	all, err := s.Tickets(ctx)
 	if err != nil {
@@ -99,11 +81,8 @@ func (s *Scope) CreateTicket(ctx context.Context, name, ticketType, path string)
 	return irodsclient.CreateTicket(ctx, sess, name, ticketType, normalizePath(path))
 }
 
-// TicketLimits are the optional caps a ticket can carry.
-//
-// iRODS sets them after the ticket exists rather than at creation, so a failure part-way
-// leaves a ticket that works but is less restricted than asked for -- which is why the caller
-// removes it rather than reporting partial success.
+// TicketLimits are the optional caps a ticket can carry. iRODS sets them after creation, so
+// if setting them fails the caller removes the ticket rather than leave it less restricted.
 type TicketLimits struct {
 	Uses      *int64
 	FileWrite *int64

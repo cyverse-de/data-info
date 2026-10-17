@@ -7,8 +7,8 @@ import (
 	"github.com/cyverse-de/data-info/internal/icat"
 )
 
-// TestStatOfKeepsAnEmptyChecksum covers the difference terrain depends on: a file with an
-// empty catalog checksum still reports md5, as clj-irods did, and only a NULL omits it.
+// TestStatOfKeepsAnEmptyChecksum: terrain needs md5 on every file, so an empty catalog
+// checksum is still reported and only a NULL omits it.
 func TestStatOfKeepsAnEmptyChecksum(t *testing.T) {
 	tests := []struct {
 		name     string

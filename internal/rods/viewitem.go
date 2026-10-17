@@ -9,15 +9,13 @@ import (
 )
 
 // item resolves one path's catalog row, answering from a published row when one is already
-// there. Every scalar accessor funnels through this, so asking for six facts about a path
-// costs one query.
+// there. Every scalar accessor goes through it, so several facts about a path cost one query.
 func (s *Scope) item(_ context.Context, path string) *lazy.Value[icat.Row] {
 	path = normalizePath(path)
 
 	return memoize(s, memoKey{kindItem, path}, func() *lazy.Value[icat.Row] {
-		// A batched load may already have answered this. Checking without waiting is the
-		// whole point: a listing that is still running must not stall a stat. The locked
-		// variant is required here -- build runs with the scope's lock held.
+		// A batched load may have answered this already. Check without waiting: a listing
+		// still running must not stall a stat.
 		if row, ok := s.peekRowLocked(path); ok {
 			return lazy.Resolved(row)
 		}
@@ -52,8 +50,8 @@ func (s *Scope) item(_ context.Context, path string) *lazy.Value[icat.Row] {
 }
 
 // Stat reports what is at a path. A path that is absent, or that the user cannot see,
-// resolves to a Stat with Exists false rather than an error: callers routinely ask about
-// paths that may not be there, and the Clojure accessors behaved the same way.
+// resolves to a Stat with Exists false rather than an error, because callers routinely ask
+// about paths that may not be there.
 func (s *Scope) Stat(ctx context.Context, path string) *lazy.Value[Stat] {
 	path = normalizePath(path)
 	item := s.item(ctx, path)
@@ -74,8 +72,8 @@ func (s *Scope) Stat(ctx context.Context, path string) *lazy.Value[Stat] {
 func (s *Scope) Stats(_ context.Context, paths []string) *lazy.Value[map[string]Stat] {
 	paths = normalizePaths(paths)
 
-	// Resolved before the catalog slot is taken, not inside it. A goroutine holding a slot
-	// must never wait on a value that needs one.
+	// Resolved before taking a catalog slot: a goroutine holding a slot must never wait on a
+	// value that needs one.
 	groups := s.groupIDs(s.ctx)
 
 	return lazy.Go(s.ctx, s.catalogSem, func(ctx context.Context) (map[string]Stat, error) {
@@ -99,8 +97,6 @@ func (s *Scope) Stats(_ context.Context, paths []string) *lazy.Value[map[string]
 			return nil, err
 		}
 
-		// Publishing before returning means any per-path accessor that runs afterwards
-		// answers from these rows instead of querying again.
 		s.publishRows(rows)
 
 		out := make(map[string]Stat, len(rows))
@@ -108,10 +104,8 @@ func (s *Scope) Stats(_ context.Context, paths []string) *lazy.Value[map[string]
 			out[row.FullPath] = statOf(row)
 		}
 
-		// Record the absences too. Without this, a bulk request over paths that mostly do
-		// not exist -- which is the common shape, since callers ask about paths they are
-		// not sure about -- would send every follow-up lookup back to the catalog one at a
-		// time, reintroducing exactly the N+1 the batch exists to avoid.
+		// Record absences too, so follow-up lookups on missing paths, common in bulk
+		// requests, don't go back to the catalog one at a time.
 		s.recordAbsent(paths, out)
 
 		return out, nil

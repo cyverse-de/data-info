@@ -287,14 +287,8 @@ func TestLookupsRunConcurrently(t *testing.T) {
 	}
 }
 
-// TestConcurrentLookupsDoNotStarveTheGroupLookup covers a deadlock the earlier tests could
-// not see.
-//
-// Every permission-filtered catalog lookup waits on the user's group ids. When the group
-// lookup also needed a catalog slot, enough concurrent lookups would take every slot and
-// then all block waiting for a lookup that could never get one. The tests missed it because
-// the fake answered instantly, so the semaphore never filled; this one makes queries slow
-// enough to saturate it.
+// TestConcurrentLookupsDoNotStarveTheGroupLookup slows the fake so concurrent lookups fill
+// every catalog slot; the group lookup they all wait on must still run.
 func TestConcurrentLookupsDoNotStarveTheGroupLookup(t *testing.T) {
 	fake := icattest.New()
 	fake.Delay = 10 * time.Millisecond

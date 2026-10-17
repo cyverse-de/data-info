@@ -24,14 +24,8 @@ type Session struct {
 func (s *Session) ClientUser() string { return s.clientUser }
 
 // IsProxied reports whether this session acts on behalf of somebody other than the account
-// it authenticated as.
-//
-// It decides whether an access-control change is made administratively. clj-jargon dispatches
-// set-dataobj-perms and set-coll-perms on the same question: a proxied connection uses the
-// ordinary calls, and one acting as the service account directly uses the InAdminMode ones.
-// Getting it backwards is not cosmetic -- iRODS answers CAT_INVALID_ARGUMENT for an ordinary
-// removal the account is not entitled to make, which failed every delete of a file carrying
-// access from a non-inheriting parent.
+// it authenticated as. Access-control changes use admin mode exactly when it is not: an
+// unproxied ordinary call gets CAT_INVALID_ARGUMENT for removals the account cannot make.
 func (s *Session) IsProxied() bool { return s.clientUser != "" }
 
 // FileSystem exposes the underlying client. Prefer Do, which adds cancellation and error
@@ -46,20 +40,10 @@ func (s *Session) Close() {
 	s.pool.release(s.entry, s.poisoned.Load())
 }
 
-// Do runs fn against the session's FileSystem, adding the cancellation the library does
-// not provide and translating the result into the DE error vocabulary.
-//
-// No go-irodsclient method takes a context.Context, so a cancelled request cannot abort an
-// iRODS call already in flight. Do races the call against ctx and returns as soon as
-// either finishes. When ctx wins, the call is still running: it holds a connection that is
-// mid-protocol, with a half-read response nobody will consume, so the session is marked
-// poisoned and released rather than handed to the next caller.
-//
-// The orphaned goroutine is not leaked indefinitely. go-irodsclient turns its operation
-// timeouts into real socket deadlines, so a blocked read unwinds with a deadline error
-// once the budget expires. That budget is per round trip rather than per call, so a
-// paged query can take a multiple of it -- which is why both the operation and the long
-// operation timeouts are kept modest on the metadata connection.
+// Do runs fn against the session's FileSystem, racing it against ctx and translating errors
+// into the DE vocabulary. go-irodsclient takes no context, so a call abandoned on
+// cancellation keeps running mid-protocol: the session is poisoned, and the orphaned call
+// unwinds at the operation timeout's socket deadline.
 func Do[T any](ctx context.Context, s *Session, fn func(*irodsfs.FileSystem) (T, error)) (T, error) {
 	return DoPath(ctx, s, "", fn)
 }
@@ -119,15 +103,8 @@ func run[T any](ctx context.Context, s *Session, path string, fn func(*irodsfs.F
 		if r.err != nil {
 			err := Translate(r.err, path, s.clientUser)
 
-			// A connection or authentication failure is recorded on the underlying
-			// session and makes every later acquisition on it fail. Discarding the
-			// session keeps a failed connection from ever being reused.
-			//
-			// It also sidesteps the mutex leak that upstream v0.20.1 and v0.21.0 have on
-			// that path, where AcquireConnection returns while still holding the session
-			// mutex and wedges every later caller with no socket to time out. v0.21.4
-			// fixes it; this stays because a connection that has already failed is not
-			// worth handing to the next request either way.
+			// go-irodsclient records a connection or authentication failure on its session
+			// and fails every later acquisition, so discard it.
 			if IsUnavailable(err) {
 				s.poisoned.Store(true)
 			}

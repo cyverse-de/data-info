@@ -7,11 +7,9 @@ import (
 	"github.com/cyverse-de/data-info/internal/irodsclient"
 )
 
-// MaxReadableFileSize bounds what ReadFile will return.
-//
-// These files are configuration a person wrote -- a CSV of metadata, a path list -- so this
-// is generous for that and small enough that pointing the endpoint at a data file fails
-// rather than filling memory.
+// MaxReadableFileSize bounds what ReadFile will return: generous for a hand-written metadata
+// CSV or path list, small enough that pointing it at a data file fails rather than filling
+// memory.
 const MaxReadableFileSize = 32 << 20
 
 // ReadFile returns a data object's contents, up to MaxReadableFileSize.
@@ -23,11 +21,8 @@ func (s *Scope) ReadFile(ctx context.Context, path string) ([]byte, error) {
 	return irodsclient.ReadFile(ctx, sess, normalizePath(path), MaxReadableFileSize)
 }
 
-// ReadAt returns up to length bytes of a data object starting at offset.
-//
-// The chunking endpoints read this way rather than opening a stream: they want one span of
-// one file, and a positional read is a single round trip where a stream would be an open, a
-// seek and a close.
+// ReadAt returns up to length bytes of a data object starting at offset, in one round trip
+// rather than a stream's open, seek and close.
 func (s *Scope) ReadAt(ctx context.Context, path string, offset, length int64) ([]byte, error) {
 	sess, err := s.session(ctx)
 	if err != nil {
@@ -36,10 +31,8 @@ func (s *Scope) ReadAt(ctx context.Context, path string, offset, length int64) (
 	return irodsclient.ReadAt(ctx, sess, normalizePath(path), offset, length)
 }
 
-// OpenFile opens a data object for streaming.
-//
-// The reader borrows the scope's session, so it must be closed before the scope is. A
-// handler that streams a download therefore closes it before returning, not after.
+// OpenFile opens a data object for streaming. The reader borrows the scope's session, so it
+// must be closed before the scope is.
 func (s *Scope) OpenFile(ctx context.Context, path string) (io.ReadCloser, error) {
 	sess, err := s.session(ctx)
 	if err != nil {
@@ -54,11 +47,8 @@ type ChildEntry struct {
 	IsDir bool
 }
 
-// ChildEntries lists what a collection holds, saying which members are collections.
-//
-// Children answers the same question without the types, and most callers only need paths.
-// This exists for the walks that have to descend, which would otherwise cost a stat per
-// member to find out where to go.
+// ChildEntries lists what a collection holds, saying which members are collections, so a
+// walk that descends needs no stat per member.
 func (s *Scope) ChildEntries(ctx context.Context, path string) ([]ChildEntry, error) {
 	sess, err := s.session(ctx)
 	if err != nil {

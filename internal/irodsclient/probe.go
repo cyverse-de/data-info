@@ -8,14 +8,9 @@ import (
 	irodsfs "github.com/cyverse/go-irodsclient/fs"
 )
 
-// Probe reports whether iRODS is reachable and will accept our credentials. Unlike a bare
-// TCP dial it exercises authentication, which is what the Clojure irods-running? check did
-// by opening a Jargon connection and stat-ing the home collection.
-//
-// The result is cached for ProbeCacheTTL, because GET / reports iRODS health on every call
-// without authentication. The probe runs in the background on its own budget and a caller
-// waits only as long as its own context allows, so a slow probe never queues later health
-// checks behind it.
+// Probe reports whether iRODS is reachable and accepts our credentials. The result is
+// cached for ProbeCacheTTL, and the probe runs on its own budget while each caller waits
+// only as long as its context allows.
 func (p *Pool) Probe(ctx context.Context) error {
 	p.probeMu.Lock()
 	if !p.probeAt.IsZero() && time.Since(p.probeAt) < p.cfg.ProbeCacheTTL {
@@ -54,16 +49,10 @@ func (p *Pool) runProbe(ctx context.Context, running chan struct{}) {
 	close(running)
 }
 
-// probeWithRetries retries a refused connection with a linear backoff.
-//
-// A busy iRODS server answers a new connection by closing it, which surfaces as
-// "connection rejected: EOF". That happens to healthy clients under ordinary load, so one
-// refusal is not evidence that the backend is down. The retry lives here rather than at
-// construction because connections are established lazily, inside the first operation --
-// NewFileSystem does no I/O, so there is nothing to retry at that point.
-//
-// Only the probe retries: a failure that looks like a refused connection may be a
-// connection dropped part way through a write, and this layer cannot tell the two apart.
+// probeWithRetries retries a refused connection with linear backoff: a busy iRODS server
+// closes new connections ("connection rejected: EOF") even from healthy clients. Only the
+// probe retries, since elsewhere a refusal cannot be told apart from a connection dropped
+// part way through a write.
 func (p *Pool) probeWithRetries(ctx context.Context) error {
 	// Detached from the caller for the whole loop, backoff included: a caller's deadline
 	// must neither poison the admin session nor be reported as the health result.

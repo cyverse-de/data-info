@@ -43,8 +43,8 @@ type Stat struct {
 	CreatedMS  int64
 	ModifiedMS int64
 	Permission Permission
-	// Checksum is nil when the catalog holds none at all. An empty checksum is still
-	// reported, because clj-irods kept it and terrain requires md5 on every file.
+	// Checksum is nil only when the catalog holds none; an empty one is still reported
+	// because terrain requires md5 on every file.
 	Checksum *string
 	Exists   bool
 }
@@ -59,10 +59,9 @@ type ACLEntry struct {
 // AVU is one metadata triple.
 type AVU = irodsclient.AVU
 
-// View is the read surface handlers program against.
-//
-// Every accessor returns immediately with a value whose computation has already started, so
-// a caller can ask for several facts and then await them all.
+// View is the read surface handlers program against. Every accessor returns at once with a
+// value whose computation has already started, so a caller can ask for several facts and
+// then await them all.
 type View interface {
 	Stat(ctx context.Context, path string) *lazy.Value[Stat]
 	ObjectType(ctx context.Context, path string) *lazy.Value[ObjectType]
@@ -112,10 +111,8 @@ type UUIDListingQuery = icat.UUIDListingQuery
 // ChildCounts is how many files and subfolders a collection holds.
 type ChildCounts = icat.ChildCounts
 
-// Permits reports whether a held access level satisfies a required one.
-//
-// iRODS access is a ladder rather than a set of flags -- own implies write implies read --
-// so a check is a comparison and not a membership test.
+// Permits reports whether a held access level satisfies a required one; own implies write
+// implies read.
 func Permits(held, required Permission) bool {
 	rank := map[Permission]int{
 		PermissionNone:  0,

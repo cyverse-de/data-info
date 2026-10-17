@@ -13,14 +13,9 @@ import (
 
 // Pool hands out sessions, one per client user plus one for the proxy account itself.
 //
-// A single FileSystem cannot serve more than one client user: the client username travels
-// in the startup packet sent when a connection is established, and there is no way to
-// change it afterwards. The alternatives are to run everything as the proxy account and
-// enforce permissions ourselves -- which widens the blast radius of any missed check to
-// include move, rename, upload and mkdir -- or to build a FileSystem per request, which
-// costs an authentication round trip and two goroutines every time and would exhaust the
-// server's agents under a listing burst. So sessions are pooled per user and evicted by
-// least-recent use.
+// A FileSystem's client user is fixed when it connects, so sessions are pooled per user and
+// evicted least-recently-used; one per request would cost an authentication round trip each
+// and exhaust the server's agents under a burst.
 type Pool struct {
 	cfg Config
 
@@ -58,12 +53,8 @@ const (
 	// adminKey is the proxy account acting as itself.
 	adminKey = ""
 
-	// probeKey was once a separate session, to keep a probe's short deadline from
-	// poisoning the session admin work uses. That cost a second concurrent connection,
-	// which is a resource the server may simply refuse -- QA rejects a second connection
-	// for the service account outright. The probe now shares the admin session and is
-	// given a budget generous enough that a timeout means something is genuinely wrong,
-	// in which case discarding the session is the right response anyway.
+	// probeKey shares the admin session: a separate one would be a second concurrent
+	// service-account connection, which a server may refuse (QA does).
 	probeKey = adminKey
 )
 
@@ -78,11 +69,8 @@ type entry struct {
 	// Pool.lease.
 	leased usage
 
-	// dead marks an entry that has been unlinked from the pool and must be released once
-	// the last holder lets go. Without it an entry unlinked while another caller still
-	// held it would never be released by anyone: the unlinking path sees inUse > 0 and
-	// leaves it, and the remaining holder's release walks a list the entry is no longer
-	// in.
+	// dead marks an entry unlinked from the pool while possibly still held; whoever drops
+	// inUse to zero must release it, because nothing else can reach it any more.
 	dead bool
 }
 
@@ -119,25 +107,20 @@ func NewPool(cfg Config) (*Pool, error) {
 	return p, nil
 }
 
-// Admin returns a session acting as the proxy account itself, with no client user. This
-// is the Clojure with-jargon-exceptions [cm] form, used where data-info enforces
-// permissions itself rather than delegating to iRODS.
+// Admin returns a session acting as the proxy account itself, for operations where
+// data-info enforces permissions rather than iRODS.
 func (p *Pool) Admin(ctx context.Context) (*Session, error) {
 	return p.session(ctx, adminKey, "")
 }
 
 // ForUser returns a session acting as user, so iRODS enforces that user's permissions.
-// This is the Clojure with-jargon-exceptions :client-user user form.
 func (p *Pool) ForUser(ctx context.Context, user string) (*Session, error) {
 	if user == "" {
 		return nil, fmt.Errorf("a client user is required; use Admin for the proxy account")
 	}
 
-	// Proxying as the proxy account itself is the same as acting as it directly, so reuse
-	// the one session rather than opening a second identical one. That is not a
-	// micro-optimisation here: a zone may grant this service very few concurrent
-	// connections, and the service account is the one most likely to be making requests
-	// while other work is in flight.
+	// Proxying as the proxy account is the same as acting as it, so reuse the admin session
+	// rather than spend a second, scarce service-account connection.
 	if user == p.cfg.ProxyUser {
 		return p.session(ctx, adminKey, "")
 	}
@@ -219,11 +202,8 @@ func (p *Pool) newFileSystem(clientUser string) (*irodsfs.FileSystem, error) {
 
 	fsc := irodsfs.NewFileSystemConfig(p.cfg.AppName)
 
-	// Caching has to stay off. A pooled FileSystem outlives the request that created it,
-	// a second replica mutates the same collections, and info-typer writes ipc-filetype
-	// AVUs out of band -- so a cached listing or stat can be wrong by the time it is
-	// read. The Clojure service had no such cache; introducing one silently would be a
-	// correctness regression rather than an optimisation.
+	// Caching stays off: a pooled FileSystem outlives its request, and other replicas and
+	// info-typer change the catalog behind it, so cached stats and listings go stale.
 	fsc.Cache.Backend = &irodsfs.CacheBackendConfig{Type: irodsfs.CacheBackendTypeNone}
 
 	// Connect lazily so a pool built while iRODS is down still returns.

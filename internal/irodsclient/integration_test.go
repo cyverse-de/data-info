@@ -102,12 +102,8 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// One session for every test that performs an operation.
-//
-// QA's iRODS is shared -- a local DE deployment uses the same proxy account -- and it
-// refuses new connections once its agents are committed. Opening a FileSystem per test
-// reproduced that reliably: the first connected and the rest were rejected outright. These
-// tests are not the place to find out how many connections are spare, so they use one.
+// One session for every test: QA's iRODS is shared with local DE deployments and refuses
+// new connections once its agents are committed.
 var (
 	sharedSessionOnce sync.Once
 	sharedSession     *Session

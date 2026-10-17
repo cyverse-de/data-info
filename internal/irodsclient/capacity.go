@@ -80,13 +80,10 @@ func openUsage(fsys *irodsfs.FileSystem) usage {
 // until there is room, and returns the function that gives it back.
 //
 // The Data Store's HAProxy refuses a client address's connections past a small number, and
-// every pod on a node shares an address, so a connection opened past it fails the request.
-// go-irodsclient offers no hook on connection creation, so the count is kept from outside:
-// each session is charged per pool the larger of the connections it has open and what its
-// calls in flight may need, and a call is admitted while the total stays within
-// MaxTotalConnections -- less metadataReserve for a transfer. A waiting call makes room by
-// evicting idle users' sessions, and otherwise waits for a call to finish or for
-// go-irodsclient to close an idle connection.
+// every pod on a node shares an address. go-irodsclient has no hook on connection creation,
+// so the count is kept here: each session is charged per pool (see charge), and a call is
+// admitted while the total fits MaxTotalConnections, less metadataReserve for a transfer,
+// evicting idle sessions to make room.
 func (p *Pool) lease(ctx context.Context, e *entry, kind connKind) (func(), error) {
 	limit := p.cfg.MaxTotalConnections
 	if kind == transferConn {

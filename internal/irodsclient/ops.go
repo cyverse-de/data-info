@@ -63,9 +63,8 @@ type ACLEntry struct {
 	IsGroup    bool
 }
 
-// Stat reports what is at a path. It returns ObjectTypeNone rather than an error when
-// nothing is there, matching the Clojure object-type accessor, because callers routinely
-// ask about paths that may not exist.
+// Stat reports what is at a path, returning ObjectTypeNone rather than an error when nothing
+// is there, because callers routinely ask about paths that may not exist.
 func Stat(ctx context.Context, s *Session, path string) (*Entry, error) {
 	entry, err := DoPath(ctx, s, path, func(fsys *irodsfs.FileSystem) (*irodsfs.Entry, error) {
 		return fsys.Stat(path)
@@ -116,13 +115,9 @@ func ListACLs(ctx context.Context, s *Session, path string) ([]ACLEntry, error) 
 	return out, nil
 }
 
-// SetACL grants a permission on a path. Passing PermissionNone revokes access.
-//
-// adminMode adds iRODS' -M flag, which is required when the session's account does not own
-// the path. Whether a given call site needs it depends on whether it runs as the proxy
-// account or as the requesting user, so it is an explicit argument rather than a default:
-// switching it on where it is not needed would let a caller change access on paths they do
-// not own.
+// SetACL grants a permission on a path; PermissionNone revokes access. adminMode adds
+// iRODS' -M flag, needed when the session's account does not own the path; it is explicit
+// because turning it on where it is not needed would let a caller change others' access.
 func SetACL(ctx context.Context, s *Session, path string, perm Permission, user, zone string, recurse, adminMode bool) error {
 	_, err := DoPath(ctx, s, path, func(fsys *irodsfs.FileSystem) (struct{}, error) {
 		return struct{}{}, fsys.ChangeACLs(path, toIRODSAccessLevel(perm), user, zone, recurse, adminMode)
@@ -178,12 +173,9 @@ func MakeDir(ctx context.Context, s *Session, path string, recurse bool) error {
 	return err
 }
 
-// UserExists reports whether a user account -- not a group -- exists in the zone.
-//
-// The type check is done here rather than passed to the client: FileSystem.GetUser accepts
-// a user type argument but ignores it, looking the name up by name and zone alone. Without
-// this a group name would satisfy a user-existence check, so sharing with a group would be
-// validated as sharing with a user.
+// UserExists reports whether a user account -- not a group -- exists in the zone. The type
+// is checked here because FileSystem.GetUser ignores its type argument, so a group name
+// would otherwise pass.
 func UserExists(ctx context.Context, s *Session, user, zone string) (bool, error) {
 	found, err := Do(ctx, s, func(fsys *irodsfs.FileSystem) (*types.IRODSUser, error) {
 		return fsys.GetUser(user, zone, types.IRODSUserRodsUser)
@@ -229,11 +221,8 @@ func ServerVersion(ctx context.Context, s *Session) (string, error) {
 	return v.ReleaseVersion, nil
 }
 
-// convertEntry maps a go-irodsclient entry onto ours.
-//
-// Checksum is carried but should not be used for the stat md5 field: that value comes
-// verbatim from the catalog's data_checksum column, and the decoded bytes here would
-// render differently.
+// convertEntry maps a go-irodsclient entry onto ours. Its Checksum is decoded bytes, so the
+// stat md5 field must use the catalog's data_checksum text instead.
 func convertEntry(e *irodsfs.Entry) *Entry {
 	t := ObjectTypeFile
 	if e.Type == irodsfs.DirectoryEntry {
@@ -267,11 +256,8 @@ func toIRODSAccessLevel(p Permission) types.IRODSAccessLevelType {
 	}
 }
 
-// fromIRODSAccessLevel maps iRODS' access levels onto the DE's permission names.
-//
-// iRODS exposes far finer-grained levels than the DE does, and reports them in several
-// spellings ("read object", "read_object"); GetIRODSAccessLevelType canonicalises those.
-// Anything below read reports as no access, which is how the Clojure service treated them.
+// fromIRODSAccessLevel maps iRODS' access levels, in any of their spellings ("read object",
+// "read_object"), onto the DE's permission names; anything below read is no access.
 func fromIRODSAccessLevel(l types.IRODSAccessLevelType) Permission {
 	switch types.GetIRODSAccessLevelType(string(l)) {
 	case types.IRODSAccessLevelOwner:

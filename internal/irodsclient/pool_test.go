@@ -12,9 +12,8 @@ import (
 func testPool(t *testing.T, mutate func(*Config)) *Pool {
 	t.Helper()
 
-	// A reserved name that cannot resolve anywhere. A bare "irods" resolves on some
-	// networks through a search domain, which quietly changes what these tests exercise
-	// -- it masked a real bug locally that CI caught.
+	// A reserved name that cannot resolve; a bare "irods" resolves through a search domain
+	// on some networks.
 	cfg := Config{Host: "irods.invalid", Port: 1247, Zone: "iplant", ProxyUser: "rods"}
 	if mutate != nil {
 		mutate(&cfg)
@@ -186,11 +185,8 @@ func TestEviction(t *testing.T) {
 	}
 }
 
-// TestProbeSharesTheAdminSession pins a deliberate choice. An earlier version gave the
-// probe its own session so a short probe deadline could not poison the session admin work
-// uses. That costs a second concurrent connection, which a server may refuse outright --
-// QA does, for the service account -- so the probe shares the admin session and gets a
-// budget long enough that a timeout is real.
+// TestProbeSharesTheAdminSession: a separate probe session would be a second concurrent
+// service-account connection, which a server may refuse.
 func TestProbeSharesTheAdminSession(t *testing.T) {
 	pool := testPool(t, nil)
 

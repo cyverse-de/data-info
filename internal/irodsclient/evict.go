@@ -5,13 +5,9 @@ import (
 	"time"
 )
 
-// evictLocked unlinks least-recently-used sessions that are over the limit or have gone
-// idle.
-//
-// A session in use is never evicted, even if that leaves the pool over MaxSessions. An
-// evicted session's next caller opens a new one alongside it, and for the admin session
-// that is a second service-account connection, which QA refuses. A long download or job
-// would trigger it just by outlasting IdleTimeout.
+// evictLocked unlinks least-recently-used sessions that are over MaxSessions or idle past
+// IdleTimeout. A session in use is never evicted: its next caller would open a second one
+// beside it, and a second admin session is a service-account connection QA refuses.
 func (p *Pool) evictLocked() {
 	cutoff := time.Now().Add(-p.cfg.IdleTimeout)
 
@@ -58,13 +54,8 @@ func (p *Pool) releaseFSLocked(e *entry) {
 	}()
 }
 
-// release returns a session to the pool.
-//
-// A poisoned session's FileSystem is discarded rather than reused. That covers two cases:
-// a call abandoned on context cancellation, which leaves a connection mid-protocol, and a
-// connection or authentication failure, which go-irodsclient records on the session so
-// that every later acquisition on it fails -- and, in v0.20.1 and v0.21.0, deadlocks. See
-// Session.
+// release returns a session to the pool, discarding a poisoned one: abandoned mid-protocol,
+// or failed to connect or authenticate, which go-irodsclient makes sticky.
 func (p *Pool) release(e *entry, poisoned bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -81,8 +72,6 @@ func (p *Pool) release(e *entry, poisoned bool) {
 		e.dead = true
 	}
 
-	// Whoever drops the count to zero on an unlinked entry owns releasing it. Without
-	// this the entry would be unreachable from the pool and never released by anyone.
 	if e.dead {
 		if e.inUse <= 0 {
 			p.releaseFSLocked(e)
@@ -101,9 +90,8 @@ func (p *Pool) release(e *entry, poisoned bool) {
 	p.evictLocked()
 }
 
-// startSweeper runs idle eviction in the background. Without it a session is only ever
-// evicted by another checkout or release, so a service that goes quiet holds every
-// FileSystem it ever opened -- and the iRODS agents behind them -- indefinitely.
+// startSweeper runs idle eviction in the background, so a service that goes quiet does not
+// hold its sessions, and the iRODS agents behind them, indefinitely.
 func (p *Pool) startSweeper() {
 	interval := p.cfg.IdleTimeout / 2
 	if interval < time.Second {

@@ -24,10 +24,8 @@ type Ticket struct {
 	WriteByteCount int64
 }
 
-// ListTickets returns every ticket the connected account can see.
-//
-// iRODS has no way to ask for the tickets on one path, so callers that want those filter
-// this list themselves.
+// ListTickets returns every ticket the connected account can see. iRODS cannot list one
+// path's tickets, so callers filter this.
 func ListTickets(ctx context.Context, s *Session) ([]Ticket, error) {
 	found, err := Do(ctx, s, func(fsys *irodsfs.FileSystem) ([]*types.IRODSTicket, error) {
 		return fsys.ListTickets()

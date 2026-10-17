@@ -10,19 +10,12 @@ import (
 	irodsfs "github.com/cyverse/go-irodsclient/fs"
 )
 
-// MaxChunkSize bounds a single positional read.
-//
-// The Clojure service allocates whatever the caller asked for, which on the JVM is an
-// OutOfMemoryError and a 500 for an absurd size. Here it would be an allocation the runtime
-// cannot recover from, so the request is refused instead. Callers narrow the length to what
-// the file actually holds before reaching this, so the bound is only ever met by a request
-// for tens of megabytes of a file that large. See docs/deferred-fixes.md.
+// MaxChunkSize bounds a single positional read, so an absurd length is refused rather than
+// allocated. See docs/deferred-fixes.md.
 const MaxChunkSize = 64 << 20
 
-// ReadAt returns up to length bytes of a data object starting at offset.
-//
-// A short read is not an error: it means the file ended. The caller decides what a partial
-// chunk means, which for the chunking endpoints is "this is the last page".
+// ReadAt returns up to length bytes of a data object starting at offset. A short read is
+// not an error: it means the file ended.
 func ReadAt(ctx context.Context, s *Session, path string, offset, length int64) ([]byte, error) {
 	if offset < 0 {
 		return nil, fmt.Errorf("irodsclient: a non-negative offset is required, got %d", offset)
@@ -53,12 +46,8 @@ func ReadAt(ctx context.Context, s *Session, path string, offset, length int64) 
 	})
 }
 
-// OpenReader opens a data object for streaming.
-//
-// The returned reader borrows the session, so it must be closed before the session is
-// returned to the pool. Downloads use this rather than ReadFile: a data object is as large
-// as whatever a user put there, and holding one in memory to hand it to the client would
-// size the service to its largest file.
+// OpenReader opens a data object for streaming. The reader borrows the session and must be
+// closed before the session is.
 func OpenReader(ctx context.Context, s *Session, path string) (io.ReadCloser, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err

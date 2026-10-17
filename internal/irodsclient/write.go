@@ -16,12 +16,9 @@ import (
 // GiB; the cost is one buffer held for each transfer in flight.
 const transferBufferSize = 4 << 20
 
-// WriteFile streams r into a new data object at path and returns the number of bytes
-// written.
-//
-// The whole copy runs as one cancellable call, so cancelling the request abandons the
-// transfer and discards the session rather than leaving a half-written object attached to
-// a connection the next caller would inherit. Nothing is buffered on local disk.
+// WriteFile streams r into a new data object at path and returns the bytes written. The copy
+// runs as one cancellable call, so a cancelled request discards the session rather than
+// leave a half-written handle on a connection the next caller would inherit.
 func WriteFile(ctx context.Context, s *Session, path string, r io.Reader, resource string) (int64, error) {
 	return doLeased(ctx, s, path, transferConn, func(fsys *irodsfs.FileSystem) (int64, error) {
 		handle, err := fsys.CreateFile(path, resource, "w")
@@ -31,9 +28,8 @@ func WriteFile(ctx context.Context, s *Session, path string, r io.Reader, resour
 
 		written, copyErr := copyInFullWrites(handle, r)
 
-		// Close is what commits the object, so its error matters even when the copy
-		// succeeded. When the copy failed it is still called, to release the handle, but
-		// the copy error is the one worth reporting.
+		// Close commits the object, so its error matters even after a successful copy;
+		// after a failed one the copy error is the one worth reporting.
 		closeErr := handle.Close()
 		if copyErr != nil {
 			return written, copyErr
@@ -56,11 +52,8 @@ func copyInFullWrites(w io.Writer, r io.Reader) (int64, error) {
 	return written, buffered.Flush()
 }
 
-// ReadFile returns a data object's whole contents.
-//
-// For the few callers that need a file this service wrote or is about to interpret -- a CSV
-// of metadata, a path list -- and not for downloads, which stream. The limit is what keeps a
-// caller from being handed a terabyte because somebody pointed this at the wrong path.
+// ReadFile returns a data object's whole contents, failing if it exceeds limit. It is for
+// small files the service interprets, such as metadata CSVs and path lists, not downloads.
 func ReadFile(ctx context.Context, s *Session, path string, limit int64) ([]byte, error) {
 	return doLeased(ctx, s, path, transferConn, func(fsys *irodsfs.FileSystem) ([]byte, error) {
 		handle, err := fsys.OpenFile(path, "", "r")
@@ -69,9 +62,8 @@ func ReadFile(ctx context.Context, s *Session, path string, limit int64) ([]byte
 		}
 		defer handle.Close() //nolint:errcheck // nothing was written
 
-		// One byte past the limit, so that a file which is too large fails rather than
-		// arriving truncated. A CSV of metadata cut off mid-row would be applied as far as
-		// it went and reported as a success.
+		// One byte past the limit, so an oversize file fails rather than arriving
+		// truncated: a metadata CSV cut off mid-row would be applied as far as it went.
 		contents, err := io.ReadAll(io.LimitReader(handle, limit+1))
 		if err != nil {
 			return nil, err
@@ -83,11 +75,9 @@ func ReadFile(ctx context.Context, s *Session, path string, limit int64) ([]byte
 	})
 }
 
-// RenameFile moves a data object to another path.
-//
-// Used to publish an upload written to a temporary name. Both paths are expected to be in
-// the same collection, which keeps this a catalog-only operation and means the object's
-// access list needs no repair afterwards.
+// RenameFile moves a data object to another path, to publish an upload written under a
+// temporary name. Both paths are expected in one collection, so the access list needs no
+// repair afterwards.
 func RenameFile(ctx context.Context, s *Session, from, to string) error {
 	_, err := DoPath(ctx, s, from, func(fsys *irodsfs.FileSystem) (struct{}, error) {
 		return struct{}{}, fsys.RenameFileToFile(from, to)
@@ -95,12 +85,8 @@ func RenameFile(ctx context.Context, s *Session, from, to string) error {
 	return err
 }
 
-// Move renames a path, choosing the right call for what is there.
-//
-// iRODS has separate operations for collections and data objects and they are not
-// interchangeable, so the type has to be known first. Within one collection this is a
-// catalog-only operation; across collections the object's access list travels with it
-// unchanged, which is why the caller has to repair permissions afterwards.
+// Move renames a collection or data object. Across collections the access list travels
+// unchanged, so the caller has to repair permissions afterwards.
 func Move(ctx context.Context, s *Session, from, to string) error {
 	_, err := DoPath(ctx, s, from, func(fsys *irodsfs.FileSystem) (struct{}, error) {
 		entry, err := fsys.Stat(from)
@@ -126,11 +112,6 @@ func RemoveDir(ctx context.Context, s *Session, path string, recurse, force bool
 
 // Inherits reports whether a collection passes its access list down to what is created
 // inside it.
-//
-// This is what decides how permissions have to be repaired after a move: a collection that
-// inherits gives new children its own access list, so an object moved into one has to be
-// stripped and re-granted, while one moved into a collection that does not inherit keeps
-// what it arrived with.
 func Inherits(ctx context.Context, s *Session, path string) (bool, error) {
 	inheritance, err := DoPath(ctx, s, path, func(fsys *irodsfs.FileSystem) (*types.IRODSAccessInheritance, error) {
 		return fsys.GetDirACLInheritance(path)
@@ -150,15 +131,9 @@ func RemoveFile(ctx context.Context, s *Session, path string, force bool) error 
 	return err
 }
 
-// Checksum asks iRODS for a data object's checksum, computing and recording it in the
-// catalog when there is not one already.
-//
-// This has to be asked for. The Clojure service's client computed a checksum as part of every
-// upload, and the stat endpoints read that value straight out of the catalog column, so an
-// object written without one reports an empty md5 for the rest of its life. The hashing
-// happens on the resource server, so the file's bytes do not cross the wire again.
-//
-// The value is returned for the caller's benefit; the reason to call this is the recording.
+// Checksum has iRODS compute and record a data object's checksum when it has none, and
+// returns it. Uploads must call it: stat reports the catalog's checksum column verbatim, so
+// an object written without one reports an empty md5 forever.
 func Checksum(ctx context.Context, s *Session, path, resource string) (string, error) {
 	return DoPath(ctx, s, path, func(fsys *irodsfs.FileSystem) (string, error) {
 		conn, err := fsys.GetMetadataConnection(true)

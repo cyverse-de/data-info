@@ -8,10 +8,8 @@ import (
 	"github.com/cyverse-de/data-info/internal/lazy"
 )
 
-// ACL reports every user's access to a path.
-//
-// The catalog query behind this is not scoped to the requesting user, so a handler must
-// confirm the user may see the path before calling it.
+// ACL reports every user's access to a path. The query is not scoped to the requesting
+// user, so a handler must confirm the user may see the path before calling it.
 func (s *Scope) ACL(_ context.Context, path string) *lazy.Value[[]ACLEntry] {
 	path = normalizePath(path)
 
@@ -50,19 +48,14 @@ func (s *Scope) ACLs(_ context.Context, paths []string) *lazy.Value[map[string][
 			out[path] = aclOf(ps)
 		}
 
-		// Seed the per-path memo, empty results included, so a handler that batches and
-		// then reports each path individually does not pay a round trip per path.
 		s.seedACLs(paths, out)
 
 		return out, nil
 	})
 }
 
-// AVUs reports a path's metadata.
-//
-// This is the one read that goes over the protocol rather than the catalog. iRODS applies
-// its own visibility rules to metadata, and the Clojure service read AVUs through Jargon
-// for the same reason.
+// AVUs reports a path's metadata, over the protocol rather than the catalog so that iRODS
+// applies its own visibility rules.
 func (s *Scope) AVUs(_ context.Context, path string) *lazy.Value[[]AVU] {
 	path = normalizePath(path)
 
@@ -87,11 +80,9 @@ func (s *Scope) AVUs(_ context.Context, path string) *lazy.Value[[]AVU] {
 	})
 }
 
-// UserExists reports whether an iRODS account exists. Groups do not count.
-//
-// This asks the catalog rather than the protocol. Every request validates its caller, so
-// asking over the protocol would cost a connection per request on a zone that grants this
-// service very few -- and the catalog is where iRODS keeps the answer anyway.
+// UserExists reports whether an iRODS account exists. Groups do not count. It asks the
+// catalog because every request validates its caller, and a protocol call would spend a
+// scarce connection each time.
 func (s *Scope) UserExists(_ context.Context, user string) *lazy.Value[bool] {
 	return memoize(s, memoKey{kindUserExists, user}, func() *lazy.Value[bool] {
 		return lazy.Go(s.ctx, s.catalogSem, func(ctx context.Context) (bool, error) {
@@ -99,18 +90,14 @@ func (s *Scope) UserExists(_ context.Context, user string) *lazy.Value[bool] {
 			if err != nil {
 				return false, err
 			}
-			// A group is not a user. Sharing with a group is a different operation, and
-			// treating one as the other would let a group name satisfy a user check.
+			// A group name must not satisfy a user check.
 			return kind != icat.UserKindNone && kind != icat.UserKindGroup, nil
 		})
 	})
 }
 
-// UserKind reports what an account name refers to, which is what decides whether its holder
-// may administer groups.
-//
-// From the catalog, for the same reason UserExists is: this is asked on every group request
-// and the connections the zone grants this service are the scarce resource.
+// UserKind reports what an account name refers to, which decides whether its holder may
+// administer groups. Answered from the catalog, like UserExists.
 func (s *Scope) UserKind(_ context.Context, user string) *lazy.Value[icat.UserKind] {
 	return memoize(s, memoKey{kindUserKind, user}, func() *lazy.Value[icat.UserKind] {
 		return lazy.Go(s.ctx, s.catalogSem, func(ctx context.Context) (icat.UserKind, error) {
@@ -119,15 +106,8 @@ func (s *Scope) UserKind(_ context.Context, user string) *lazy.Value[icat.UserKi
 	})
 }
 
-// UserGroups reports the groups a user belongs to, as bare names.
-//
-// They are not zone-qualified; the endpoint that reports them appends the zone itself. A
-// caller that assumed otherwise would compare qualified names against bare ones and
-// silently never match.
-//
-// This asks the catalog rather than the protocol, for the same reason as UserExists: it
-// removes the last protocol round trip from the read path, and a read that needed a
-// connection would fail whenever request traffic already held the few a zone grants.
+// UserGroups reports a user's groups as bare names, not zone-qualified; the endpoint
+// appends the zone. Answered from the catalog, like UserExists.
 func (s *Scope) UserGroups(_ context.Context, user string) *lazy.Value[[]string] {
 	return memoize(s, memoKey{kindUserGroups, user}, func() *lazy.Value[[]string] {
 		return lazy.Go(s.ctx, s.catalogSem, func(ctx context.Context) ([]string, error) {

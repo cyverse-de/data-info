@@ -14,16 +14,10 @@ import (
 	"github.com/cyverse/go-irodsclient/irods/types"
 )
 
-// Translate maps a go-irodsclient error onto the DE error vocabulary. path and user are
-// folded into the envelope when non-empty, matching the keys the Clojure validators
-// attached to the same conditions.
-//
-// Each mapping is chosen to match the error_code the Clojure service would have produced
-// for the same condition, not the code that reads best. The status table is preserved
-// bug-for-bug (see internal/apierror), so picking a different code here is a second,
-// quieter way to change a response's status. CAT_NO_ACCESS_PERMISSION is the example
-// worth remembering: mapping it to ERR_FORBIDDEN would answer 403, where the Clojure
-// validators reach that condition as ERR_NOT_READABLE or ERR_NOT_WRITEABLE and answer 500.
+// Translate maps a go-irodsclient error onto the DE error vocabulary, adding path and user
+// to the envelope when non-empty. Codes are chosen to keep each response's established
+// status (see internal/apierror), not to read best: a refused access is ERR_NOT_READABLE
+// (500), not ERR_FORBIDDEN (403).
 func Translate(err error, path, user string) error {
 	if err == nil {
 		return nil
@@ -48,8 +42,7 @@ func Translate(err error, path, user string) error {
 		return withPath(apierror.New(apierror.ErrRequestFailed), path).
 			With("reason", err.Error()).WithCause(err)
 
-	// The analogue of the Clojure catch-jargon-io-exceptions macro, which turned a
-	// JargonException wrapping an IOException into ERR_UNAVAILABLE.
+	// Failing to reach or authenticate to iRODS is an outage, not a failed request.
 	case types.IsConnectionError(err),
 		types.IsConnectionConfigError(err),
 		types.IsConnectionPoolFullError(err),
@@ -76,9 +69,7 @@ func translateIRODSCode(irodsErr *types.IRODSError, cause error, path, user stri
 		return withPath(apierror.New(apierror.ErrExists), path).WithCause(cause)
 
 	case common.CAT_NO_ACCESS_PERMISSION, common.CAT_INSUFFICIENT_PRIVILEGE_LEVEL, common.SYS_NO_API_PRIV:
-		// Deliberately ERR_NOT_READABLE rather than ERR_FORBIDDEN: that is the code the
-		// Clojure validators raise when iRODS refuses access, and it answers 500 where
-		// ERR_FORBIDDEN would answer 403. See the note on Translate.
+		// ERR_NOT_READABLE (500), not ERR_FORBIDDEN (403); see Translate.
 		return withUser(withPath(apierror.New(apierror.ErrNotReadable), path), user).WithCause(cause)
 
 	case common.CAT_INVALID_USER, common.CAT_INVALID_GROUP:

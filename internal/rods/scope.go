@@ -1,23 +1,10 @@
-// Package rods is the request-scoped view of the data store.
+// Package rods is the request-scoped view of the data store, hiding whether the iRODS
+// protocol or the catalog database answers a given question.
 //
-// It sits over two backends -- the iRODS protocol and the catalog database -- and hides
-// which one answers a given question. Handlers ask it for facts about paths; it decides
-// where those come from, resolves them concurrently, and remembers them for the life of
-// one request.
-//
-// Three behaviours are load-bearing, all inherited from the Clojure layer this replaces:
-//
-//   - Lookups start when they are asked for, not when they are read. Formatting a single
-//     directory entry asks for half a dozen facts and then reads them all; if each only
-//     began on read, one round of concurrent work would become six sequential ones.
-//   - A lookup may answer from another's result, but must never block waiting for one.
-//     A stat can use a listing that has already resolved; waiting for one that has not
-//     would stall on work that may be far more expensive, or that nobody asked for.
-//   - Results are remembered per request, so asking twice costs once.
-//
-// What is deliberately not carried over is the Clojure layer's habit of probing several
-// backends in turn to see which could answer. Each fact has one source here, chosen for
-// where it is actually fast; see the routing table on Scope.
+// Lookups start when asked for, not when read, so the facts one entry needs resolve
+// concurrently; a lookup may answer from another's resolved result but never waits on one
+// still running; and results are remembered for the request. See Scope for which backend
+// answers what.
 package rods
 
 import (
@@ -73,9 +60,8 @@ const (
 //	protocol  metadata (AVUs), tickets, group administration, file contents, and everything
 //	          that writes
 //
-// The split is not aesthetic. Measurement showed a stat costs about 10ms over the protocol
-// and an access list about 20ms, per path, while the catalog answers a thousand paths in
-// tens of milliseconds -- and the bulk endpoints accept a thousand paths. See
+// Over the protocol a stat costs about 10ms and an access list about 20ms per path, while
+// the catalog answers the bulk endpoints' thousand paths in tens of milliseconds; see
 // docs/irods-vs-icat-measurements.md.
 type Scope struct {
 	deps Deps
@@ -121,10 +107,8 @@ const (
 	kindChildCounts
 )
 
-// Open returns a request-scoped view bound to ctx. It performs no I/O.
-//
-// ctx should be the request's context: everything the scope resolves belongs to that
-// request and should stop when it does.
+// Open returns a view bound to ctx, which should be the request's context. It performs no
+// I/O.
 func Open(ctx context.Context, deps Deps, opts Options) (*Scope, error) {
 	if opts.User == "" {
 		return nil, fmt.Errorf("rods: a user is required")
@@ -179,12 +163,9 @@ func (s *Scope) Zone() string { return s.deps.Zone }
 // errScopeClosed is what a lookup on a scope that has been closed fails with.
 var errScopeClosed = errors.New("rods: the scope is closed")
 
-// Close releases anything the scope holds. It is safe to call more than once.
-//
-// It waits for protocol work already in flight before returning the session to the pool.
-// Returning it early would let the pool evict and tear down the connections a call is still
-// using -- the scope deliberately lets a caller stop waiting without cancelling the work, so
-// that is not a rare case.
+// Close releases the scope's resources; it is safe to call more than once. It waits for
+// in-flight protocol work before returning the session, because callers may stop waiting on
+// a lookup without cancelling it.
 func (s *Scope) Close() {
 	s.mu.Lock()
 	if s.closed {
@@ -207,10 +188,8 @@ func (s *Scope) Close() {
 	}
 }
 
-// session returns the scope's iRODS session, opening it on first use.
-//
-// It is opened lazily because most requests never touch the protocol: the catalog answers
-// the reads, and a session costs a connection the server may not have spare.
+// session returns the scope's iRODS session, opening it on first use: most requests never
+// touch the protocol, and a session costs a connection the server may not have spare.
 func (s *Scope) session(ctx context.Context) (*irodsclient.Session, error) {
 	s.mu.Lock()
 	if s.closed {
@@ -245,11 +224,9 @@ func (s *Scope) session(ctx context.Context) (*irodsclient.Session, error) {
 	return sess, nil
 }
 
-// memoize returns the remembered value for a key, or stores the one build produces.
-//
-// build runs while the scope's lock is held, so it must only dispatch work, never perform
-// it -- lazy.Go does exactly that. It must also not call any method that takes the lock
-// itself; the locked variants exist for the things build legitimately needs to read.
+// memoize returns the remembered value for a key, or stores the one build produces. build
+// runs under the scope's lock, so it must only dispatch work (lazy.Go) and may call only the
+// *Locked variants.
 func memoize[T any](s *Scope, key memoKey, build func() *lazy.Value[T]) *lazy.Value[T] {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -272,8 +249,7 @@ func memoize[T any](s *Scope, key memoKey, build func() *lazy.Value[T]) *lazy.Va
 }
 
 // publishRows records catalog rows so later single-path lookups can answer from them
-// without another query. This is what makes a batched load pay off for the per-path
-// accessors that follow it.
+// without another query.
 func (s *Scope) publishRows(rows []icat.Row) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -298,10 +274,8 @@ func (s *Scope) peekRowLocked(path string) (icat.Row, bool) {
 	return row, ok
 }
 
-// groupIDs returns the requesting user's group ids, fetched once per scope.
-//
-// Every permission-filtered catalog query needs them, so resolving them once and passing
-// them in saves a lookup per query rather than per request.
+// groupIDs returns the requesting user's group ids, which every permission-filtered catalog
+// query needs, fetched once per scope.
 func (s *Scope) groupIDs(ctx context.Context) *lazy.Value[[]int64] {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -309,14 +283,9 @@ func (s *Scope) groupIDs(ctx context.Context) *lazy.Value[[]int64] {
 	return s.groupIDsLocked(ctx)
 }
 
-// groupIDsLocked is groupIDs for callers that already hold the lock.
-//
-// It deliberately takes no catalog slot. Every other catalog lookup waits on this one, so
-// if it needed a slot of its own it could be starved by the very lookups that are waiting
-// for it: once CatalogParallelism lookups hold every slot, none can proceed and none can
-// release. That is a real deadlock, not a theoretical one. The general rule this follows is
-// that nothing running under the catalog semaphore may wait on another value that needs it;
-// this is the only shared dependency, so exempting it is enough to keep that true.
+// groupIDsLocked is groupIDs for callers that already hold the lock. It takes no catalog
+// slot: every catalog lookup waits on it, so with every slot held by waiters it could never
+// run. Nothing under the catalog semaphore may wait on a value that needs it.
 func (s *Scope) groupIDsLocked(ctx context.Context) *lazy.Value[[]int64] {
 	if s.group != nil {
 		return s.group
@@ -328,13 +297,8 @@ func (s *Scope) groupIDsLocked(ctx context.Context) *lazy.Value[[]int64] {
 	return s.group
 }
 
-// normalizePath puts a path into the form the catalog reports, so that a caller's trailing
-// slash cannot make a lookup miss.
-//
-// The catalog trims trailing slashes when it splits a path, so rows come back canonical. A
-// scope that keyed its memo and its published rows by the caller's spelling would report a
-// path as absent when the only difference was a slash, and would re-query for one it had
-// already fetched. Hiding that is this layer's job.
+// normalizePath trims trailing slashes to match the catalog's canonical paths, so a
+// caller's spelling cannot make a memo or row lookup miss.
 func normalizePath(p string) string {
 	if p == "/" {
 		return p

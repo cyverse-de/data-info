@@ -32,22 +32,18 @@ type Config struct {
 	MaxTotalConnections int
 
 	// IdleTimeout evicts a session that has gone unused, and closes a connection that has
-	// sat idle inside a session still in use. A background sweeper enforces the first, so a
-	// service that goes quiet does not hold sessions open indefinitely.
+	// sat idle inside a session still in use.
 	IdleTimeout time.Duration
 
-	// MaxConnections bounds the metadata connections one session may open. It is the
-	// per-user concurrency limit: go-irodsclient defaults it to 2, and because almost
-	// every operation is willing to share a connection, extra concurrency beyond it does
-	// not fail -- it serialises.
+	// MaxConnections bounds one session's metadata connections, which makes it the per-user
+	// concurrency limit: calls beyond it share connections and serialise rather than fail.
 	MaxConnections int
 
 	// MaxIOConnections bounds the connections used for file transfer.
 	MaxIOConnections int
 
-	// ProbeTimeout bounds one health check. It is deliberately independent of the
-	// caller's deadline: a probe that gives up early would poison the session it ran on,
-	// and that session is the one every admin request uses.
+	// ProbeTimeout bounds one health check, independently of the caller's deadline, because
+	// a probe cut short poisons the admin session it shares.
 	ProbeTimeout time.Duration
 
 	// ProbeCacheTTL is how long a health-check result is reused. GET / reports iRODS
@@ -75,10 +71,8 @@ type Config struct {
 	IOLongOperationTimeout time.Duration
 }
 
-// Defaults for Config. The operation timeouts intentionally stay close to
-// go-irodsclient's own (1m/5m) rather than the much longer values a batch tool would use:
-// a request-path service wants an abandoned call to unwind quickly, and listing and bulk
-// calls run under the *long* timeout, so both have to be bounded.
+// Defaults for Config. The operation timeouts stay near go-irodsclient's own so an abandoned
+// call unwinds quickly; listings run under the long timeout, so it is kept modest too.
 const (
 	DefaultMaxSessions            = 32
 	DefaultMaxTotalConnections    = 8
