@@ -92,8 +92,8 @@ func TestStatListerSplitsAndPages(t *testing.T) {
 	}
 }
 
-// TestStatListerEmitsEmptyArrays matters because the client indexes into them: a null where
-// an empty array belongs is a different shape, and the Clojure service never emits one.
+// TestStatListerEmitsEmptyArrays checks both arrays are [] rather than null, because the client
+// indexes into them.
 func TestStatListerEmitsEmptyArrays(t *testing.T) {
 	deps, _ := testDeps(t)
 	stats := NewStats(deps)
@@ -109,8 +109,8 @@ func TestStatListerEmitsEmptyArrays(t *testing.T) {
 	}
 }
 
-// TestStatListerRequiresItsParameters covers the ones the schema declares as required, which
-// the Clojure service rejects before the handler runs.
+// TestStatListerRequiresItsParameters checks that missing or out-of-range required parameters
+// are 400 schema failures.
 func TestStatListerRequiresItsParameters(t *testing.T) {
 	deps, _ := testDeps(t)
 	stats := NewStats(deps)

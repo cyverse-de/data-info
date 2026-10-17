@@ -19,10 +19,8 @@ type Listings struct {
 // NewListings builds the listing handlers.
 func NewListings(deps Deps) *Listings { return &Listings{deps: deps} }
 
-// Navigation handles GET /navigation/path/{zone}/*.
-//
-// It reports a folder's own status plus its immediate subfolders, and nothing about the
-// files inside it. That asymmetry is the endpoint's purpose: it backs a tree view.
+// Navigation handles GET /navigation/path/{zone}/*, reporting a folder and its immediate
+// subfolders but no files, for a tree view.
 func (h *Listings) Navigation(c echo.Context) error {
 	ctx := c.Request().Context()
 
@@ -46,9 +44,8 @@ func (h *Listings) Navigation(c echo.Context) error {
 		return err
 	}
 
-	// Existence is asked as the service's own account so that a folder the caller cannot read
-	// is reported as unreadable rather than as absent. The Clojure service checks the two
-	// separately and the codes differ; asking both as the caller collapses them.
+	// Existence is asked as the service account so a folder the caller can't read reports
+	// ERR_NOT_READABLE rather than ERR_DOES_NOT_EXIST.
 	if err := h.requireExists(ctx, path); err != nil {
 		return err
 	}
@@ -64,12 +61,8 @@ func (h *Listings) Navigation(c echo.Context) error {
 		return apierror.New(apierror.ErrNotAFolder).With("paths", []string{path})
 	}
 
-	// The folders-only query rather than the paged listing filtered down. It is unpaged,
-	// so a folder with more subfolders than a page is not silently truncated, and it
-	// touches only the collection table -- the paged query would build intermediate
-	// results over every data object in the folder before discarding them, which on a home
-	// directory holding tens of thousands of files makes a tree view far more expensive
-	// than it needs to be.
+	// Not a filtered page: this is unpaged, so nothing is truncated, and it avoids scanning
+	// every data object in a large folder.
 	rows, err := scope.Subfolders(ctx, path).Get(ctx)
 	if err != nil {
 		return err
@@ -100,11 +93,8 @@ type navigationFolder struct {
 	Folders []service.FolderEntry `json:"folders"`
 }
 
-// FolderListing handles GET /data/path/{zone}/*.
-//
-// The route serves a listing for a folder and the file itself for a file. The two are told
-// apart by what is at the path rather than by anything in the request, so the dispatch
-// happens here.
+// FolderListing handles GET /data/path/{zone}/*, answering with a listing for a folder or the
+// contents for a file.
 func (h *Listings) FolderListing(c echo.Context) error {
 	ctx := c.Request().Context()
 
@@ -124,9 +114,7 @@ func (h *Listings) FolderListing(c echo.Context) error {
 	}
 	defer scope.Close()
 
-	// No caller check on this route. The Clojure service validates the path as the requesting
-	// user and nothing else, so an unknown user is reported as the path not existing -- which
-	// is literally true from that user's point of view, since they can see nothing.
+	// No caller check: an unknown user can see nothing, so the path is reported as missing.
 	stat, err := scope.Stat(ctx, path).Get(ctx)
 	if err != nil {
 		return err
@@ -149,9 +137,7 @@ func (h *Listings) FolderListing(c echo.Context) error {
 
 	column, err := icat.ResolveSortColumn(c.QueryParam("sort-field"))
 	if err != nil {
-		// The Clojure service lets an unrecognised field reach a bare exception and answers
-		// 500 without a code. Reporting it as a bad parameter is a deliberate improvement,
-		// recorded in docs/deferred-fixes.md.
+		// Deliberately a schema failure rather than a bare 500; see docs/deferred-fixes.md.
 		return schemaError(err.Error())
 	}
 

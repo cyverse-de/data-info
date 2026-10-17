@@ -19,12 +19,9 @@ type Writes struct {
 // NewWrites builds the write handlers.
 func NewWrites(deps Deps) *Writes { return &Writes{deps: deps} }
 
-// CreateDirectories handles POST /data/directories.
-//
-// It creates each requested collection along with any missing parents, and makes the
-// requesting user the owner of the shallowest collection it created in each chain -- not the
-// deepest, and not all of them. That is what gives the user control of the new subtree: the
-// collections below inherit from the one they now own.
+// CreateDirectories handles POST /data/directories, creating each collection with any missing
+// parents. The caller is made owner of only the shallowest one created in each chain, which
+// gives them the subtree because the collections below inherit from it.
 func (h *Writes) CreateDirectories(c echo.Context) error {
 	ctx := c.Request().Context()
 
@@ -54,8 +51,6 @@ func (h *Writes) CreateDirectories(c echo.Context) error {
 		return err
 	}
 
-	// Duplicates in the request collapse, as they do in the Clojure service, which works from
-	// a set of paths.
 	requested, err := uniquePaths(body.Paths)
 	if err != nil {
 		return err
@@ -66,9 +61,7 @@ func (h *Writes) CreateDirectories(c echo.Context) error {
 		if !goodPathname(path, h.deps.BadChars) {
 			return apierror.New(apierror.ErrBadOrMissingField).With("path", path)
 		}
-		// Before the existence walk, matching the Clojure service: its first look at the path
-		// goes through a jargon call that validates the name lengths, so an over-long one is
-		// refused before anything is created.
+		// Checked before the existence walk, so an over-long name is refused before any lookup.
 		if err := checkPathLength(path); err != nil {
 			return err
 		}
@@ -94,8 +87,7 @@ func (h *Writes) CreateDirectories(c echo.Context) error {
 			return err
 		}
 		if !rods.Permits(stat.Permission, rods.PermissionWrite) {
-			// The path alone, with no user: that is what the jargon validator this route
-			// uses attaches, unlike the clj-irods one used elsewhere.
+			// This route reports only the path, without the user.
 			return apierror.New(apierror.ErrNotWriteable).With("path", plan.existingAncestor)
 		}
 	}
@@ -181,11 +173,8 @@ func (h *Writes) planCreate(ctx context.Context, scope *rods.Scope, path string)
 		plan.toCreate = append(plan.toCreate, current)
 		plan.shallowestCreated = current
 
-		// Reaching the zone root ends the walk. The root collection always exists, so it
-		// becomes the existing ancestor and the permission check below is what refuses the
-		// request -- nobody may create a collection there. Reporting the path as missing
-		// instead would be the wrong answer for a request naming a zone that does not
-		// exist, which is the common way to arrive here.
+		// Stop at the zone root with "/" as the ancestor, so the request is refused as not
+		// writeable rather than reported missing; a nonexistent zone usually lands here.
 		parent := paths.Dir(current)
 		if parent == current || parent == "/" {
 			plan.existingAncestor = "/"
@@ -196,18 +185,9 @@ func (h *Writes) planCreate(ctx context.Context, scope *rods.Scope, path string)
 	return plan, nil
 }
 
-// uniquePaths canonicalises the requested paths and removes duplicates, preserving the order
-// first seen.
-//
-// Cleaning matters for more than tidiness. go-irodsclient cleans a path before acting on it,
-// so a request naming "/zone/home/me/../other/new" would be checked for writability against
-// one collection and created under another -- the permission check would pass on the
-// caller's own home while the collection appeared somewhere else. Cleaning first makes the
-// path that is validated the path that is created.
-//
-// A blank entry is rejected rather than skipped. The Clojure service declares these as
-// non-blank strings and answers 400, and dropping one silently would report success for a
-// request that created nothing.
+// uniquePaths cleans and dedupes paths in first-seen order. Cleaning matters because
+// go-irodsclient cleans before acting, so "/z/home/me/../other/new" would be permission-checked
+// in one place and created in another. A blank entry is a 400, not skipped.
 func uniquePaths(in []string) ([]string, error) {
 	seen := make(map[string]bool, len(in))
 	out := make([]string, 0, len(in))

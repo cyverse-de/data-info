@@ -54,7 +54,7 @@ func (a *AVUs) ParseCSV(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	// Nothing to apply, which the Clojure service reports as an empty result, not an error.
+	// A header alone means nothing to apply: an empty result, not an error.
 	if len(records) < 2 {
 		return writeJSONOK(c, map[string]any{"path-metadata": []map[string]any{}})
 	}
@@ -123,12 +123,8 @@ func (a *AVUs) readCSV(ctx context.Context, scope *rods.Scope, src string, separ
 	return records, nil
 }
 
-// csvAVUs pairs the header's attributes with one row's values.
-//
-// Always a slice, never nil: the response declares an array and a nil one marshals to null,
-// which breaks a client counting the entries. A row with fewer values than the header has
-// attributes simply carries fewer AVUs -- that is not an error, and the Clojure service zips
-// the two the same way.
+// csvAVUs pairs the header's attributes with one row's values. It never returns nil, so the
+// response has [] rather than null.
 func csvAVUs(attributes, values []string) []service.AVU {
 	out := make([]service.AVU, 0, len(attributes))
 
@@ -156,8 +152,7 @@ func csvSeparator(raw string) (rune, error) {
 		return ',', nil
 	}
 
-	// Not decoded again. echo has already percent-decoded the query parameter, so a second
-	// pass would reject a literal percent sign -- which the Clojure service accepts.
+	// Not decoded again: echo already did, and a second pass would reject a literal %.
 	runes := []rune(raw)
 	if len(runes) != 1 {
 		return 0, schemaError("separator must be a single character")

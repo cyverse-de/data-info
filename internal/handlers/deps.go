@@ -43,9 +43,8 @@ type Deps struct {
 	// BadChars are the characters refused in the names of new files and folders.
 	BadChars string
 
-	// ProxyUser is the account the service authenticates as. It is not the caller: it is used
-	// where the Clojure service asks whether something exists at all, independently of
-	// whether the caller can see it.
+	// ProxyUser is the service's own account, used to ask whether something exists regardless
+	// of whether the caller can see it.
 	ProxyUser string
 
 	// Tasks records work that outlives the request which asked for it, and Worker runs it.
@@ -86,18 +85,12 @@ type Deps struct {
 	KifshareURL      string
 	KifshareTemplate string
 
-	// Log is where work that outlives a request reports itself. A request's own failures
-	// travel back to the caller and are logged by the error handler; this is for the
-	// background cleanup that has no caller left to tell.
+	// Log is for background work that has no caller left to report to.
 	Log *logrus.Entry
 }
 
-// OpenProxyScope returns a view acting as the service's own account.
-//
-// Existence and visibility are separate questions, and the Clojure service asks them
-// separately: it checks that a path exists using its own account, then quietly drops the ones
-// the caller cannot see. Asking both as the caller would turn "this is not shared with you"
-// into "this does not exist", which fails the request instead of omitting a row.
+// OpenProxyScope returns a view acting as the service's own account, so existence can be
+// checked separately from what the caller can see.
 func (d Deps) OpenProxyScope(ctx context.Context) (*rods.Scope, error) {
 	return d.OpenScope(ctx, d.ProxyUser)
 }
@@ -177,10 +170,8 @@ func (d Deps) RequireUnlocked(ctx context.Context, paths ...string) error {
 	return locks.Validate(ctx, d.Tasks, paths)
 }
 
-// CheckPathCount rejects a bulk request carrying more paths than the service allows.
-//
-// The limit exists because these endpoints fan out into catalog queries, and the error code
-// is the one the Clojure service used so callers recognise it.
+// CheckPathCount rejects a bulk request carrying more paths than the service allows, which
+// bounds catalog fan-out; callers recognise its ERR_TOO_MANY_RESULTS.
 func (d Deps) CheckPathCount(n int) error {
 	if d.MaxPathsInRequest > 0 && n > d.MaxPathsInRequest {
 		return apierror.New(apierror.ErrTooManyResults).
@@ -190,13 +181,8 @@ func (d Deps) CheckPathCount(n int) error {
 	return nil
 }
 
-// requireUser reads the user query parameter, which is the only caller identity the service
-// has.
-//
-// A missing one is a schema failure rather than a handler failure: in the Clojure service
-// every endpoint declares user as a required non-blank parameter, so compojure-api rejects
-// the request before the handler is reached, with ERR_ILLEGAL_ARGUMENT and a 400. Reporting
-// ERR_MISSING_QUERY_PARAMETER here would be more descriptive and would not match.
+// requireUser reads the user query parameter, the caller's only identity. A missing one is a
+// 400 ERR_ILLEGAL_ARGUMENT schema failure on every route, not ERR_MISSING_QUERY_PARAMETER.
 func requireUser(c echo.Context) (string, error) {
 	user := c.QueryParam("user")
 	if strings.TrimSpace(user) == "" {
@@ -205,12 +191,8 @@ func requireUser(c echo.Context) (string, error) {
 	return user, nil
 }
 
-// requireKnownUser rejects a caller iRODS has never heard of.
-//
-// Every endpoint validates this before doing anything else, and the envelope differs by
-// endpoint: the handlers written against clj-irods report a plural users list, and those
-// written against the jargon validators report a singular user. Both are reproduced because
-// callers read the key.
+// requireKnownUser rejects a caller iRODS has never heard of. plural chooses the envelope, a
+// "users" list or a singular "user"; each endpoint keeps the one its callers read.
 func requireKnownUser(ctx context.Context, scope *rods.Scope, user string, plural bool) error {
 	known, err := scope.UserExists(ctx, user).Get(ctx)
 	if err != nil {
@@ -226,12 +208,8 @@ func requireKnownUser(ctx context.Context, scope *rods.Scope, user string, plura
 	return apierror.New(apierror.ErrNotAUser).With("user", user)
 }
 
-// schemaError reports a request that fails the shape its endpoint declares.
-//
-// The Clojure stack answers these from compojure-api's request-validation handler, which
-// always uses ERR_ILLEGAL_ARGUMENT and a 400 whatever the endpoint's own error style says.
-// The reason differs -- theirs renders prismatic/schema's internal explanation -- and that
-// text is diagnostic rather than contract.
+// schemaError reports a request that doesn't match its endpoint's declared shape: always a
+// 400 ERR_ILLEGAL_ARGUMENT, whatever the route's error style.
 func schemaError(reason string) error {
 	return apierror.New(apierror.ErrIllegalArgument).
 		AsSchemaFailure().
@@ -239,11 +217,8 @@ func schemaError(reason string) error {
 		With("reason", reason)
 }
 
-// bindBody decodes a request body, reporting a malformed one the way the Clojure stack does.
-//
-// A body that will not parse is a schema failure, so it answers ERR_ILLEGAL_ARGUMENT with a
-// 400 on every route whatever its error style. Reporting a code of our own would answer 500
-// on the routes marked StyleOK, which is most of the bulk endpoints.
+// bindBody reports an unparseable body as a schema failure, so it is a 400 even on StyleOK
+// routes.
 func bindBody(c echo.Context, into any) error {
 	if err := c.Bind(into); err != nil {
 		return schemaError("the request body could not be parsed")
@@ -251,13 +226,9 @@ func bindBody(c echo.Context, into any) error {
 	return nil
 }
 
-// decodeBody reads a request body as JSON and nothing else.
-//
-// Use this rather than bindBody wherever the destination is a map. echo's binder folds the
-// route's path and query parameters into a map destination alongside the body, so a request
-// to /data/{data-id}/metadata arrives carrying a data-id key that the caller never sent --
-// and this service forwards what it does not recognise to the metadata service, which
-// rejects it.
+// decodeBody reads a request body as JSON only. Use it rather than bindBody for map
+// destinations: echo's binder merges path and query params into maps, and those extra keys
+// would be forwarded to the metadata service, which rejects them.
 func decodeBody(c echo.Context, into any) error {
 	body, err := io.ReadAll(c.Request().Body)
 	if err != nil {

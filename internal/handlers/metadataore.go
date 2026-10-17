@@ -64,12 +64,8 @@ func (a *AVUs) SaveORE(c echo.Context) error {
 		return err
 	}
 
-	// Both files are created before the resource map is built, even though the resource map
-	// is what is about to be written. It refers to itself and to the DataCite file by the
-	// identifiers iRODS assigns, and an object has no identifier until it exists -- so
-	// building first would produce a map naming itself as the empty string, and only a second
-	// save of the same data set would come out right. The Clojure service creates them both
-	// up front for exactly this reason.
+	// Create both files before building the resource map: it refers to them by iRODS ids,
+	// which don't exist until the objects do.
 	if _, err := scope.WriteFile(ctx, dataCitePath, strings.NewReader(document)); err != nil {
 		return err
 	}
@@ -87,8 +83,7 @@ func (a *AVUs) SaveORE(c echo.Context) error {
 	if _, err := scope.WriteFile(ctx, orePath, strings.NewReader(resourceMap)); err != nil {
 		return err
 	}
-	// As every other write here does: Jargon checksummed each object it wrote, and an
-	// object without one reports an empty md5 for the rest of its life.
+	// Checksum every write; an object written without one reports an empty md5 permanently.
 	if _, err := scope.Checksum(ctx, orePath); err != nil {
 		return err
 	}
@@ -160,10 +155,8 @@ func (a *AVUs) archivedFiles(
 	var out oreFiles
 
 	for _, dir := range []string{dataSetPath, metadataDir} {
-		// Everything underneath, not just what the collection directly holds. A data set
-		// with subfolders would otherwise publish a resource map that under-declares what
-		// DataONE should harvest, which is worse than failing: the harvest succeeds and
-		// silently takes less than the data set contains.
+		// Recurse, or a data set with subfolders publishes a map that silently under-declares
+		// what DataONE harvests.
 		files, err := a.filesUnder(ctx, scope, dir)
 		if err != nil {
 			return oreFiles{}, err

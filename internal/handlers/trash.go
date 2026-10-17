@@ -143,16 +143,13 @@ func (h *Writes) deletePaths(
 		return err
 	}
 
-	// Anything already in the user's trash has nowhere further to go and is removed
-	// outright; everything else gets a name reserved for it in the trash. Which of the two
-	// happened is visible to the caller, because the response only names the ones that
-	// moved.
+	// Paths already in the caller's trash are removed outright; everything else gets a
+	// reserved trash name, and the response names only those.
 	trashPaths := map[string]string{}
 	userTrash := h.deps.Layout.UserTrash(user)
 	for _, path := range requested {
-		// The caller's own trash, not the zone's. Something the caller owns that is sitting
-		// in somebody else's trash has not been deleted by them, so it goes to theirs and
-		// stays recoverable rather than being removed outright.
+		// Only the caller's own trash counts; their item in someone else's trash goes to theirs
+		// and stays recoverable.
 		if path == userTrash || strings.HasPrefix(path, userTrash+"/") {
 			continue
 		}

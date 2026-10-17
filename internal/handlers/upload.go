@@ -14,8 +14,7 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// uploadPartName is the multipart field the file arrives in. The Clojure route declares it
-// as a required parameter of that name, so a request without it never reaches the handler.
+// uploadPartName is the multipart field the file arrives in.
 const uploadPartName = "file"
 
 // uploadResponse is what both upload endpoints return.
@@ -23,19 +22,14 @@ type uploadResponse struct {
 	File service.Stat `json:"file"`
 }
 
-// Upload handles POST /data.
-//
-// It creates a new file under the destination directory, named after the uploaded part. The
-// bytes go to a hidden temporary object in that same directory first and are published
-// under the real name only once the whole stream has landed, so an interrupted upload never
-// leaves a truncated file behind -- which would otherwise make the next attempt fail with
-// ERR_EXISTS against a file the user never successfully created.
+// Upload handles POST /data. Bytes go to a hidden temporary object that is renamed into place
+// once complete, so an interrupted upload never leaves a truncated file that makes a retry
+// fail with ERR_EXISTS.
 func (h *Writes) Upload(c echo.Context) error {
 	ctx := c.Request().Context()
 
-	// The order here is the Clojure service's, and it is not the obvious one: everything
-	// below happens inside multipart middleware that runs before the route's own parameters
-	// are coerced, so the file's name is checked before the caller is even identified.
+	// The file name is checked before the caller is identified, the error order callers have
+	// always seen.
 	part, err := uploadPart(c)
 	if err != nil {
 		return err
@@ -67,9 +61,7 @@ func (h *Writes) Upload(c echo.Context) error {
 
 	dest := strings.TrimRight(strings.TrimSpace(c.QueryParam("dest")), "/")
 	if dest == "" {
-		// Not a schema failure: the Clojure service never coerces this parameter before the
-		// upload runs, so a missing destination arrives as a nil path and is reported by the
-		// existence check that follows.
+		// Deliberately not a schema failure: a missing dest is reported as a missing (null) path.
 		return missingUploadPath()
 	}
 
@@ -95,12 +87,8 @@ func (h *Writes) Upload(c echo.Context) error {
 	return h.respondWithStat(ctx, c, scope, user, path)
 }
 
-// Overwrite handles PUT /data/{data-id}.
-//
-// The contents are replaced in place rather than staged and renamed. That is the Clojure
-// service's behavior and it is the right one here: the file already exists, so a failed write
-// leaves the previous contents truncated rather than orphaning an object, and staging would
-// break the file's identity -- its UUID and access list belong to the object being replaced.
+// Overwrite handles PUT /data/{data-id}, replacing contents in place; staging and renaming
+// would give the file a new UUID and access list.
 func (h *Writes) Overwrite(c echo.Context) error {
 	ctx := c.Request().Context()
 
@@ -133,10 +121,7 @@ func (h *Writes) Overwrite(c echo.Context) error {
 	}
 	path, ok := found[id]
 	if !ok {
-		// An id that resolves to nothing becomes a nil path, which the existence check
-		// then reports -- so the caller is told a path is missing without being told
-		// which, because there is none. Reproduced rather than improved on: the shape is
-		// what callers parse.
+		// An unresolved id is reported as a null path; callers parse this shape.
 		return missingUploadPath()
 	}
 	path = strings.TrimRight(path, "/")
@@ -147,9 +132,8 @@ func (h *Writes) Overwrite(c echo.Context) error {
 	if err := requireFile(ctx, scope, path); err != nil {
 		return err
 	}
-	// Read, not write. The Clojure service validates the wrong permission on this route, and
-	// the check that matters still happens: iRODS refuses the write itself. See
-	// docs/deferred-fixes.md.
+	// Read, not write, is checked deliberately; iRODS still refuses the write itself (see
+	// docs/deferred-fixes.md).
 	if err := requirePermission(ctx, scope, user, path, rods.PermissionRead); err != nil {
 		return err
 	}
@@ -209,12 +193,8 @@ func (h *Writes) writeAtomically(
 	return nil
 }
 
-// respondWithStat answers an upload with the destination's status information.
-//
-// infoType comes back empty. The Clojure service sniffed the upload as it streamed and wrote
-// the AVU itself; file-type detection now belongs to info-typer, which types the object from
-// the AMQP event shortly afterwards. Callers that need the type read it back rather than
-// taking it from this response.
+// respondWithStat answers an upload with the destination's status. infoType is empty because
+// info-typer sets it from the AMQP event shortly afterwards.
 func (h *Writes) respondWithStat(
 	ctx context.Context,
 	c echo.Context,
@@ -232,12 +212,8 @@ func (h *Writes) respondWithStat(
 	return writeJSONOK(c, uploadResponse{File: stat})
 }
 
-// uploadPart returns the multipart part carrying the file.
-//
-// The part is returned unread: its body is the upload itself and is streamed straight into
-// iRODS. Nothing is spooled to local disk on the way, which echo's own form helpers would
-// do once a request passed their in-memory threshold -- at the sizes this endpoint accepts,
-// that is every real upload.
+// uploadPart returns the file part unread so it streams straight into iRODS; echo's form
+// helpers would spool large uploads to disk.
 func uploadPart(c echo.Context) (*multipart.Part, error) {
 	reader, err := c.Request().MultipartReader()
 	if err != nil {

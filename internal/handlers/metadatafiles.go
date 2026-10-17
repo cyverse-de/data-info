@@ -25,8 +25,8 @@ type metadataSaveRequest struct {
 type savedItem struct {
 	service.Stat
 
-	// Metadata mixes iRODS AVUs with the metadata service's own AVU objects, which are written
-	// whole, nested AVUs and all, as the Clojure service wrote them.
+	// Metadata mixes iRODS AVUs with the metadata service's AVU objects, written whole with
+	// their nested AVUs.
 	Metadata []any       `json:"metadata"`
 	Folders  []savedItem `json:"folders,omitempty"`
 	Files    []savedItem `json:"files,omitempty"`
@@ -68,8 +68,7 @@ func (a *AVUs) Save(c echo.Context) error {
 		return err
 	}
 
-	// The singular validators throughout: that is the family the Clojure service uses on this
-	// route.
+	// These validators report a singular "path" key.
 	destDir := paths.Dir(dest)
 	if err := requirePathExists(ctx, scope, destDir); err != nil {
 		return err
@@ -111,14 +110,9 @@ func (a *AVUs) Save(c echo.Context) error {
 	return writeJSONOK(c, uploadResponse{File: stat})
 }
 
-// collect gathers one item's metadata, and its children's when the request asks for it.
-//
-// The visited count is carried through the walk and checked against the request limit. Each
-// item costs a stat, an access list and an HTTP call to the metadata service, so a recursive
-// export of a large collection would otherwise hold a request -- and an iRODS connection --
-// open for thousands of round trips. The Clojure service counts what is under the folder
-// before starting; counting as it goes reaches the same limit without a second recursive
-// query.
+// collect gathers one item's metadata, and its children's when asked, checking the visited
+// count against the limit as it goes because each item costs a stat, an ACL query and a
+// metadata-service call.
 func (a *AVUs) collect(
 	ctx context.Context,
 	scope *rods.Scope,

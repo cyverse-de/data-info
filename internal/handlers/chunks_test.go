@@ -10,12 +10,8 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// TestManifest covers what a client switches on to decide how to render a file.
-//
-// The two cases turn on whether a deployment has an anonymous account at all. Whether that
-// account can read a *particular* path is not exercised here: the in-memory catalog answers
-// every user with the same access level, so it cannot tell the anonymous account apart from
-// the caller.
+// TestManifest varies only whether an anonymous account exists: the in-memory catalog gives
+// every user the same access, so per-path anonymous readability isn't testable here.
 func TestManifest(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -148,9 +144,8 @@ func TestChunkingRejectsWhatItCannotRead(t *testing.T) {
 			target:  "/data/id-a/chunks-tabular?user=" + testUser + "&page=1&size=10",
 			handler: chunks.TabularChunk, wantCode: apierror.ErrIllegalArgument,
 		},
-		// The paging checks run before the caller and the path are validated, because the
-		// Clojure service puts them in a pre-hook that fires ahead of the function body. Both
-		// of these would report the validator's code if the order were the other way round.
+		// Paging is checked before the caller and path, so these report the paging code rather
+		// than the validator's.
 		{
 			name: "page zero against a path that is not there", pattern: "/data/by-path/chunks-tabular/*",
 			target: "/data/by-path/chunks-tabular/iplant/home/wregglej/missing.csv?user=" + testUser +
@@ -184,17 +179,9 @@ func TestChunkingRejectsWhatItCannotRead(t *testing.T) {
 	}
 }
 
-// TestTabularSeparatorMayBeWhitespace is the regression test for a tab-delimited preview.
-//
-// echo percent-decodes a query value before a handler sees it, so ?separator=%09 arrives as a
-// tab. Reading it through a helper that rejects blank strings turned every TSV and every
-// space-delimited file into a 400, where the Clojure service serves them: the parameter is
-// declared s/Str, not NonBlankString, and the endpoint's own documentation names %09 as the
-// value to send for a tab.
-//
-// The assertion is indirect on purpose. Reading the file needs iRODS, so the case asks for
-// page zero as well: reaching ERR_PAGE_NOT_POS proves the separator was accepted, since a
-// rejected one answers ERR_ILLEGAL_ARGUMENT before the paging checks run.
+// TestTabularSeparatorMayBeWhitespace checks a decoded tab or space separator isn't rejected as
+// blank. Asking for page zero lets ERR_PAGE_NOT_POS prove the separator was accepted without
+// needing iRODS.
 func TestTabularSeparatorMayBeWhitespace(t *testing.T) {
 	deps, fake := testDeps(t)
 	fake.SetUUID("id-a", testHome+"/a.txt")

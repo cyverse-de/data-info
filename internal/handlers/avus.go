@@ -11,11 +11,8 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// avuChangeRequest is the body of the AVU add and set routes.
-//
-// Everything except irods-avus is forwarded to the metadata service untouched, so the rest of
-// the body is kept as decoded JSON rather than modelled: its shape is that service's to
-// change, and a struct here would silently drop whatever this one has not been taught about.
+// avuChangeRequest is the body of the AVU add and set routes. Everything except irods-avus is
+// forwarded to the metadata service as raw JSON, so fields this service doesn't model survive.
 type avuChangeRequest struct {
 	IRODSAVUs []service.AVU  `json:"irods-avus"`
 	Rest      map[string]any `json:"-"`
@@ -43,11 +40,9 @@ func (a *AVUs) Get(c echo.Context) error {
 	return a.get(c, requireUser, false)
 }
 
-// AdminGet handles GET /admin/data/{data-id}/metadata, which also reports the DE's own AVUs.
-//
-// It acts as the service's own account rather than as the caller, so it sees everything --
-// which is also why this route has no authorization of its own beyond being mounted under
-// /admin. Reproduced as it is; see docs/deferred-fixes.md.
+// AdminGet handles GET /admin/data/{data-id}/metadata, which also reports the DE's own AVUs. It
+// runs as the service account with no authorization beyond the /admin mount; see
+// docs/deferred-fixes.md.
 func (a *AVUs) AdminGet(c echo.Context) error {
 	return a.get(c, a.proxyUser, true)
 }
@@ -80,9 +75,7 @@ func (a *AVUs) get(c echo.Context, whom func(echo.Context) (string, error), incl
 		return err
 	}
 
-	// The metadata service's view is the base and this service's additions are merged over
-	// it. That order is the Clojure service's, and it means a key this service adds wins --
-	// which only matters for "path", which the metadata service does not report.
+	// irods-avus and path are set over the metadata service's response, so they win any clash.
 	out, err := a.deps.Metadata.ListAVUs(ctx, user, service.MetadataTargetType(stat.Type), c.Param("data-id"))
 	if err != nil {
 		return err
@@ -134,9 +127,7 @@ func (a *AVUs) add(c echo.Context, whom func(echo.Context) (string, error), allo
 		return err
 	}
 
-	// After the access checks, not before. A caller who can neither see the item nor write
-	// the AVU they sent is told about the item, which is the failure they can act on -- and
-	// which is the order the Clojure service validates in.
+	// After the access checks, so a caller who can't see or write the item is told that first.
 	if !allowReserved {
 		if err := requireNoReservedAVUs(body.IRODSAVUs); err != nil {
 			return err
@@ -362,7 +353,7 @@ func bindAVUChange(c echo.Context, avusRequired bool) (avuChangeRequest, error) 
 		return out, nil
 	}
 
-	// null is an empty list, as Clojure's [AVUMap] schema accepts nil: a PUT clears the AVUs.
+	// null counts as an empty list, so a PUT with null clears the AVUs.
 	list, ok := present.([]any)
 	if !ok && present != nil {
 		return avuChangeRequest{}, schemaError("irods-avus must be a list")
@@ -394,8 +385,7 @@ func bindAVUChange(c echo.Context, avusRequired bool) (avuChangeRequest, error) 
 func requireNoReservedAVUs(avus []service.AVU) error {
 	for _, avu := range avus {
 		if service.IsReservedAVU(avu.Attribute) {
-			// The whole list, not the offending one: that is what the Clojure service
-			// attaches, and a caller sending a batch gets its own request echoed back.
+			// The whole list, not just the offending AVU, so the caller sees its request echoed.
 			return apierror.New(apierror.ErrNotAuthorized).With("avus", avus)
 		}
 	}

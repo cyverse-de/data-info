@@ -17,11 +17,7 @@ type statRequest struct {
 }
 
 // statResponse is what both stat endpoints return: the requested paths and ids, each mapped
-// to its status information.
-//
-// Both keys are always present, empty object included. The Clojure service answers a
-// request carrying only paths with {"paths":{...},"ids":{}}, and an empty request with
-// {"paths":{},"ids":{}}; omitting either would be a wire change.
+// to its status information. Both keys are always present, even when empty.
 type statResponse struct {
 	Paths map[string]service.Stat `json:"paths"`
 	IDs   map[string]service.Stat `json:"ids"`
@@ -40,13 +36,8 @@ func (h *Stats) Gather(c echo.Context) error {
 	return h.gather(c, true)
 }
 
-// GatherPlain handles POST /stat-gatherer.
-//
-// The two endpoints share an implementation because they shared one in the Clojure service,
-// but not a parameter set: /stat-gatherer's schema declares validation-behavior and nothing
-// else, so filter-include, filter-exclude, ignore-missing and ignore-inaccessible are not its
-// to honour. Reading them on both routes would make /stat-gatherer quietly accept a request
-// the Clojure service rejects.
+// GatherPlain handles POST /stat-gatherer, which honours only validation-behavior; the filter
+// and ignore flags are /path-info's.
 func (h *Stats) GatherPlain(c echo.Context) error {
 	return h.gather(c, false)
 }
@@ -77,8 +68,7 @@ func (h *Stats) gather(c echo.Context, filtered bool) error {
 	}
 	defer scope.Close()
 
-	// The plural key here, not the singular one: this endpoint validates through
-	// clj-irods, whose envelope carries a list.
+	// Reports an unknown user under the plural "users" key.
 	if err := requireKnownUser(ctx, scope, user, true); err != nil {
 		return err
 	}
@@ -117,10 +107,8 @@ func (h *Stats) gather(c echo.Context, filtered bool) error {
 		requested = append(requested, p)
 	}
 
-	// Existence is asked as the service's own account, not the caller's, because those are
-	// different questions. A path that exists but is not shared with the caller must be
-	// omitted from the response, not reported as missing -- which is the common case for
-	// a caller asking about someone else's tree.
+	// Checked as the service account: a path not shared with the caller is omitted, not
+	// reported missing.
 	if !ignoreMissing && len(body.Paths) > 0 {
 		if err := h.requirePathsExist(ctx, body.Paths); err != nil {
 			return err
@@ -155,12 +143,8 @@ func (h *Stats) gather(c echo.Context, filtered bool) error {
 	return writeJSONOK(c, resp)
 }
 
-// resolveIDs maps data ids onto paths.
-//
-// An id that resolves to nothing is reported by id, never by path. Resolution is not scoped
-// to the caller -- it is a catalog lookup -- so an id belonging to someone else resolves
-// successfully; echoing its path in an error would disclose a path the caller is not allowed
-// to see. The Clojure service reports only the id for the same reason.
+// resolveIDs maps data ids onto paths, reporting a missing id by id, never by path:
+// resolution isn't scoped to the caller, so echoing a resolved path could disclose it.
 func (h *Stats) resolveIDs(ctx context.Context, scope *rods.Scope, ids []string, ignoreMissing bool) (map[string]string, error) {
 	if len(ids) == 0 {
 		return nil, nil
@@ -258,11 +242,8 @@ func (h *Stats) filterVisible(
 	return out, nil
 }
 
-// insufficientPermission names the failure for the permission level that was required.
-//
-// The Clojure service picks a different validator per validation-behavior, and each throws
-// its own code, so a request asking for own on a merely-readable path reports ERR_NOT_OWNER
-// rather than ERR_NOT_READABLE.
+// insufficientPermission picks the code for the required level, so asking for own on a
+// readable path reports ERR_NOT_OWNER rather than ERR_NOT_READABLE.
 func insufficientPermission(required rods.Permission) *apierror.Error {
 	switch required {
 	case rods.PermissionOwn:
@@ -300,12 +281,8 @@ type dataIDListing struct {
 	Total   int64          `json:"total"`
 }
 
-// Listing handles POST /stat-lister.
-//
-// It is /stat-gatherer paged: the same entries, selected and ordered by the catalog so that
-// sorting and paging apply across the whole set rather than within a response. That is why
-// it goes to the catalog directly -- the query unions collections and data objects, sorts
-// them together and pages the result, which GenQuery cannot express.
+// Listing handles POST /stat-lister: /stat-gatherer for ids, sorted and paged across the whole
+// set by a catalog query that unions collections and data objects, which GenQuery can't express.
 func (h *Stats) Listing(c echo.Context) error {
 	ctx := c.Request().Context()
 

@@ -33,7 +33,7 @@ func (h *Listings) UUIDForPath(c echo.Context) error {
 	}
 	defer scope.Close()
 
-	// This route validates through clj-irods, whose envelopes are plural throughout.
+	// This route reports an unknown user under a plural "users" key.
 	if err := requireKnownUser(ctx, scope, user, true); err != nil {
 		return err
 	}
@@ -52,25 +52,16 @@ func (h *Listings) UUIDForPath(c echo.Context) error {
 	return writeJSONOK(c, map[string]string{"id": stat.UUID})
 }
 
-// Head handles HEAD /data/{data-id}.
-//
-// Its contract is the status alone: 200 readable, 403 not, 404 for an unknown id, 422 for an
-// id that is not a UUID or a user that does not exist. There is no body, so nothing else can
-// carry the answer.
+// Head handles HEAD /data/{data-id}, answering by status alone: 200 readable, 403 not, 404 for
+// an unknown id, 422 for an unknown user, and 400 for a malformed id or missing user.
 func (h *Listings) Head(c echo.Context) error {
 	ctx := c.Request().Context()
 
 	id := c.Param("data-id")
 	if _, err := uuid.Parse(id); err != nil {
-		// A 400, not the 422 this endpoint uses elsewhere: the path parameter is typed as
-		// a UUID, so an unparseable one fails schema coercion before the handler is
-		// reached, and that is reported the same way on every route.
 		return schemaError("data-id must be a UUID")
 	}
 
-	// A missing user is a schema failure, like everywhere else: the route declares it as
-	// a required non-blank parameter. The 422 below is for a user that parses but does
-	// not exist, which is a different answer.
 	user, err := requireUser(c)
 	if err != nil {
 		return err
@@ -111,14 +102,8 @@ func (h *Listings) Head(c echo.Context) error {
 	return c.NoContent(http.StatusOK)
 }
 
-// findReadme looks for a README directly under a folder, returning nil when there is none.
-//
-// The names are tried in a fixed order and the first that exists wins, matching the Clojure
-// service. A folder that has one reports the whole entry rather than a flag, because the UI
-// renders it.
-//
-// The lookups are dispatched together and then awaited, so six probes cost one round of
-// concurrent work rather than six sequential ones.
+// findReadme returns the first of service.ReadmeNames that exists under folder, as a full
+// listing entry because the UI renders it, or nil.
 func (h *Listings) findReadme(ctx context.Context, scope *rods.Scope, folder string, rule service.BadNameRule) (any, error) {
 	stats := make([]*lazy.Value[rods.Stat], 0, len(service.ReadmeNames))
 	for _, name := range service.ReadmeNames {

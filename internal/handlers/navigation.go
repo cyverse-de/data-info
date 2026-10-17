@@ -9,24 +9,20 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// rootFields are the fields a root or home entry carries. Both endpoints report the same
-// six, and no more: a root listing is drawn as a sidebar, and the counts and share counts a
-// full stat would compute cost a catalog query apiece for something nothing renders.
+// rootFields omits the counts a full stat computes, which cost a catalog query each and the
+// sidebar never shows.
 const rootFields = "id,label,path,date-created,date-modified,permission"
 
-// basePaths is where a user's own collections live. The keys are underscored where the rest
-// of the API hyphenates, which is what the Clojure service emits.
+// basePaths is where a user's own collections live. Its keys are underscored, unlike the rest
+// of the API, because callers depend on them.
 type basePaths struct {
 	UserHome  string `json:"user_home_path"`
 	UserTrash string `json:"user_trash_path"`
 	BaseTrash string `json:"base_trash_path"`
 }
 
-// Home handles GET /navigation/home.
-//
-// It creates the collection when it is missing, which is why a read-only-looking endpoint
-// writes: it is what a client calls to find out where to put things, and answering with a
-// path that does not exist yet would just move the failure.
+// Home handles GET /navigation/home, creating the home collection if it is missing: clients
+// call this to learn where to put things, so a nonexistent path would only move the failure.
 func (h *Listings) Home(c echo.Context) error {
 	ctx := c.Request().Context()
 
@@ -65,16 +61,9 @@ func (h *Listings) Home(c echo.Context) error {
 	return writeJSONOK(c, stat)
 }
 
-// Root handles GET /navigation/root.
-//
-// It reports the four collections a client opens onto -- the user's home, community data,
-// the collection other people's shares appear under, and the user's trash -- with the base
-// paths alongside.
-//
-// Each is validated as it is built, in order, so a caller who cannot read community data gets
-// that failure and not one naming every root at once. The Clojure service builds the vector
-// element by element and the first to throw wins; reporting them together would change what
-// the client is told.
+// Root handles GET /navigation/root, reporting the user's home, community data, shared and
+// trash collections. Roots are validated in order, so the caller gets the first failure
+// rather than one naming every root.
 func (h *Listings) Root(c echo.Context) error {
 	ctx := c.Request().Context()
 
@@ -99,8 +88,7 @@ func (h *Listings) Root(c echo.Context) error {
 	community := strings.TrimRight(layout.CommunityData, "/")
 	sharing := strings.TrimRight(layout.Home, "/")
 
-	// One query for all four before any of them is examined, so the four roots cost one round
-	// trip rather than four. The Clojure service warms the same set for the same reason.
+	// Fetch all four in one query before examining any.
 	if _, err := scope.Stats(ctx, []string{home, community, sharing, trash}).Get(ctx); err != nil {
 		return err
 	}
@@ -140,9 +128,8 @@ func (h *Listings) Root(c echo.Context) error {
 
 // rootEntry describes one root, refusing to describe one the caller cannot read.
 func (h *Listings) rootEntry(ctx context.Context, scope *rods.Scope, user, path string) (service.Stat, error) {
-	// Readability rather than existence: a root that is not there reads as unreadable, which
-	// is the answer the Clojure service gives for both. CORE-7638 -- without this check a
-	// null permission reaches the response and the client mishandles it.
+	// A missing root reads as unreadable; without this check a null permission reaches the
+	// client (CORE-7638).
 	if err := requireRodsReadable(ctx, scope, user, path); err != nil {
 		return service.Stat{}, err
 	}

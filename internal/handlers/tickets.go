@@ -38,11 +38,8 @@ type Tickets struct{ deps Deps }
 // NewTickets builds the ticket handlers.
 func NewTickets(deps Deps) *Tickets { return &Tickets{deps: deps} }
 
-// Add handles POST /tickets.
-//
-// A ticket is a bearer token: anyone holding it gets the access it grants, without an account.
-// That is why creating one requires more than read on the path -- and why a ticket created
-// for an analysis, which only ever reads, is allowed on a path the caller can merely read.
+// Add handles POST /tickets. A ticket is a bearer token, so creating one needs write access,
+// except a read-only ticket for an analysis.
 func (t *Tickets) Add(c echo.Context) error {
 	ctx := c.Request().Context()
 
@@ -99,9 +96,7 @@ func (t *Tickets) Add(c echo.Context) error {
 		return err
 	}
 
-	// A read-only ticket for an analysis needs only read: the DE creates those on inputs
-	// the user was given but does not own. Everything else can be written through, so it
-	// needs write.
+	// The DE creates analysis tickets on inputs the user can read but doesn't own.
 	if forJob && mode == ticketModeRead {
 		if err := requireAllReadable(ctx, scope, requested); err != nil {
 			return err
@@ -110,12 +105,9 @@ func (t *Tickets) Add(c echo.Context) error {
 		return err
 	}
 
-	// The tickets themselves are issued by the service's own account, not by the caller.
-	// iRODS scopes a ticket listing to whoever holds the connection, and these endpoints
-	// decide who may see a ticket from the permissions on its path -- so a ticket owned by
-	// one user would be invisible to another who can write to the same path, and invisible to
-	// the deletion cleanup, which also runs as the service. The Clojure service does the
-	// same.
+	// Issued as the service account: iRODS scopes ticket listings to the connection's user,
+	// and visibility here follows path permissions, so a caller-owned ticket would be hidden
+	// from other writers and from deletion cleanup.
 	proxy, err := t.deps.OpenProxyScope(ctx)
 	if err != nil {
 		return err
@@ -142,8 +134,7 @@ func (t *Tickets) create(
 	public bool,
 	limits rods.TicketLimits,
 ) (ticketView, error) {
-	// Upper case, as the Clojure service generates them. The value ends up in a URL people
-	// paste around, and the two services must agree on the shape.
+	// Upper case, matching the ticket ids already in circulation in shared URLs.
 	name := strings.ToUpper(uuid.NewString())
 
 	if err := scope.CreateTicket(ctx, name, mode, path); err != nil {
@@ -296,8 +287,7 @@ func (t *Tickets) Delete(c echo.Context) error {
 		covered = append(covered, ticket.Path)
 	}
 	if len(missing) > 0 {
-		// The plural key, and every missing ticket rather than the first: that is what the
-		// validator this route uses attaches.
+		// Every missing ticket, under the plural key callers read.
 		return apierror.New(apierror.ErrTicketDoesNotExist).With("ticket-ids", missing)
 	}
 
@@ -322,9 +312,6 @@ func (t *Tickets) Delete(c echo.Context) error {
 func (t *Tickets) viewOf(name, path string) ticketView {
 	base := strings.TrimRight(t.deps.KifshareURL, "/")
 
-	// The download URL comes from a configured template rather than being built here: it
-	// points at a service this one does not own, whose URL shape is that deployment's to
-	// decide.
 	download := renderTemplate(t.deps.KifshareTemplate, map[string]string{
 		"url":       base,
 		"ticket-id": name,
@@ -342,11 +329,8 @@ func (t *Tickets) viewOf(name, path string) ticketView {
 // templatePlaceholder matches the {{name}} slots the download template uses.
 var templatePlaceholder = regexp.MustCompile(`\{\{([^}]+)\}\}`)
 
-// renderTemplate fills in a configured template.
-//
-// A placeholder naming something not supplied is left exactly as it was rather than becoming
-// an empty string. That is what the Clojure service's renderer does, and it means a template
-// with a typo in it produces a visibly wrong URL rather than a subtly wrong one.
+// renderTemplate fills in a configured template, leaving unknown placeholders as-is so a typo
+// yields a visibly wrong URL.
 func renderTemplate(template string, values map[string]string) string {
 	return templatePlaceholder.ReplaceAllStringFunc(template, func(match string) string {
 		key := strings.TrimSuffix(strings.TrimPrefix(match, "{{"), "}}")
@@ -420,7 +404,7 @@ func requireAllReadable(ctx context.Context, scope *rods.Scope, requested []stri
 		}
 	}
 	if len(refused) > 0 {
-		// The singular key with a list in it, which is what this validator attaches.
+		// "path" holding a list is a known quirk, kept because callers parse it.
 		return apierror.New(apierror.ErrNotReadable).With("path", refused)
 	}
 	return nil

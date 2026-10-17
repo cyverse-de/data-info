@@ -7,21 +7,9 @@ import (
 	"github.com/cyverse-de/data-info/internal/rods"
 )
 
-// The validators below reproduce data_info.util.validators -- the jargon family. They report
-// a single path under "path" and a list under "paths", and they are not interchangeable with
-// the clj-irods family used elsewhere, which always reports a list and usually names the user.
-//
-// The two disagree about the envelope for the same condition, they are both live on different
-// endpoints, and callers read the keys. Which family an endpoint uses is decided by which one
-// the Clojure service reached for there, so it is recorded at each call site rather than
-// chosen.
-
-// requireAllExist rejects a request naming anything that is not there, listing everything
-// missing rather than stopping at the first.
-//
-// Pass the service account's scope wherever the Clojure service checked existence over its
-// administrative connection, so that a path the caller cannot see fails the permission check
-// that follows rather than being reported as missing.
+// requireAllExist rejects a request naming anything missing, listing every missing path. Pass
+// the service account's scope when a path the caller can't see should fail the following
+// permission check rather than be reported missing.
 func requireAllExist(ctx context.Context, scope *rods.Scope, requested []string) error {
 	stats, err := scope.Stats(ctx, requested).Get(ctx)
 	if err != nil {
@@ -59,10 +47,7 @@ func requireNoneExist(ctx context.Context, scope *rods.Scope, requested []string
 	return nil
 }
 
-// requirePathExists rejects one path that is not there, reporting it under the singular key.
-//
-// Its plural sibling above reports a list. Which of the two an endpoint uses is decided by
-// which validator the Clojure service reached for there, and callers read the key.
+// requirePathExists rejects one missing path under the singular "path" key.
 func requirePathExists(ctx context.Context, scope *rods.Scope, path string) error {
 	stat, err := scope.Stat(ctx, path).Get(ctx)
 	if err != nil {
@@ -135,8 +120,6 @@ func requireAllWriteable(ctx context.Context, scope *rods.Scope, user string, re
 		}
 	}
 	if len(refused) > 0 {
-		// The plural key with no user, which is what this validator attaches -- unlike its
-		// singular sibling above, which attaches neither.
 		return apierror.New(apierror.ErrNotWriteable).With("paths", refused)
 	}
 	return nil
@@ -156,8 +139,7 @@ func requireAllAreFiles(ctx context.Context, scope *rods.Scope, requested []stri
 		}
 	}
 	if len(refused) > 0 {
-		// The singular key with a list in it, which is what this validator attaches. It
-		// reads like a mistake and it is one, but callers parse it.
+		// "path" holding a list is a known quirk, kept because callers parse it.
 		return apierror.New(apierror.ErrNotAFile).With("path", refused)
 	}
 	return nil
@@ -175,8 +157,7 @@ func requireOwns(ctx context.Context, scope *rods.Scope, user, path string) erro
 	return nil
 }
 
-// requireExistsAndOwned rejects one path that is not there, as the service account sees it, or
-// that the caller does not own -- the Clojure service's path-exists then user-owns-path.
+// requireExistsAndOwned checks existence as the service account, then ownership as the caller.
 func requireExistsAndOwned(ctx context.Context, admin, scope *rods.Scope, user, path string) error {
 	stat, err := admin.Stat(ctx, path).Get(ctx)
 	if err != nil {
@@ -200,12 +181,9 @@ func requireDoesNotExist(ctx context.Context, scope *rods.Scope, path string) er
 	return nil
 }
 
-// resolveID turns a data id into a path, reporting the id rather than the path when it names
-// nothing -- echoing a path the caller cannot see would disclose it.
-//
-// The key is the singular "uuid", which is what uuids/path-for-uuid attaches. The bulk stat
-// endpoints report the same condition under "ids", because they reach it through a different
-// validator. Both are live and callers read the keys.
+// resolveID turns a data id into a path, reporting an unknown id under "uuid" rather than a
+// path the caller might not be allowed to see. The bulk stat endpoints use "ids"; callers read
+// both.
 func resolveID(ctx context.Context, scope *rods.Scope, id string) (string, error) {
 	found, err := scope.PathsForUUIDs(ctx, []string{id}).Get(ctx)
 	if err != nil {
@@ -219,16 +197,8 @@ func resolveID(ctx context.Context, scope *rods.Scope, id string) (string, error
 	return path, nil
 }
 
-// The three below are the clj-irods family for an endpoint that concerns a single path.
-// They report it inside a list, because that validator accepts either one path or many and
-// always attaches a list -- so ERR_NOT_A_FILE arrives here under "paths" where the jargon
-// sibling above puts it under "path". The Rods in the name is the family, not the shape.
-//
-// Each reads through the scope's per-path accessor, which answers from a batch that has
-// already run, so an endpoint applying all three to one path pays one catalog query rather
-// than three.
-
-// requireRodsExists rejects a path that is not there.
+// requireRodsExists rejects a missing path. The requireRods* validators report even a single
+// path inside a "paths" list.
 func requireRodsExists(ctx context.Context, scope *rods.Scope, path string) error {
 	stat, err := scope.Stat(ctx, path).Get(ctx)
 	if err != nil {
@@ -264,8 +234,7 @@ func requireRodsReadable(ctx context.Context, scope *rods.Scope, user, path stri
 	return nil
 }
 
-// requirePathReadable rejects one path the caller cannot read, under the jargon family's
-// singular keys.
+// requirePathReadable rejects one path the caller cannot read, under the singular "path" key.
 func requirePathReadable(ctx context.Context, scope *rods.Scope, user, path string) error {
 	stat, err := scope.Stat(ctx, path).Get(ctx)
 	if err != nil {

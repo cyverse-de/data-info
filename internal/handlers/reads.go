@@ -22,11 +22,8 @@ type Reads struct {
 // NewReads builds the read-only handlers.
 func NewReads(deps Deps) *Reads { return &Reads{deps: deps} }
 
-// Existence handles POST /existence-marker.
-//
-// It reports, for each path, whether it exists *and* the user can read it. The two are one
-// answer here because the catalog cannot distinguish them: a user with no access rows for
-// an object gets no rows, exactly as if it were not there.
+// Existence handles POST /existence-marker, reporting whether each path exists and is readable
+// by the caller.
 func (h *Reads) Existence(c echo.Context) error {
 	ctx := c.Request().Context()
 
@@ -56,26 +53,17 @@ func (h *Reads) Existence(c echo.Context) error {
 		if err != nil {
 			return err
 		}
-		// Present *and* readable. The Clojure service asks both questions, and they can
-		// differ: iRODS has access levels between none and read, and a user holding one of
-		// those can see the object in the catalog without being able to read it.
+		// Access levels below read make an object visible in the catalog but unreadable.
 		out[p] = stat.Exists && rods.Permits(stat.Permission, rods.PermissionRead)
 	}
 
 	return writeJSONOK(c, map[string]any{"paths": out})
 }
 
-// Creatability handles POST /creatability-marker.
-//
-// It reports, for each path, whether a folder could be created there. Ancestors that do not
-// exist yet are taken to be created along with it, so the question is really about the
-// deepest ancestor that does exist: it has to be a folder the caller can write to.
-//
-// Existence is asked as the service's own account and writeability as the caller, because
-// that is what the Clojure service does and the two differ. Walking the chain as the caller
-// would step straight past a folder that exists but is not shared with them, and report on
-// its parent instead -- which is how a path under someone else's home could be called
-// creatable.
+// Creatability handles POST /creatability-marker, reporting whether each path's deepest
+// existing ancestor is a folder the caller can write to. Existence is checked as the service
+// account, so the walk can't step past an unshared folder and call a path under someone
+// else's home creatable.
 func (h *Reads) Creatability(c echo.Context) error {
 	ctx := c.Request().Context()
 
@@ -157,16 +145,8 @@ func (h *Reads) Creatability(c echo.Context) error {
 	return writeJSONOK(c, map[string]any{"paths": out})
 }
 
-// ancestorsOf is a path followed by each of its ancestors, stopping at the zone root.
-//
-// It stops one short of the bare "/", which the Clojure service's ancestors-of does reach.
-// That is not a collection -- the zone root below it is the topmost real one -- and the
-// catalog refuses it rather than answering, because a path that trims to nothing would
-// otherwise match the zone root and report it as though it were the thing asked about.
-//
-// The answer is unchanged by stopping early. Reaching "/" means every component including
-// the zone name was wrong, and nobody holds write access there, so both services report such
-// a path as uncreatable either way.
+// ancestorsOf is a path followed by each of its ancestors, stopping at the zone root rather
+// than "/", which the catalog refuses; such paths are uncreatable either way.
 func ancestorsOf(p string) []string {
 	current := strings.TrimRight(p, "/")
 	if current == "" {
@@ -232,11 +212,9 @@ func (h *Reads) Permissions(c echo.Context) error {
 		return err
 	}
 
-	// Existence is checked across every path before ownership is considered, and each check
-	// reports all of its failures rather than the first. The Clojure service runs the two
-	// validators in that order over the whole list, so a request whose first path is not
-	// owned and whose second is missing reports the missing one. Existence is asked as the
-	// service account, as there, so a path the caller cannot see is reported as not owned.
+	// Existence (as the service account) is checked for every path before ownership, and each
+	// check reports all failures, so a missing path wins over an unowned one and a path the
+	// caller can't see is reported as not owned.
 	var missing, notOwned []string
 	for _, p := range body.Paths {
 		exists, err := admin.Stat(ctx, p).Get(ctx)
@@ -270,9 +248,7 @@ func (h *Reads) Permissions(c echo.Context) error {
 
 	out := make([]pathPermissions, 0, len(body.Paths))
 	for _, p := range body.Paths {
-		// The scope keys its results by the catalog's canonical path, so a caller's
-		// trailing slash has to be resolved before the lookup. Missing this returned an
-		// empty permission list for a path that was in fact shared, with no error.
+		// acls is keyed by canonical path, so resolve a caller's trailing slash via the stat.
 		stat, err := scope.Stat(ctx, p).Get(ctx)
 		if err != nil {
 			return err
@@ -286,12 +262,9 @@ func (h *Reads) Permissions(c echo.Context) error {
 	return writeJSONOK(c, map[string]any{"paths": out})
 }
 
-// PermissionsByID handles GET /data/{data-id}/permissions.
-//
-// Read access is enough here, where the bulk endpoint above demands ownership. That is what
-// the Clojure service requires on each route, and the difference is real: this one names a
-// single item the caller already holds the id for, and the DE shows its sharing panel to
-// anyone who can open it.
+// PermissionsByID handles GET /data/{data-id}/permissions. Read access suffices, unlike the
+// bulk endpoint's ownership check, because the DE shows an item's sharing panel to anyone who
+// can open it.
 func (h *Reads) PermissionsByID(c echo.Context) error {
 	ctx := c.Request().Context()
 
@@ -306,8 +279,8 @@ func (h *Reads) PermissionsByID(c echo.Context) error {
 	}
 	defer scope.Close()
 
-	// The id is resolved before the caller is checked, which is the order the Clojure service
-	// evaluates them in: an unknown id reports itself even when the user is also unknown.
+	// The id is resolved before the user is checked, so an unknown id is reported even when
+	// the user is also unknown.
 	path, err := resolveID(ctx, scope, c.Param("data-id"))
 	if err != nil {
 		return err
@@ -396,8 +369,7 @@ func (h *Reads) BasePaths(c echo.Context) error {
 	}
 	defer scope.Close()
 
-	// The plural envelope here: this route validates through clj-irods, unlike the bulk
-	// path endpoints above, which use the jargon validators and report a single user.
+	// Reports an unknown user under the plural "users" key.
 	if err := requireKnownUser(c.Request().Context(), scope, user, true); err != nil {
 		return err
 	}

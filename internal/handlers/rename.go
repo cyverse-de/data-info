@@ -45,11 +45,8 @@ type moveResponse struct {
 	TaskID string `json:"async-task-id,omitempty"`
 }
 
-// Move handles POST /mover.
-//
-// Everything is validated before the task is created, so a request that cannot succeed is
-// refused rather than started: once a task exists its paths are locked, and a task created
-// for work that was never going to happen locks them for nothing.
+// Move handles POST /mover, validating everything before creating the task, since a task
+// locks its paths.
 func (h *Writes) Move(c echo.Context) error {
 	ctx := c.Request().Context()
 
@@ -62,13 +59,12 @@ func (h *Writes) Move(c echo.Context) error {
 	if err := bindBody(c, &body); err != nil {
 		return err
 	}
-	// An empty list is allowed, and produces a task that moves nothing. The Clojure service's
-	// schema accepts it, and refusing here would turn a harmless no-op into an error for a
-	// caller that built its list by filtering.
 	if strings.TrimSpace(body.Dest) == "" {
 		return schemaError("dest must be a non-blank string")
 	}
 
+	// An empty sources list is allowed and yields a no-op task, for callers that build the list
+	// by filtering.
 	sources := trimAll(body.Sources)
 	dest := strings.TrimRight(body.Dest, "/")
 
@@ -112,11 +108,8 @@ func (h *Writes) MoveByID(c echo.Context) error {
 	})
 }
 
-// moveOneByID serves the two routes that move a single data item named by id.
-//
-// They differ only in what the body carries and how the destination is built from it, so the
-// validation, the task and the response shape are shared -- which is also what keeps the two
-// from drifting apart.
+// moveOneByID serves the two single-item move routes, which differ only in how the destination
+// is built from the body.
 func (h *Writes) moveOneByID(
 	c echo.Context,
 	body any,
@@ -221,14 +214,12 @@ func (h *Writes) startMove(
 ) (string, error) {
 	destinations := jobs.DestinationsUnder(dest, sources)
 
-	// Before anything else. Everything below reads the data store, and there is no point
-	// asking whether a move is possible if something else is already moving the same tree.
+	// Checked first: there's no point validating while another task holds the same tree.
 	if err := h.deps.RequireUnlocked(ctx, append(append([]string{}, sources...), destinations...)...); err != nil {
 		return "", err
 	}
 
-	// This route validates through the jargon family, so a missing user is reported under
-	// the singular key.
+	// Reports an unknown user under the singular "user" key.
 	if err := requireKnownUser(ctx, scope, user, false); err != nil {
 		return "", err
 	}

@@ -114,10 +114,8 @@ func TestListingSortOrderIsPassedThrough(t *testing.T) {
 	}
 }
 
-// TestListingRejectsBadSortParameters covers the values the paging schema declares as enums.
-// A sort-field outside the enum is a deliberate improvement over the Clojure service, which
-// lets it reach a bare exception and answers 500 with no code; a sort-dir outside it is a
-// plain match, since ring-swagger rejects the request before the handler runs.
+// TestListingRejectsBadSortParameters checks unknown sort-field or sort-dir values are 400
+// schema failures.
 func TestListingRejectsBadSortParameters(t *testing.T) {
 	deps, _ := testDeps(t)
 	listings := NewListings(deps)
@@ -219,9 +217,7 @@ func TestHeadStatuses(t *testing.T) {
 	}{
 		{"readable", "/data/11111111-2222-3333-4444-555555555555?user=" + testUser, http.StatusOK},
 		{"unknown id", "/data/99999999-8888-7777-6666-555555555555?user=" + testUser, http.StatusNotFound},
-		// A 400, not a 422: the path parameter is typed as a UUID, so an unparseable one
-		// fails schema coercion before the handler runs. Verified against the Clojure
-		// service.
+		// 400, not 422: an unparseable UUID is a schema failure.
 		{"not a uuid", "/data/not-a-uuid?user=" + testUser, http.StatusBadRequest},
 		{"unknown user", "/data/11111111-2222-3333-4444-555555555555?user=nobody", http.StatusUnprocessableEntity},
 		// A missing user is a schema failure, so a 400. The 422 above is for a user that
@@ -254,14 +250,13 @@ func TestUUIDForPath(t *testing.T) {
 	}
 }
 
-// TestListingRequiresLimit covers a parameter the Clojure service makes mandatory. Defaulting
-// it would silently hand a caller the first page of an arbitrarily large folder with no way
-// to know more existed.
+// TestListingRequiresLimit covers a mandatory limit; a default would silently return only the
+// first page of a large folder.
 func TestListingRequiresLimit(t *testing.T) {
 	deps, _ := testDeps(t)
 	listings := NewListings(deps)
 
-	// Trap-style, as the data routes are in the Clojure service, so the status table applies.
+	// StyleTrap, as the data routes are registered, so the status table applies.
 	rec := serveRoute(t, apierror.StyleTrap, http.MethodGet, "/data/path/:zone/*",
 		"/data/path/iplant/home/wregglej?user="+testUser, listings.FolderListing)
 
@@ -281,8 +276,8 @@ func TestListingRequiresLimit(t *testing.T) {
 	}
 }
 
-// TestEntityTypeSelectsWhatIsListed covers a parameter that was being dropped, which made a
-// folders-only listing return files as well and report a total counting both.
+// TestEntityTypeSelectsWhatIsListed checks a folders-only listing neither includes files nor
+// counts them in the total.
 func TestEntityTypeSelectsWhatIsListed(t *testing.T) {
 	deps, fake := testDeps(t)
 	fake.AddCollection(testHome+"/sub", icat.AccessOwn)
@@ -358,8 +353,7 @@ func TestBadNameFlaggingComesFromTheRequest(t *testing.T) {
 	}
 }
 
-// TestReadmeIsReported covers a field that was hard-coded false, which would have been a
-// silent regression for the UI that renders it.
+// TestReadmeIsReported checks the README entry is reported when one exists; the UI renders it.
 func TestReadmeIsReported(t *testing.T) {
 	deps, fake := testDeps(t)
 	listings := NewListings(deps)
@@ -408,9 +402,8 @@ func TestZoneSharingARouteName(t *testing.T) {
 	}
 }
 
-// "unknown" is both a request for objects with no info type and a value to match, because
-// info-typer records that literal string on a file it cannot identify. Dropping it from the
-// match list made a folder of untyped files list as empty.
+// "unknown" both requests untyped objects and is a value to match, because info-typer records
+// it on files it can't identify.
 func TestInfoTypeFilter(t *testing.T) {
 	cases := []struct {
 		name        string

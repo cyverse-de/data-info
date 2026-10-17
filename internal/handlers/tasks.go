@@ -10,11 +10,8 @@ import (
 	"github.com/cyverse-de/data-info/internal/worker"
 )
 
-// startTask records a long-running operation and dispatches the job that performs it.
-//
-// The record comes first and the job second, and the order matters: the record is what locks
-// the task's paths, so a job that started before it existed would be working on a tree
-// anything else was still free to touch.
+// startTask records the task before starting its job, because the record is what locks the
+// task's paths.
 func (h *Writes) startTask(
 	ctx context.Context,
 	taskType, user string,
@@ -25,9 +22,8 @@ func (h *Writes) startTask(
 		return "", fmt.Errorf("no async task machinery is configured, so %s cannot be started", taskType)
 	}
 
-	// The instance is recorded in the task's data as well as in its statuses, because an
-	// operator looking for which replica owns a stalled task should not have to read the
-	// history to find out.
+	// Also in the data, so an operator can find which replica owns a stalled task without
+	// reading its history.
 	data["instance-id"] = worker.InstanceID()
 
 	taskID, err := h.deps.Creator.Create(ctx, asynctasks.Task{
@@ -41,19 +37,15 @@ func (h *Writes) startTask(
 		Behaviors: []asynctasks.Behavior{asynctasks.StallBehavior()},
 	})
 	if err != nil {
-		// The cause names async-tasks' URL and whatever it said, which do not belong in a
-		// response; it is kept as the cause so the error handler logs it. The Clojure
-		// service answered ERR_UNCHECKED_EXCEPTION here (deferred fix 24).
+		// The cause is logged, not sent, because it names async-tasks' URL (deferred fix 24).
 		return "", apierror.New(apierror.ErrUnavailable).
 			With("reason", fmt.Sprintf("could not record the %s task", taskType)).
 			WithCause(fmt.Errorf("recording a %s task: %w", taskType, err))
 	}
 
 	if err := h.deps.Worker.Start(taskID, taskType, job); err != nil {
-		// The record exists and its paths are locked, but nothing is going to do the work.
-		// Nothing here can unlock them -- completing a task this service did not perform
-		// would be a lie -- so the stall timeout is what releases them, ten minutes from
-		// now. Reported as unavailable because retrying elsewhere is the right response.
+		// The paths stay locked until asynctasks.StallTimeout releases them; completing a task
+		// this service never ran would be wrong. Unavailable, because a retry should go elsewhere.
 		return "", apierror.New(apierror.ErrUnavailable).
 			With("reason", fmt.Sprintf("could not start the %s job; retry the request", taskType)).
 			WithCause(fmt.Errorf("starting the %s job for %s: %w", taskType, taskID, err))

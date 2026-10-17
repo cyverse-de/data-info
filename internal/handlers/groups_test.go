@@ -27,9 +27,6 @@ func TestQualification(t *testing.T) {
 			qualified: "wregglej#iplant", wantAccount: "wregglej", wantZone: testZone,
 		},
 		{
-			// iRODS takes the name and the zone separately, so an account from another
-			// zone has to keep its own -- passing the whole string as a name would look it
-			// up locally under a name containing a hash.
 			name: "an account from another zone", in: "someone#other",
 			qualified: "someone#other", wantAccount: "someone", wantZone: "other",
 		},
@@ -50,8 +47,8 @@ func TestQualification(t *testing.T) {
 	}
 }
 
-// Ordinary accounts may not administer groups. This test router is trap-style, so ERR_FORBIDDEN
-// is a 403 here; production registers these routes StyleOK, where it answers 500.
+// Ordinary accounts may not administer groups. This test router uses the default StyleTrap, so
+// ERR_FORBIDDEN is a 403 here; production registers these routes StyleOK, where it answers 500.
 func TestGroupAdministrationIsRefusedToOrdinaryUsers(t *testing.T) {
 	deps, fake := testDeps(t)
 	fake.AddUser("groupadmin", icat.UserKindGroupAdmin)

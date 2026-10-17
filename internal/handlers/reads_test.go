@@ -124,13 +124,8 @@ func TestBulkLimitIsEnforced(t *testing.T) {
 	}
 }
 
-// TestMissingUserParameter covers the only identity the service has.
-//
-// It answers ERR_ILLEGAL_ARGUMENT with a 400, not ERR_MISSING_QUERY_PARAMETER. Every
-// endpoint declares user as a required non-blank parameter, so the Clojure stack rejects the
-// request during schema validation before the handler is reached, and validation failures
-// are always reported that way whatever the endpoint's own error style. Verified against the
-// running service.
+// TestMissingUserParameter checks a missing user is a 400 ERR_ILLEGAL_ARGUMENT schema failure,
+// not ERR_MISSING_QUERY_PARAMETER, even on a StyleOK route.
 func TestMissingUserParameter(t *testing.T) {
 	deps, _ := testDeps(t)
 	reads := NewReads(deps)
@@ -209,8 +204,8 @@ func TestPermissionsRequiresOwnership(t *testing.T) {
 	}
 }
 
-// TestErrorStyleChangesTheStatus pins the distinction the port has to preserve: the same
-// error_code answers 403 on a trap-style route and 500 on an ok-style one.
+// TestErrorStyleChangesTheStatus pins that one error_code answers 403 on a StyleTrap route and
+// 500 on a StyleOK one.
 func TestErrorStyleChangesTheStatus(t *testing.T) {
 	deps, _ := testDeps(t)
 	reads := NewReads(deps)
@@ -281,8 +276,7 @@ func TestUnknownCallerIsRejected(t *testing.T) {
 	if envelope["error_code"] != string(apierror.ErrNotAUser) {
 		t.Errorf("error_code = %v, want %s", envelope["error_code"], apierror.ErrNotAUser)
 	}
-	// Singular here: this endpoint validates through the jargon validators, whose envelope
-	// names one user. The stat endpoints validate through clj-irods and report a list.
+	// This endpoint reports a singular "user"; the stat endpoints report a "users" list.
 	if envelope["user"] != "nosuchuser" {
 		t.Errorf("user = %v, want nosuchuser", envelope["user"])
 	}
@@ -337,8 +331,8 @@ func TestPermissionsReportsEveryMissingPath(t *testing.T) {
 	deps, _ := testDeps(t)
 	reads := NewReads(deps)
 
-	// The first path is readable but not owned, the rest are missing. The Clojure service
-	// runs the existence check over the whole list first, so the missing ones win.
+	// The first path is readable but not owned and the rest are missing; existence is checked
+	// first, so the missing ones win.
 	body := `{"paths":["` + testHome + `/a.txt","` + testHome + `/gone1","` + testHome + `/gone2"]}`
 	rec := serve(t, apierror.StyleTrap, http.MethodPost, "/permissions-gatherer?user="+testUser, body, reads.Permissions)
 
@@ -416,10 +410,8 @@ func TestAncestorsOf(t *testing.T) {
 	}
 }
 
-// TestCreatabilityMarker covers the walk up the ancestor chain, which is the whole of what
-// this endpoint does. The deep-path case is the one that matters: it is the shape that
-// reaches the top of the tree, and offering the bare "/" to the catalog there turned every
-// request into a 500 in QA while every unit test passed.
+// TestCreatabilityMarker covers the ancestor walk; the deep-path case reaches the top of the
+// tree, where offering "/" to the catalog would answer 500.
 func TestCreatabilityMarker(t *testing.T) {
 	deps, fake := testDeps(t)
 	deps.MaxPathsInRequest = 100

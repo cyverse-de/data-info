@@ -173,10 +173,7 @@ func (g *Groups) Update(c echo.Context) error {
 	return g.respond(ctx, c, scope, name)
 }
 
-// Delete handles DELETE /groups/{group-name}.
-//
-// Deleting a group that is not there succeeds. A caller asking for it to be gone has got what
-// they asked for, and reporting a failure would make retrying a delete an error.
+// Delete handles DELETE /groups/{group-name}; deleting a missing group succeeds.
 func (g *Groups) Delete(c echo.Context) error {
 	ctx := c.Request().Context()
 
@@ -248,9 +245,7 @@ func (g *Groups) requireGroupAdmin(ctx context.Context, scope *rods.Scope, user 
 	if kind == icat.UserKindAdmin || kind == icat.UserKindGroupAdmin {
 		return nil
 	}
-	// No status of its own. The routes document a 403, but they are written as (ok ...) in
-	// the Clojure service, so the thrown code reaches the default handler and answers 500 --
-	// which is what callers actually see. See docs/deferred-fixes.md.
+	// No status: the group routes are StyleOK, so this answers 500 despite the documented 403.
 	return apierror.New(apierror.ErrForbidden)
 }
 

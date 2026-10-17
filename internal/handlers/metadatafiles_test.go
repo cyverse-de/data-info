@@ -10,10 +10,7 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// The delimiter is sent URL-encoded, because a comma cannot go in a query parameter
-// unescaped -- but echo decodes it before a handler sees it. The cases here go through a real
-// request for that reason: testing the helper against the still-encoded value hid a second
-// decode that rejected a literal percent sign.
+// Cases go through a real request because echo decodes the separator before the handler sees it.
 func TestCSVSeparator(t *testing.T) {
 	cases := []struct {
 		name    string

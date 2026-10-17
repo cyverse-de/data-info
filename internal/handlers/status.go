@@ -16,7 +16,7 @@ import (
 // ServiceName is the name this service reports and the value GET / expects.
 const ServiceName = "data-info"
 
-// ServiceDescription is reported verbatim by GET /; it matches data-info.util.config/svc-info.
+// ServiceDescription is reported verbatim by GET /.
 const ServiceDescription = "DE service for data information logic and iRODS interactions."
 
 // Prober reports whether a backend is reachable. Implementations live with their client.
@@ -45,8 +45,7 @@ func NewStatus(cfg *config.Config, version string, irods, icat Prober) *Status {
 	return &Status{cfg: cfg, version: version, irods: irods, icat: icat}
 }
 
-// statusResponse mirrors clojure-commons' get-docs-status plus data-info's iRODS flag.
-// Field order is the order the Clojure service serialized them in.
+// statusResponse is the body of GET /.
 type statusResponse struct {
 	Service     string `json:"service"`
 	Description string `json:"description"`
@@ -56,16 +55,12 @@ type statusResponse struct {
 	IRODS       bool   `json:"iRODS"`
 }
 
-// Info handles GET /.
-//
-// It answers 500 when the caller names a different service in ?expecting=, which is how
-// the DE detects a misrouted request; the body is the same either way.
+// Info handles GET /. Naming another service in ?expecting= answers 500 with the same body,
+// which is how the DE detects a misrouted request.
 func (s *Status) Info(c echo.Context) error {
 	expecting := c.QueryParam("expecting")
 
-	// The Clojure route types expecting as an optional NonBlankString, so supplying the
-	// parameter with a blank value fails schema coercion rather than being treated as
-	// absent. compojure-api reports that as ERR_ILLEGAL_ARGUMENT with a 400.
+	// A blank expecting= is a 400 schema failure rather than being treated as absent.
 	if _, present := c.QueryParams()["expecting"]; present && strings.TrimSpace(expecting) == "" {
 		return apierror.New(apierror.ErrIllegalArgument).
 			WithStatus(http.StatusBadRequest).
@@ -88,8 +83,7 @@ func (s *Status) Info(c echo.Context) error {
 	return writeJSON(c, status, body)
 }
 
-// docsURL reproduces clojure-commons' get-docs-status, which always builds an http:// URL
-// and always includes the port.
+// docsURL always uses http:// and an explicit port, matching the Clojure service's docs-url.
 func (s *Status) docsURL(c echo.Context) string {
 	host, port, err := net.SplitHostPort(c.Request().Host)
 	if err != nil {
@@ -98,20 +92,14 @@ func (s *Status) docsURL(c echo.Context) string {
 	return "http://" + net.JoinHostPort(host, port) + "/docs"
 }
 
-// Healthz handles GET /healthz: the process is up and serving. It touches no backend, so
-// it is safe as a liveness and startup probe -- an iRODS outage must not restart every
-// pod. This endpoint is new; the Clojure service had only GET /.
+// Healthz handles GET /healthz. It touches no backend, so an iRODS outage can't make the
+// liveness probe restart every pod.
 func (s *Status) Healthz(c echo.Context) error {
 	return writeJSONOK(c, map[string]string{"status": "ok"})
 }
 
-// Readyz handles GET /readyz: the service can reach the catalog, which answers most reads.
-// This is the readiness probe target.
-//
-// iRODS is deliberately not checked. Each probe would hold an iRODS connection, every 20
-// seconds on every pod, against the Data Store's small per-node connection budget, and
-// keep the service account's session from ever going idle. The Clojure service's probes
-// stopped touching iRODS for the same reason. GET / still reports iRODS reachability.
+// Readyz handles GET /readyz, checking only the catalog. iRODS is skipped because probing it
+// every 20s on every pod spends the Data Store's small connection budget; GET / still reports it.
 func (s *Status) Readyz(c echo.Context) error {
 	result := "ok"
 	if s.icat == nil {
@@ -128,13 +116,8 @@ func (s *Status) Readyz(c echo.Context) error {
 	return writeJSON(c, status, map[string]any{"ready": ready, "backends": map[string]string{"icat": result}})
 }
 
-// AdminConfig handles GET /admin/config, reporting the running configuration with
-// credentials masked.
-//
-// Like the Clojure service, this endpoint has no authorization of its own. data-info sits
-// on a private network behind terrain and is not internet-facing. Adding a gate here would
-// require a coordinated change in every caller, so it is deliberately out of scope for the
-// port; see docs/deferred-fixes.md.
+// AdminConfig handles GET /admin/config with credentials masked. It has no authorization
+// because data-info is reachable only behind terrain; see docs/deferred-fixes.md.
 func (s *Status) AdminConfig(c echo.Context) error {
 	return writeJSONOK(c, s.cfg.LegacyMap())
 }

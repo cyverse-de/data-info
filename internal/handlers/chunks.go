@@ -14,12 +14,8 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// Chunks serves the manifest and the two chunk-reading endpoints, which together are what
-// the DE's file preview is built on.
-//
-// Each has two routes -- one naming a data id and one naming a path -- that differ only in
-// how the path is found. Everything after that is shared, which is also how the Clojure
-// service is arranged.
+// Chunks serves the manifest and chunk-reading endpoints behind the DE's file preview; each has
+// an id route and a path route that share everything after path resolution.
 type Chunks struct {
 	deps Deps
 }
@@ -40,10 +36,8 @@ type manifestURL struct {
 	URL   string `json:"url"`
 }
 
-// chunkResponse is a span of a file's bytes.
-//
-// Every number is a string. That is the wire contract and not an oversight on this side: the
-// Clojure service stringifies each of them, and the client parses them back.
+// chunkResponse is a span of a file's bytes. Every number is deliberately a string; the client
+// parses them back.
 type chunkResponse struct {
 	Path      string `json:"path"`
 	User      string `json:"user"`
@@ -95,14 +89,8 @@ func (h *Chunks) TabularChunkByPath(c echo.Context) error {
 	return h.serveTabular(c, pathFromWildcard)
 }
 
-// serveTabular reads and checks the paging parameters before anything else runs.
-//
-// The order matters and is not the obvious one. The Clojure service puts these two checks in
-// a pre-hook on read-csv-chunk, which fires ahead of the function body -- so they happen
-// before the caller is validated and before the path is even resolved. A request naming a
-// missing path with page=0 answers ERR_PAGE_NOT_POS, not ERR_DOES_NOT_EXIST. Running them
-// after the validators, as the other four routes here do with their parameters, would report
-// a different error_code for the same request.
+// serveTabular checks paging before the caller and path, so page=0 on a missing path answers
+// ERR_PAGE_NOT_POS rather than ERR_DOES_NOT_EXIST, as callers have always seen.
 func (h *Chunks) serveTabular(
 	c echo.Context,
 	resolve func(context.Context, echo.Context, *rods.Scope) (string, error),
@@ -119,17 +107,15 @@ func (h *Chunks) serveTabular(
 
 // tabularRequest carries the parameters a tabular chunk request was made with.
 type tabularRequest struct {
-	// Separator is url-decoded a second time, as the Clojure service does: ring has already
-	// decoded the query string once, and do-read-csv-chunk decodes what it is handed again.
-	// It may be empty, which is not rejected here -- see ParseDelimited.
+	// Separator is percent-decoded again after echo's decoding, as the Clojure service did.
+	// It may be empty; see ParseDelimited.
 	Separator string
 
 	Page int64
 	Size int64
 }
 
-// tabularParams reads the paging parameters and applies the two checks the Clojure service
-// makes before it does anything else.
+// tabularParams reads the paging parameters and rejects a non-positive page or size.
 func tabularParams(c echo.Context) (tabularRequest, error) {
 	separator, err := presentParam(c, "separator")
 	if err != nil {
@@ -149,8 +135,7 @@ func tabularParams(c echo.Context) (tabularRequest, error) {
 		return tabularRequest{}, err
 	}
 
-	// Each carries its own code, and the page one reports the number as a number where the
-	// chunk size is reported as a string. That asymmetry is the Clojure service's.
+	// page is reported as a number but chunk-size as a string, as the Clojure service did.
 	if page <= 0 {
 		return tabularRequest{}, apierror.New(apierror.ErrPageNotPos).With("page", page)
 	}
@@ -162,13 +147,8 @@ func tabularParams(c echo.Context) (tabularRequest, error) {
 	return tabularRequest{Separator: decoded, Page: page, Size: size}, nil
 }
 
-// serve runs the part every one of these six routes shares: find the caller, find the path,
-// and establish that it is a file the caller can read.
-//
-// The validators are the clj-irods family, which reports a path inside a list even when the
-// endpoint concerns exactly one. The order is theirs too -- the file check before the
-// readability check -- because a caller pointing at an unreadable folder is told it is not a
-// file rather than that they cannot read it.
+// serve resolves the caller and path and checks it is a readable file. The file check comes
+// first, so an unreadable folder is reported as not a file.
 func (h *Chunks) serve(
 	c echo.Context,
 	resolve func(context.Context, echo.Context, *rods.Scope) (string, error),
@@ -280,9 +260,7 @@ func (h *Chunks) chunk(ctx context.Context, c echo.Context, scope *rods.Scope, u
 		return err
 	}
 
-	// start and chunk-size echo what was asked for, not what was read. A caller that asked
-	// for a megabyte of a short file is told a megabyte, and the Clojure service says the
-	// same.
+	// start and chunk-size echo the request, not what was read.
 	return writeJSONOK(c, chunkResponse{
 		Path:      path,
 		User:      user,
@@ -309,9 +287,8 @@ func (h *Chunks) tabularChunk(
 	}
 
 	plan := service.PlanTabularPage(req.Page, req.Size, stat.Size)
-	// The bound is inclusive, so a request for one page past the end is accepted and answers
-	// with an empty page. That is the Clojure service's arithmetic, and the page it reports
-	// here is the zero-based one while the response reports the one-based one.
+	// The inclusive bound is the Clojure service's: one page past the end answers an empty page.
+	// The error reports the zero-based page; the response reports the one-based one.
 	if plan.Page > plan.Pages {
 		return apierror.New(apierror.ErrInvalidPage).
 			With("page", strconv.FormatInt(plan.Page, 10)).
@@ -326,9 +303,8 @@ func (h *Chunks) tabularChunk(
 	chunk := service.TrimToWholeLines(raw, req.Size, plan)
 	rows, err := service.ParseDelimited(chunk, req.Separator)
 	if err != nil {
-		// Not an error code of its own: the Clojure service lets the parser's exception reach
-		// the default handler, which answers 500 with ERR_UNCHECKED_EXCEPTION. Naming it here
-		// would report a 400 for a file the Clojure service calls a server fault.
+		// Deliberately uncoded: an unparseable file answers 500 ERR_UNCHECKED_EXCEPTION, as
+		// callers have always seen.
 		return fmt.Errorf("parsing %q as delimited text: %w", path, err)
 	}
 
@@ -344,12 +320,8 @@ func (h *Chunks) tabularChunk(
 	})
 }
 
-// read fetches a span of a file, decoded as UTF-8 with its partial edge characters dropped.
-//
-// The length is narrowed to what the file actually holds before the read. The Clojure service
-// allocates whatever was asked for and reads what it finds, which gives the same answer;
-// doing it this way means a caller asking for a gigabyte of a small file allocates the small
-// file rather than the gigabyte.
+// read fetches a span of a file as UTF-8, dropping partial edge characters. The length is
+// clamped to the file, so a huge request on a small file doesn't allocate a huge buffer.
 func (h *Chunks) read(ctx context.Context, scope *rods.Scope, path string, offset, length, fileSize int64) (string, error) {
 	if offset < 0 || length < 0 {
 		return "", schemaError("position and size must not be negative")
@@ -368,12 +340,8 @@ func (h *Chunks) read(ctx context.Context, scope *rods.Scope, path string, offse
 	return service.DecodeChunk(buffer, offset > 0), nil
 }
 
-// pathFromWildcard reconstructs the iRODS path a by-path route was asked about.
-//
-// The whole wildcard is the path, zone included, so unlike pathFromRoute there is no zone
-// parameter to put back in front of it. The raw URL is used for the same reason as there:
-// echo decodes the wildcard once before the handler sees it, so a name containing an encoded
-// slash would otherwise arrive looking like two path elements.
+// pathFromWildcard reads the whole path, zone included, from the raw URL for the same reason
+// as pathFromRoute.
 func pathFromWildcard(_ context.Context, c echo.Context, _ *rods.Scope) (string, error) {
 	escaped := c.Request().URL.EscapedPath()
 

@@ -8,11 +8,8 @@ import (
 	"github.com/cyverse-de/data-info/internal/icat"
 )
 
-// TestContentDisposition covers the header a browser reads the download's filename from.
-//
-// Both spellings have to be right: filename* carries the real name and filename= is what a
-// client that does not understand it falls back to, so a character the fallback cannot carry
-// has to be replaced rather than dropped -- a bare quote there would end the parameter early.
+// TestContentDisposition covers both filename forms, including replacement of characters the
+// fallback can't carry.
 func TestContentDisposition(t *testing.T) {
 	tests := []struct {
 		name       string
