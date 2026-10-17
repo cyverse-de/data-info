@@ -37,10 +37,3 @@ so the two can be diffed.
 ## API documentation
 
 Swagger UI at `/docs`, and the raw document at `/swagger.json`.
-
-## Shadow harness
-
-`cmd/dishadow` sends the same request to this service and to the Clojure one
-and diffs both the responses and the resulting state. Its catalog is in
-`test/shadow/catalog/`. It ships in this image, so an in-cluster run exercises
-the same binary the build produced.

@@ -61,10 +61,7 @@ func (c Code) IsServerFault() bool {
 // EmittedCodes is every code data-info can return.
 //
 // A function rather than a package-level slice so a caller cannot mutate the canonical
-// list, and in this file rather than beside the test that grew it because more than the
-// status table needs it: the shadow harness reports which of these a run actually elicited,
-// which is how "every error code is covered" stops being an assertion and becomes a
-// measurement.
+// list.
 //
 // ErrUncheckedException is deliberately absent. It is what an unrecognised panic becomes,
 // so a run that elicits it has found a defect rather than covered a case.

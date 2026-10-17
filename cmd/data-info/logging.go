@@ -19,8 +19,7 @@ import (
 // logger, so the request's single log line can name it.
 const errorCodeKey = "log.error_code"
 
-// probePaths are the kubelet's probes. A passing probe is logged at all only at debug, or
-// the log would be mostly probes.
+// probePaths are the kubelet's probes.
 var probePaths = map[string]bool{
 	"/healthz": true,
 	"/readyz":  true,
@@ -107,6 +106,7 @@ func requestLogger(log *logrus.Entry) echo.MiddlewareFunc {
 			}
 
 			entry := log.WithFields(fields)
+			// Passing probes are logged only at debug, or the log would be mostly probes.
 			if probePaths[c.Path()] && v.Status < http.StatusBadRequest {
 				entry.Debug("request")
 				return nil

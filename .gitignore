@@ -9,6 +9,5 @@ target/
 .lsp
 
 /data-info
-/dishadow
 *.test
 /coverage.out

@@ -1,5 +1,9 @@
 # The shadow harness baseline
 
+**Historical.** The harness was removed once the Clojure service was retired; its code and
+catalog are in the history at 99b141e. This file is kept as the record of the differences
+accepted at cutover.
+
 What a clean run looks like as of 2026-10-12, and what each remaining difference is. This is
 the diff-acceptance record the cutover plan asks for: the harness has no expected-difference
 table by design, so every difference it reports has to be matched against this file by a

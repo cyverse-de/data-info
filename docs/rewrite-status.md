@@ -1,6 +1,6 @@
 # Where the data-info rewrite stands
 
-Written 2026-10-15. This is the pick-up-from-cold document: what the project is, what is
+Written 2026-10-15, updated 2026-10-17. This is the pick-up-from-cold document: what the project is, what is
 done, what is left, and what to do next.
 
 ## The project in a paragraph
@@ -30,10 +30,14 @@ result.
 ## Where it runs
 
 **QA runs the Go service as `data-info`**, in place of the Clojure one, since 2026-10-15:
-image `golang@sha256:4a18d9b5…`, built from 7cb80b0, deployed from the deployments branch
+image `golang@sha256:730478f6…`, built from e50628c, deployed from the deployments branch
 `data-info-golang-cutover` (deployments#122). The UI works against it, including opening
 files. `data-info-next`, the side-by-side deployment the harness compared against, is gone
 from QA and from the deployments repo.
+
+**A deploy from deployments `main` puts Clojure back.** That happened on 2026-10-16, most
+likely as part of a release deploy, and QA was redeployed from the branch the same day. Until
+#122 merges, check the image after any QA-wide deploy.
 
 Rolling QA back to Clojure is a redeploy from deployments `main`, which still carries the
 Clojure template, manifest and image:
@@ -50,9 +54,9 @@ from `KUBECONFIG`, and shells here export one that points at prod.
 ## What is done
 
 **Every operation the Clojure service serves is served here.**
-`TestEveryClojureRouteIsServedOrAccountedFor` reports `59 Clojure operations: 57 served,
-2 moved to info-typer, 0 not yet ported`, and it runs on every build. `docs/port-gaps.md` is
-the account of how the last twelve were found. The two that moved are served by info-typer and
+`TestEveryClojureRouteIsServedOrAccountedFor` reported `59 Clojure operations: 57 served,
+2 moved to info-typer, 0 not yet ported` until it was removed with the Clojure service.
+`docs/port-gaps.md` is the account of how the last twelve were found. The two that moved are served by info-typer and
 asked for by terrain; all of that is released.
 
 **The harness matched.** The last full run against QA, on 2026-10-13, recorded 182 matching
@@ -102,25 +106,27 @@ one, but it will look like service failure to anyone watching QA closely.
 ## Open pull requests
 
 | PR              | Base   | What
-|-----------------|--------|----------------------------------------------------------------------
+|-----------------|--------|-------------------------------------------------------
 | data-info#106   | `main` | the cutover; merge first
 | deployments#122 | `main` | deploys the Go service as `data-info`; merge after #106
-| data-info#102   | `main` | on-demand CI build for the `data-info-next` image; obsolete, close it
-| deployments#110 | `main` | points `data-info-next` at the port; obsolete, close it
+
+data-info#102 and deployments#110, which only concerned `data-info-next`, are closed.
+
+**Review deferred to after the cutover.** slr71's review of 2026-10-16 asked, among smaller
+things, to stop answering 500 for every error on the `(ok ...)` routes and the 500 rows of the
+status table. That cannot ship on its own: `apps` catches a literal `[:status 500]` from
+data-info and switches on `error_code` at four sites (`apps/util.clj`, `jobs/util.clj`,
+`de/job_view.clj`, `de/jobs/io_tickets.clj`), and `jobs/util.clj` is what creates a job's
+output folder. `apps` has to match on `error_code` first, or in the same release.
 
 ## The verification harness
 
-**It cannot run against QA any more.** `scripts/run-group.sh` diffs the `data-info` Service
-against a `data-info-next` pod, and QA now has only the Go service under the first name. It
-still works against a local stack with a Clojure reference beside the Go service, which is how
-the long-delete comparison was run.
+**Removed** once the Clojure service was retired, along with the route guard test; both are
+in the history at 99b141e. `docs/shadow-baseline.md` remains as the record of the differences
+accepted at cutover.
 
-`docs/shadow-baseline.md` is the diff-acceptance record the cutover plan called for -- the
-harness deliberately has no expected-difference table, so the matching is a person's job and
-that is what they match against. A difference with no entry in it or in
-`docs/deferred-fixes.md` is a defect.
-
-Five things the harness cannot catch, learned by it failing to:
+Five things it could not catch, learned by it failing to, and worth remembering for any
+future comparison:
 
 - **A registered route that is half implemented.** The download gap passed a route audit.
   A grep for `TODO|not yet|until then|arrives with` over your own tree found it in seconds.
@@ -135,32 +141,3 @@ Five things the harness cannot catch, learned by it failing to:
 - **Data the harness did not create.** Every file it uploads gets a checksum, so it never saw a
   file without one; the md5 bug surfaced only when someone opened an older file in the UI.
 
-## What I would do next
-
-1. **Merge #106 and deployments#122**, in that order, once QA has run on it long enough.
-2. **Close data-info#102 and deployments#110**, which only concern `data-info-next`.
-3. **Register the upload cleanup as a tracked async task** (deferred fix 20). Small, and the
-   only known behavioural gap left that is not a deliberate deviation.
-
-## Traps worth knowing
-
-- **Two preserved bugs**, deliberately: an unrecognised `sort-field` returns a bare 500, and
-  `share-count` double-counts users holding two access rows. Both are enforced by the harness
-  and recorded in `docs/deferred-fixes.md`. Do not "fix" them.
-- **The status table is bug-for-bug.** `ERR_DOES_NOT_EXIST` and `ERR_NOT_READABLE` are 500s.
-  `apps` catches `[:status 500]` literally at four sites; changing this breaks job submission.
-- **Two Clojure connections, two answers.** Most Clojure validation checks existence over the
-  admin connection and access as the caller. Asking both as the caller collapses "you cannot
-  see it" into "it does not exist" and changes the error code. Check which one Clojure used
-  before writing a validator.
-- **Terrain validates data-info's responses.** A field Clojure always sent, even empty, is
-  required by terrain's schema; omitting it is a 500 in the UI, not a harmless difference.
-- **`EmittedCodes()` overstates the vocabulary.** `ERR_TOO_MANY_PATHS` appears only in
-  Clojure Swagger doc strings and is never thrown by either service. The rest of the list
-  deserves the same check.
-- **A `preStop` sleep plus 30s server drain plus 75s job drain fit inside the manifest's
-  120s grace period.** They are coupled: changing one without the other risks a SIGKILL
-  mid-drain, which is what leaves paths locked forever.
-- **The connection cap is per replica, the Data Store's limit is per node.** Anti-affinity
-  keeps the two replicas on separate nodes; raising replicas or `maxtotalconnections` has to
-  account for the other iRODS clients on the same node.

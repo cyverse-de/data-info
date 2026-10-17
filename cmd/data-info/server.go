@@ -23,12 +23,8 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// uploadRoutes are the endpoints that stream whole files and therefore get the long idle
-// timeout rather than the ordinary one. The Clojure service singled out the same set in
-// its Jetty customizer, matching #"/data/?" for POST and #"/data/[^/]+/?" for PUT.
-//
-// The routes themselves arrive with the write path; the budget is wired here so that they
-// are never served under the ordinary timeout by omission.
+// uploadRoutes are the routes that upload files to the data store. They get a longer idle
+// timeout than other routes.
 var uploadRoutes = map[string]bool{
 	"POST /data":         true,
 	"POST /data/":        true,

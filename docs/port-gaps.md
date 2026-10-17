@@ -4,6 +4,9 @@ Every operation the Clojure service serves is now served here. This file records
 gaps were found, what they were, and -- because it is the part that matters going forward --
 what the guard test does and does not prove.
 
+**Historical.** The guard test, `testdata/contract/swagger-clojure.json` and the shadow harness
+were removed once the Clojure service was retired; they are in the history at 99b141e.
+
 ## What was missing
 
 A route-level audit on 2026-08-21 found **eleven** operations the Clojure service serves and

@@ -1,8 +1,8 @@
 # Deferred fixes
 
 Known-wrong behavior that the Go port reproduces **on purpose**, so that the rewrite is a
-pure behavior-preserving move and any difference the shadow/diff harness reports is a real
-defect.
+pure behavior-preserving move. The shadow cases named below were in `test/shadow/catalog/`,
+removed with the harness after 99b141e.
 
 Do not "fix" anything on this list as a drive-by. Each entry names what has to change first.
 

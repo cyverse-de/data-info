@@ -15,7 +15,7 @@ import (
 // The two cases turn on whether a deployment has an anonymous account at all. Whether that
 // account can read a *particular* path is not exercised here: the in-memory catalog answers
 // every user with the same access level, so it cannot tell the anonymous account apart from
-// the caller. The shadow harness is where that distinction is checked.
+// the caller.
 func TestManifest(t *testing.T) {
 	tests := []struct {
 		name         string
