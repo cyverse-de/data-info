@@ -1,5 +1,6 @@
 .idea/
 target/
+.clj-kondo/
 *.iml
 .DS_Store
 .env
