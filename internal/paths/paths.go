@@ -89,3 +89,13 @@ func join(elements ...string) string { return path.Join(elements...) }
 func equal(a, b string) bool {
 	return strings.TrimRight(a, "/") == strings.TrimRight(b, "/")
 }
+
+// DestinationsUnder names where each source lands inside destination; these, not destination
+// itself, are the paths a move locks.
+func DestinationsUnder(destination string, sources []string) []string {
+	out := make([]string, 0, len(sources))
+	for _, source := range sources {
+		out = append(out, Join(destination, Base(source)))
+	}
+	return out
+}

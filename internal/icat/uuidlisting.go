@@ -136,11 +136,3 @@ func infoTypeArray(types []string) any {
 	}
 	return pq.Array(lowered)
 }
-
-// infoTypeAttributeOr supplies the default info-type attribute when none is configured.
-func infoTypeAttributeOr(attribute string) string {
-	if attribute == "" {
-		return DefaultInfoTypeAttribute
-	}
-	return attribute
-}

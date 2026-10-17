@@ -91,12 +91,12 @@ type ItemQuery struct {
 // DefaultInfoTypeAttribute is the AVU attribute data-info has always used for info types.
 const DefaultInfoTypeAttribute = "ipc-filetype"
 
-// infoTypeAttribute returns the attribute to query, defaulting when unset.
-func (q ItemQuery) infoTypeAttribute() string {
-	if q.InfoTypeAttribute == "" {
+// infoTypeAttributeOr supplies the default info-type attribute when none is configured.
+func infoTypeAttributeOr(attribute string) string {
+	if attribute == "" {
 		return DefaultInfoTypeAttribute
 	}
-	return q.InfoTypeAttribute
+	return attribute
 }
 
 // UserGroupIDs returns the group ids a user belongs to.
@@ -161,7 +161,7 @@ func getItems(ctx context.Context, qr queryer, q ItemQuery) ([]Row, error) {
 
 	var rows []Row
 	err = qr.SelectContext(ctx, &rows, sqlGetItems,
-		pq.Array(dirnames), pq.Array(basenames), q.User, q.Zone, groupIDs, q.infoTypeAttribute())
+		pq.Array(dirnames), pq.Array(basenames), q.User, q.Zone, groupIDs, infoTypeAttributeOr(q.InfoTypeAttribute))
 	if err != nil {
 		return nil, queryError(err, "getting %d item(s)", len(q.Paths))
 	}

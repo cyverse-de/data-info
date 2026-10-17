@@ -32,7 +32,7 @@ func (m Move) Run(ctx context.Context, task *asynctasks.Task, progress worker.Pr
 	}
 	defer scope.Close()
 
-	return m.move(ctx, scope, task.Username, sources, DestinationsUnder(destination, sources), progress)
+	return m.move(ctx, scope, task.Username, sources, paths.DestinationsUnder(destination, sources), progress)
 }
 
 // Notify implements worker.Notifying. It names every requested path, not just those that
@@ -47,7 +47,7 @@ func (m Move) Notify(ctx context.Context, task *asynctasks.Task, failed bool) {
 		return
 	}
 
-	m.Deps.notify(ctx, notifications.Move(task.Username, sources, DestinationsUnder(destination, sources), failed))
+	m.Deps.notify(ctx, notifications.Move(task.Username, sources, paths.DestinationsUnder(destination, sources), failed))
 }
 
 func (m Move) move(
@@ -80,14 +80,4 @@ func (m Move) move(
 
 	progress(pathsetSeveral, actionEnd)
 	return nil
-}
-
-// DestinationsUnder names where each source lands inside destination; these, not destination
-// itself, are the paths a move locks.
-func DestinationsUnder(destination string, sources []string) []string {
-	out := make([]string, 0, len(sources))
-	for _, source := range sources {
-		out = append(out, paths.Join(destination, paths.Base(source)))
-	}
-	return out
 }

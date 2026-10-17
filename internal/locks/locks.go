@@ -5,12 +5,14 @@ package locks
 
 import (
 	"context"
+	"slices"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/cyverse-de/data-info/internal/apierror"
 	"github.com/cyverse-de/data-info/internal/clients/asynctasks"
+	"github.com/cyverse-de/data-info/internal/paths"
 )
 
 // lockingTypes are the task types whose paths are held while they run. A type absent from
@@ -105,10 +107,11 @@ func pathsOf(task asynctasks.Task) []string {
 		destination := stringAt(data, "destination")
 
 		out := append([]string{}, sources...)
-		for _, source := range sources {
-			out = append(out, joinBase(destination, source))
+		if destination == "" {
+			return out
 		}
-		return out
+		named := slices.DeleteFunc(slices.Clone(sources), func(s string) bool { return s == "" })
+		return append(out, paths.DestinationsUnder(destination, named)...)
 
 	case asynctasks.TypeRename:
 		return []string{stringAt(data, "source"), stringAt(data, "destination")}
@@ -150,21 +153,6 @@ func Conflicts(a, b string) bool {
 	return a == b ||
 		strings.HasPrefix(a, b+"/") ||
 		strings.HasPrefix(b, a+"/")
-}
-
-// joinBase names what a source will be called under a destination collection.
-func joinBase(destination, source string) string {
-	if destination == "" || source == "" {
-		return ""
-	}
-
-	trimmed := strings.TrimRight(source, "/")
-	base := trimmed
-	if at := strings.LastIndex(trimmed, "/"); at >= 0 {
-		base = trimmed[at+1:]
-	}
-
-	return strings.TrimRight(destination, "/") + "/" + base
 }
 
 // stringAt reads one string out of a task's data.

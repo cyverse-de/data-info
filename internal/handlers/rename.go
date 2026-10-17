@@ -212,7 +212,7 @@ func (h *Writes) startMove(
 	sources []string,
 	dest string,
 ) (string, error) {
-	destinations := jobs.DestinationsUnder(dest, sources)
+	destinations := paths.DestinationsUnder(dest, sources)
 
 	// Checked first: there's no point validating while another task holds the same tree.
 	if err := h.deps.RequireUnlocked(ctx, append(append([]string{}, sources...), destinations...)...); err != nil {

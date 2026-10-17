@@ -48,7 +48,7 @@ func testScope(t *testing.T) *rods.Scope {
 func TestMoveChecksEveryDestinationFirst(t *testing.T) {
 	long := strings.Repeat("n", paths.MaxFilenameLength+1)
 	sources := []string{testHome + "/fine.txt", testHome + "/" + long}
-	destinations := DestinationsUnder(testHome+"/dest", sources)
+	destinations := paths.DestinationsUnder(testHome+"/dest", sources)
 
 	var trail []string
 	progress := func(path, action string) { trail = append(trail, path+": "+action) }

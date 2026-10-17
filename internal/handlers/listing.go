@@ -3,6 +3,7 @@ package handlers
 import (
 	"github.com/cyverse-de/data-info/internal/apierror"
 	"github.com/cyverse-de/data-info/internal/icat"
+	"github.com/cyverse-de/data-info/internal/paths"
 	"github.com/cyverse-de/data-info/internal/rods"
 	"github.com/cyverse-de/data-info/internal/service"
 	"github.com/labstack/echo/v4"
@@ -171,8 +172,8 @@ func (h *Listings) FolderListing(c echo.Context) error {
 		ID:           stat.UUID,
 		DateCreated:  stat.CreatedMS,
 		DateModified: stat.ModifiedMS,
-		BadName:      rule.Matches(stat.Path, pathBase(stat.Path)),
-		Name:         pathBase(stat.Path),
+		BadName:      rule.Matches(stat.Path, paths.Base(stat.Path)),
+		Name:         paths.Base(stat.Path),
 		Path:         stat.Path,
 		Permission:   string(stat.Permission),
 	}

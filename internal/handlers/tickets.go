@@ -52,11 +52,11 @@ func (t *Tickets) Add(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	forJob, err := optionalBool(c, "for-job")
+	forJob, err := boolParam(c, "for-job")
 	if err != nil {
 		return err
 	}
-	public, err := optionalBool(c, "public")
+	public, err := boolParam(c, "public")
 	if err != nil {
 		return err
 	}
@@ -86,13 +86,13 @@ func (t *Tickets) Add(c echo.Context) error {
 		return err
 	}
 
-	admin, err := t.deps.OpenProxyScope(ctx)
+	proxy, err := t.deps.OpenProxyScope(ctx)
 	if err != nil {
 		return err
 	}
-	defer admin.Close()
+	defer proxy.Close()
 
-	if err := requireAllExist(ctx, admin, requested); err != nil {
+	if err := requireAllExist(ctx, proxy, requested); err != nil {
 		return err
 	}
 
@@ -108,12 +108,6 @@ func (t *Tickets) Add(c echo.Context) error {
 	// Issued as the service account: iRODS scopes ticket listings to the connection's user,
 	// and visibility here follows path permissions, so a caller-owned ticket would be hidden
 	// from other writers and from deletion cleanup.
-	proxy, err := t.deps.OpenProxyScope(ctx)
-	if err != nil {
-		return err
-	}
-	defer proxy.Close()
-
 	views := make([]ticketView, 0, len(requested))
 	for _, path := range requested {
 		view, err := t.create(ctx, proxy, path, mode, public, limits)
@@ -196,13 +190,13 @@ func (t *Tickets) List(c echo.Context) error {
 		return err
 	}
 
-	admin, err := t.deps.OpenProxyScope(ctx)
+	proxy, err := t.deps.OpenProxyScope(ctx)
 	if err != nil {
 		return err
 	}
-	defer admin.Close()
+	defer proxy.Close()
 
-	if err := requireAllExist(ctx, admin, requested); err != nil {
+	if err := requireAllExist(ctx, proxy, requested); err != nil {
 		return err
 	}
 	if err := requireAllReadable(ctx, scope, requested); err != nil {
@@ -212,12 +206,6 @@ func (t *Tickets) List(c echo.Context) error {
 	// Listed as the service, for the same reason they are issued as it: which tickets a
 	// caller may see is decided by the permissions on the path, not by who happens to own
 	// the ticket.
-	proxy, err := t.deps.OpenProxyScope(ctx)
-	if err != nil {
-		return err
-	}
-	defer proxy.Close()
-
 	out := make(map[string][]ticketView, len(requested))
 	for _, path := range requested {
 		tickets, err := proxy.TicketsForPath(ctx, path)
@@ -243,7 +231,7 @@ func (t *Tickets) Delete(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	forJob, err := optionalBool(c, "for-job")
+	forJob, err := boolParam(c, "for-job")
 	if err != nil {
 		return err
 	}
@@ -365,14 +353,6 @@ func ticketLimits(c echo.Context) (rods.TicketLimits, error) {
 		return rods.TicketLimits{}, err
 	}
 	return rods.TicketLimits{Uses: uses, FileWrite: fileWrite}, nil
-}
-
-// optionalBool reads a boolean parameter that may be absent.
-func optionalBool(c echo.Context, name string) (bool, error) {
-	if _, present := c.QueryParams()[name]; !present {
-		return false, nil
-	}
-	return boolParam(c, name)
 }
 
 // optionalInt reads a whole-number parameter that may be absent.

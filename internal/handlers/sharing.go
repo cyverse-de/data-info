@@ -72,7 +72,7 @@ func (h *Writes) Share(c echo.Context) error {
 	if err := requireKnownUser(ctx, scope, user, false); err != nil {
 		return err
 	}
-	if err := h.deps.CheckPathCount(countSharePaths(body.Sharing)); err != nil {
+	if err := h.deps.CheckPathCount(countPaths(body.Sharing)); err != nil {
 		return err
 	}
 
@@ -191,11 +191,7 @@ func (h *Writes) Unshare(c echo.Context) error {
 		return err
 	}
 
-	var total int
-	for _, entry := range body.Unshare {
-		total += len(entry.Paths)
-	}
-	if err := h.deps.CheckPathCount(total); err != nil {
+	if err := h.deps.CheckPathCount(countPaths(body.Unshare)); err != nil {
 		return err
 	}
 
@@ -411,11 +407,14 @@ func (h *Writes) shareRequest(user, other, path string, level rods.Permission) s
 	}
 }
 
-// countSharePaths totals the paths across every entry of a share request.
-func countSharePaths(entries []shareeEntry) int {
+func (e shareeEntry) pathCount() int   { return len(e.Paths) }
+func (e unshareeEntry) pathCount() int { return len(e.Paths) }
+
+// countPaths totals the paths across every entry of a share or unshare request.
+func countPaths[E interface{ pathCount() int }](entries []E) int {
 	var total int
 	for _, entry := range entries {
-		total += len(entry.Paths)
+		total += entry.pathCount()
 	}
 	return total
 }

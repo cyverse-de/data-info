@@ -186,26 +186,3 @@ func (a *AVUs) collect(
 
 	return item, nil
 }
-
-// templateAVUs extracts the AVU list from a metadata-service response, skipping entries that
-// aren't objects.
-func templateAVUs(response map[string]any) []service.AVU {
-	raw, ok := response["avus"].([]any)
-	if !ok {
-		return nil
-	}
-
-	out := make([]service.AVU, 0, len(raw))
-	for _, item := range raw {
-		object, ok := item.(map[string]any)
-		if !ok {
-			continue
-		}
-
-		attribute, _ := object["attr"].(string)
-		value, _ := object["value"].(string)
-		unit, _ := object["unit"].(string)
-		out = append(out, service.AVU{Attribute: attribute, Value: value, Unit: unit})
-	}
-	return out
-}

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cyverse-de/data-info/internal/icat"
 	"gopkg.in/yaml.v3"
 )
 
@@ -104,7 +105,7 @@ func TestLoadAppliesDefaults(t *testing.T) {
 		{"irods port", c.IRODS.Port, DefaultIRODSPort},
 		{"irods use trash", c.IRODS.UseTrash, true},
 		{"icat database", c.ICAT.Database, DefaultICATDatabase},
-		{"type attribute", c.TypeDetect.TypeAttribute, DefaultTypeAttribute},
+		{"type attribute", c.TypeDetect.TypeAttribute, icat.DefaultInfoTypeAttribute},
 		{"ht info type", c.PathLists.HT.InfoType, DefaultHTPathListInfoType},
 		{"amqp exchange", c.AMQP.Exchange.Name, DefaultAMQPExchangeName},
 		{"amqp durable", c.AMQP.Exchange.Durable, true},

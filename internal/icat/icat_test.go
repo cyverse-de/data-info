@@ -203,10 +203,10 @@ func TestSplitPathsRejectsNonAbsolutePaths(t *testing.T) {
 // TestInfoTypeAttributeIsConfigurable guards against hardcoding the configurable info-type
 // attribute in the query.
 func TestInfoTypeAttributeIsConfigurable(t *testing.T) {
-	if got := (ItemQuery{}).infoTypeAttribute(); got != DefaultInfoTypeAttribute {
+	if got := infoTypeAttributeOr(""); got != DefaultInfoTypeAttribute {
 		t.Errorf("default attribute = %q, want %q", got, DefaultInfoTypeAttribute)
 	}
-	if got := (ItemQuery{InfoTypeAttribute: "custom-filetype"}).infoTypeAttribute(); got != "custom-filetype" {
+	if got := infoTypeAttributeOr("custom-filetype"); got != "custom-filetype" {
 		t.Errorf("configured attribute = %q, want %q", got, "custom-filetype")
 	}
 	if strings.Contains(sqlGetItems, "'"+DefaultInfoTypeAttribute+"'") {

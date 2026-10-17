@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/cyverse-de/data-info/internal/apierror"
-	"github.com/cyverse-de/data-info/internal/paths"
 	"github.com/cyverse-de/data-info/internal/service"
 	"github.com/labstack/echo/v4"
 )
@@ -44,9 +43,6 @@ func pathFromRoute(c echo.Context) (string, error) {
 	return "/" + zone + "/" + decoded, nil
 }
 
-// urlPathUnescape decodes one path segment.
-func urlPathUnescape(segment string) (string, error) { return url.PathUnescape(segment) }
-
 // routePrefix is the static part of a wildcard route, up to but not including the zone
 // parameter.
 func routePrefix(pattern string) string {
@@ -63,7 +59,7 @@ func decodePathSegments(raw string) (string, error) {
 	out := make([]string, 0, len(segments))
 
 	for _, segment := range segments {
-		decoded, err := urlPathUnescape(segment)
+		decoded, err := url.PathUnescape(segment)
 		if err != nil {
 			return "", err
 		}
@@ -101,9 +97,6 @@ func listingOffset(c echo.Context) (int, error) {
 	}
 	return offset, nil
 }
-
-// pathBase is the last element of an iRODS path.
-func pathBase(p string) string { return paths.Base(p) }
 
 // infoTypeFilter reads the info-type parameters. "unknown" both selects objects with no info
 // type and stays a value to match, since info-typer records it on files it can't identify.

@@ -48,8 +48,6 @@ const (
 	DefaultICATDatabase = "ICAT"
 	DefaultICATSSLMode  = "disable"
 
-	DefaultTypeAttribute = "ipc-filetype"
-
 	DefaultHTPathListFileIdentifier         = "# application/vnd.de.path-list+csv; version=1"
 	DefaultHTPathListInfoType               = "ht-analysis-path-list"
 	DefaultMultiInputPathListFileIdentifier = "# application/vnd.de.multi-input-path-list+csv; version=1"

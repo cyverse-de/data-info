@@ -46,11 +46,11 @@ func (p *PathLists) Create(c echo.Context) error {
 		return err
 	}
 
-	foldersOnly, err := optionalBool(c, "folders-only")
+	foldersOnly, err := boolParam(c, "folders-only")
 	if err != nil {
 		return err
 	}
-	recursive, err := optionalBool(c, "recursive")
+	recursive, err := boolParam(c, "recursive")
 	if err != nil {
 		return err
 	}

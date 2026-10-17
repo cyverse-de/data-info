@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/cyverse-de/data-info/internal/icat"
 	"github.com/cyverse-de/data-info/internal/irodsclient"
 	"github.com/cyverse-de/go-mod/cfg"
 	"github.com/knadh/koanf"
@@ -113,7 +114,7 @@ func defaults() *Config {
 	c.ICAT.Database = DefaultICATDatabase
 	c.ICAT.SSLMode = DefaultICATSSLMode
 
-	c.TypeDetect.TypeAttribute = DefaultTypeAttribute
+	c.TypeDetect.TypeAttribute = icat.DefaultInfoTypeAttribute
 
 	c.PathLists.HT.FileIdentifier = DefaultHTPathListFileIdentifier
 	c.PathLists.HT.InfoType = DefaultHTPathListInfoType
