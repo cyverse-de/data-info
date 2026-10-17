@@ -137,7 +137,7 @@ func Trash(user string, sources, destinations []string, failed bool) Message {
 	return Message{
 		Type:    notificationType,
 		User:    user,
-		Subject: fmt.Sprintf("%s moving %d files(s)/folder(s) to trash", outcome(failed), len(sources)),
+		Subject: fmt.Sprintf("%s moving %d file(s)/folder(s) to trash", outcome(failed), len(sources)),
 		Message: fmt.Sprintf("%s moving %s to trash at %s",
 			outcome(failed), strings.Join(sources, ", "), strings.Join(destinations, ", ")),
 		Payload: Payload{Action: ActionTrash, Paths: destinations},
@@ -161,7 +161,7 @@ func Restore(user string, sources, destinations []string, failed bool) Message {
 	return Message{
 		Type: notificationType,
 		User: user,
-		Subject: fmt.Sprintf("%s restoring %d files(s)/folder(s) to their original locations",
+		Subject: fmt.Sprintf("%s restoring %d file(s)/folder(s) to their original locations",
 			outcome(failed), len(sources)),
 		Message: fmt.Sprintf("%s restoring %s to %s",
 			outcome(failed), strings.Join(sources, ", "), strings.Join(destinations, ", ")),
