@@ -1,14 +1,5 @@
--- A sorted, paged listing of the catalog items carrying a given set of data ids.
---
--- Ported from clj-icat-direct's :paged-uuid-listing, which interpolated the id list and the
--- info-type condition into the statement as quoted text. It is the same shape as
--- paged_folder.sql -- collections and data objects selected separately, unioned, sorted
--- together and paged -- over a set of ids rather than a parent collection. That union is
--- why this cannot be a GenQuery: the protocol cannot select two object types at once, pivot
--- an AVU into the row, or take a MAX over the requesting user's groups.
---
--- Unlike paged_folder.sql this reports no total. The count is its own query, because the
--- window function would have to run over the union on every page.
+-- Same shape as paged_folder.sql, over a set of ids rather than a parent collection. Unlike
+-- paged_folder.sql it reports no total; that comes from count_uuids.sql.
 --
 -- $1 data ids
 -- $2 username, $3 zone
@@ -17,8 +8,7 @@
 -- $6 whether an object with no info type is kept when $5 is set
 -- $7 limit, $8 offset
 -- $9 the AVU attribute holding an object's info type
--- The sort column and direction are interpolated by the caller from a fixed table; they are
--- identifiers and cannot be parameters.
+-- The sort column and direction are interpolated by the caller from a fixed table.
 WITH groups AS (
     SELECT unnest($4::bigint[]) AS group_user_id
      WHERE $4::bigint[] IS NOT NULL
@@ -95,10 +85,8 @@ SELECT p.type,
                                      FROM r_data_main d2
                                     WHERE d2.data_id = d1.data_id)
            AND a.user_id IN (SELECT group_user_id FROM groups)
-           -- $6 says whether objects with no info type are kept. It is set independently of
-           -- $5, because asking for only untyped objects is a real request: the reference
-           -- spells it by naming "unknown" in the info-type list, and it must not be read
-           -- as "no filter at all".
+           -- $6 is independent of $5, so a request for only untyped objects is not read as no
+           -- filter.
            AND (($5::text[] IS NULL AND NOT $6::boolean)
                 OR ($5::text[] IS NOT NULL AND lower(COALESCE(f.meta_attr_value, '')) = ANY($5::text[]))
                 OR ($6::boolean AND COALESCE(f.meta_attr_value, '') = ''))) AS p

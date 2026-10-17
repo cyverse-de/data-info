@@ -59,11 +59,8 @@ const (
 	SortDescending SortDirection = "DESC"
 )
 
-// ResolveSortColumn maps a sort-field parameter onto a column.
-//
-// An unrecognised value is an error rather than a silent default. The Clojure service lets it
-// reach a bare exception and answers 500, which is recorded as a deferred fix; reporting it
-// here lets the caller decide which to produce.
+// ResolveSortColumn maps a sort-field parameter onto a column. An unrecognised value is an
+// error, not a silent default, so the caller chooses the status (docs/deferred-fixes.md #3).
 func ResolveSortColumn(field string) (SortColumn, error) {
 	if strings.TrimSpace(field) == "" {
 		return DefaultSortColumn, nil
@@ -75,11 +72,7 @@ func ResolveSortColumn(field string) (SortColumn, error) {
 }
 
 // ResolveSortDirection maps a sort-dir parameter onto a direction, defaulting to ascending.
-//
-// The two accepted spellings are upper case and nothing else passes: the parameter is
-// declared as an enum of "ASC" and "DESC", so a lowercase "desc" fails coercion and is
-// answered as a bad request rather than read as a direction. Accepting it here would have
-// this service reverse a page where the Clojure service refuses the request outright.
+// Only upper-case ASC and DESC are accepted, as the Clojure service's parameter schema did.
 func ResolveSortDirection(dir string) (SortDirection, error) {
 	switch SortDirection(dir) {
 	case "", SortAscending:
@@ -102,10 +95,8 @@ type ListingQuery struct {
 	// InfoTypes filters data objects by info type. Empty means no filtering.
 	InfoTypes []string
 
-	// IncludeUnknownInfoType keeps objects that have no info type. It is independent of
-	// InfoTypes: asking for only untyped objects is a real request, spelled in the Clojure
-	// service by naming "unknown" and nothing else, and it must not be read as no filtering
-	// at all.
+	// IncludeUnknownInfoType keeps objects with no info type. It is independent of InfoTypes,
+	// so a request for only untyped objects is not read as no filter.
 	IncludeUnknownInfoType bool
 
 	// EntityType selects what the listing contains.
@@ -140,8 +131,7 @@ func pagedFolder(ctx context.Context, qr queryer, q ListingQuery) ([]ListingRow,
 	if len(q.GroupIDs) == 0 && (q.User == "" || q.Zone == "") {
 		return nil, fmt.Errorf("icat: a user and zone are required when resolving groups")
 	}
-	// A negative limit means every row. The paged endpoints always set one; the path-list
-	// endpoint walks a whole tree and must not be cut off at a page boundary.
+	// A negative limit means every row, for the path-list endpoint's whole-tree walk.
 	var limit any = q.Limit
 	switch {
 	case q.Limit < 0:
@@ -157,9 +147,8 @@ func pagedFolder(ctx context.Context, qr queryer, q ListingQuery) ([]ListingRow,
 	if column == "" {
 		column = DefaultSortColumn
 	}
-	// Guard the interpolation. These two are identifiers, so they cannot be parameters;
-	// everything else in the query is. A value that did not come from the table above must
-	// never reach the statement.
+	// The sort column and direction are identifiers, so they are interpolated rather than
+	// bound; only values from sortColumns may reach the statement.
 	if !isKnownSortColumn(column) {
 		return nil, fmt.Errorf("icat: %q is not a sortable column", column)
 	}
@@ -186,7 +175,7 @@ func pagedFolder(ctx context.Context, qr queryer, q ListingQuery) ([]ListingRow,
 	return rows, nil
 }
 
-// isKnownSortColumn reports whether a column came from the table above.
+// isKnownSortColumn reports whether column is one of sortColumns.
 func isKnownSortColumn(column SortColumn) bool {
 	for _, known := range sortColumns {
 		if known == column {

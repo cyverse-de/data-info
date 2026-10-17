@@ -239,8 +239,6 @@ func TestObsoleteAccessIsRemovedOnlyWhenItIsMerelyRead(t *testing.T) {
 	}
 }
 
-// The walk stops at the first collection that still holds something the sharee can see:
-// above that point their access is doing work for something else.
 func TestObsoleteAccessStopsWhereSomethingElseIsVisible(t *testing.T) {
 	const (
 		project = "/iplant/home/wregglej/project"

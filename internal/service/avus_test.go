@@ -6,9 +6,6 @@ import (
 	"github.com/cyverse-de/data-info/internal/rods"
 )
 
-// The DE keeps its own metadata in the same namespace users write to, so this prefix is the
-// only thing separating them -- and it decides both what a listing hides and what a caller
-// may not write.
 func TestIsReservedAVU(t *testing.T) {
 	cases := []struct {
 		attribute string
@@ -33,9 +30,6 @@ func TestIsReservedAVU(t *testing.T) {
 	}
 }
 
-// iRODS stores a unit on every AVU, so a blank one is recorded as the reserved value and has
-// to be reported back as blank -- otherwise an AVU a caller set with no unit would come back
-// carrying one they never wrote.
 func TestBlankUnitsRoundTrip(t *testing.T) {
 	cases := []struct {
 		name       string
@@ -84,7 +78,6 @@ func TestVisibleAVUs(t *testing.T) {
 	}
 }
 
-// The metadata service calls a collection a folder where iRODS calls it a dir.
 func TestMetadataTargetType(t *testing.T) {
 	if got := MetadataTargetType(rods.ObjectTypeDir); got != "folder" {
 		t.Errorf("a collection maps to %q, want %q", got, "folder")

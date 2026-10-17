@@ -10,8 +10,6 @@ import (
 	"github.com/lib/pq"
 )
 
-// The catalog queries. They live in .sql files so that they diff cleanly against the
-// Clojure originals they are ported from.
 var (
 	//go:embed sql/user_group_ids.sql
 	sqlUserGroupIDs string
@@ -81,16 +79,12 @@ type ItemQuery struct {
 	User string
 	Zone string
 
-	// GroupIDs, when set, is used instead of looking the user's groups up again. Callers
-	// resolving several things for one user should fetch it once and pass it: every
-	// permission-filtered query needs it.
+	// GroupIDs, when set, skips the group lookup; callers making several queries for one
+	// user should fetch them once.
 	GroupIDs []int64
 
-	// InfoTypeAttribute is the AVU attribute holding a data object's info type. It is a
-	// deployment setting (data-info.type-detect.type-attribute), not a constant, so it is
-	// threaded in rather than baked into the query -- a deployment that changed it would
-	// otherwise get a null info type on every row and no indication why. Empty means the
-	// default.
+	// InfoTypeAttribute is the configured AVU attribute holding a data object's info type;
+	// empty means DefaultInfoTypeAttribute.
 	InfoTypeAttribute string
 }
 
@@ -119,9 +113,7 @@ func userGroupIDs(ctx context.Context, q queryer, user, zone string) ([]int64, e
 	if user == "" {
 		return nil, fmt.Errorf("icat: a username is required")
 	}
-	// An empty zone is not harmless: it matches no rows, so the group set comes back
-	// empty, every permission-filtered query returns nothing, and the whole service looks
-	// like it is reporting that no path exists. Failing here says what actually happened.
+	// An empty zone matches no groups and makes every path look missing, so fail loudly.
 	if zone == "" {
 		return nil, fmt.Errorf("icat: a zone is required to look up groups for %q", user)
 	}
@@ -176,12 +168,8 @@ func getItems(ctx context.Context, qr queryer, q ItemQuery) ([]Row, error) {
 	return rows, nil
 }
 
-// GetItem returns the catalog row for one path, or ErrNoSuchItem.
-//
-// It exists so callers with a single path do not have to unpack a slice, and so that
-// "absent" is an error rather than an empty result they might forget to check. Callers with
-// more than one path should use GetItems: the whole reason this query is batched is that a
-// round trip per path is what made the protocol too slow for the bulk endpoints.
+// GetItem returns the catalog row for one path, or ErrNoSuchItem. Use GetItems for more
+// than one path.
 func GetItem(ctx context.Context, r Reader, q ItemQuery) (Row, error) {
 	if len(q.Paths) != 1 {
 		return Row{}, fmt.Errorf("icat: GetItem takes exactly one path, got %d", len(q.Paths))
@@ -382,21 +370,14 @@ func permsForItems(ctx context.Context, qr queryer, paths []string) ([]Perm, err
 	return perms, nil
 }
 
-// splitPaths splits absolute iRODS paths into parallel dirname and basename arrays, which
-// is the shape the queries join against.
-//
-// path.Split is used rather than filepath: iRODS paths always use forward slashes, so on a
-// platform with a different separator filepath would produce the wrong answer.
-//
-// Paths are validated rather than passed through. An empty string would split into an empty
-// dirname and basename, which the collection join reassembles as "/" -- so a blank entry in
-// a bulk request would quietly match the zone root rather than matching nothing, and for
-// the proxy account that row is visible.
+// splitPaths splits absolute iRODS paths into the parallel dirname and basename arrays the
+// queries join against.
 func splitPaths(paths []string) (dirnames, basenames []string, err error) {
 	dirnames = make([]string, 0, len(paths))
 	basenames = make([]string, 0, len(paths))
 
 	for i, p := range paths {
+		// An empty path would be reassembled as "/" and match the root collection.
 		if err := CheckPath(p); err != nil {
 			return nil, nil, fmt.Errorf("icat: path %d: %w", i, err)
 		}
@@ -409,12 +390,8 @@ func splitPaths(paths []string) (dirnames, basenames []string, err error) {
 	return dirnames, basenames, nil
 }
 
-// CheckPath rejects a path the catalog cannot describe.
-//
-// Exported so the in-memory catalog used in tests can refuse exactly what this one refuses.
-// A fake that is more permissive than the store it stands in for hides the bugs it exists
-// to catch: this rule is what a creatability request tripped over in QA, having passed every
-// unit test, because the fake happily looked up "/" and found nothing.
+// CheckPath rejects a path the catalog cannot describe. It is exported so the test fake
+// rejects exactly what the real store does.
 func CheckPath(p string) error {
 	if !strings.HasPrefix(p, "/") || strings.TrimRight(p, "/") == "" {
 		return fmt.Errorf("%q is not an absolute iRODS path", p)

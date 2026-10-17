@@ -1,8 +1,3 @@
--- Every user's access to each of a set of absolute paths, in one query.
---
--- Ported from clj-icat-direct's mk-perms-for-item, which answered a single path through a
--- honeysql-built object-lookup CTE.
---
 -- $1 dirnames, $2 basenames -- positionally paired
 WITH targets AS (
     SELECT dirname, basename

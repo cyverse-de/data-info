@@ -1,13 +1,6 @@
--- Every subfolder of a collection, unpaged.
---
--- Ported from clj-icat-direct's list-folders-in-folder, which the navigation endpoint uses.
--- It is deliberately not the paged listing with the files filtered out: that query builds
--- CTEs over every data object in the collection before discarding them, so on a home
--- directory holding tens of thousands of files it would make a tree view far more expensive
--- than it needs to be. This touches only r_coll_main.
---
--- Unpaged, because the reference is. A folder with more subfolders than a page would
--- otherwise have its tree silently truncated.
+-- Not paged_folder.sql with files filtered out: that builds CTEs over every data object in
+-- the collection, which is costly on large home directories. Unpaged so a tree view is never
+-- truncated.
 --
 -- $1 parent collection path, $2 username, $3 zone
 -- $4 group ids, or NULL to derive them from $2 and $3

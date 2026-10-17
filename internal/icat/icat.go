@@ -1,18 +1,8 @@
-// Package icat reads the iRODS catalog database directly.
-//
-// Most catalog reads go through the iRODS protocol instead; see internal/irodsclient. This
-// package exists for the queries the protocol cannot answer efficiently, which measurement
-// showed is a larger set than it first appears. A per-path round trip costs about 10ms for
-// a stat and 20ms for an access list, and the bulk endpoints accept up to
-// max_paths_in_request paths in one request, so answering those over the protocol would
-// take seconds where one query takes milliseconds. docs/irods-vs-icat-measurements.md has
-// the numbers.
-//
-// Every query here is parameterised. The Clojure implementation this is ported from built
-// several of its queries by string concatenation, including values taken straight from
-// request parameters, so a path containing a quote could break out of the statement. Only
-// sort columns and directions are ever interpolated, and only after a lookup in a fixed
-// table.
+// Package icat queries the iRODS catalog database directly, for the bulk and listing reads
+// the iRODS protocol (internal/irodsclient) cannot answer efficiently: a bulk request may
+// name as many paths as the maxpaths setting allows, and each protocol round trip costs
+// 10-20ms (see docs/irods-vs-icat-measurements.md). Every request value is a bind
+// parameter; only sort columns and directions are interpolated, and only from a fixed table.
 package icat
 
 import (
@@ -47,9 +37,8 @@ type Reader interface {
 	// FoldersInFolder returns every subfolder of a collection, unpaged.
 	FoldersInFolder(ctx context.Context, q ListingQuery) ([]ListingRow, error)
 
-	// PagedUUIDs returns a sorted page of the items carrying a set of data ids. It is the
-	// second query the iRODS protocol cannot express, for the same reasons as the paged
-	// folder listing: a union of two object types, sorted and paged together.
+	// PagedUUIDs returns a sorted page of the items carrying a set of data ids, collections
+	// and data objects paged together.
 	PagedUUIDs(ctx context.Context, q UUIDListingQuery) ([]ListingRow, error)
 
 	// CountUUIDs returns how many of a set of data ids name something the user can see,
@@ -64,10 +53,8 @@ type Reader interface {
 	// group of one that iRODS records for the user themselves.
 	UserGroupNames(ctx context.Context, user, zone string) ([]string, error)
 
-	// PathsForUUIDs resolves data ids to the paths carrying them.
-	//
-	// Like PermsForItems this is not scoped to a user: resolving an id is a lookup, and
-	// the caller checks what the user may do with the path afterwards.
+	// PathsForUUIDs resolves data ids to paths. It is not scoped to a user; callers check
+	// access to the paths afterwards.
 	PathsForUUIDs(ctx context.Context, uuids []string) ([]UUIDPath, error)
 
 	// CountChildren returns how many files and subfolders a collection holds, counting
@@ -77,13 +64,8 @@ type Reader interface {
 	// CountChildrenBatch returns child counts for many collections in one query.
 	CountChildrenBatch(ctx context.Context, q BatchChildCountQuery) ([]PathChildCounts, error)
 
-	// PermsForItems returns the access entries on the given absolute paths, in one query.
-	//
-	// Unlike GetItems this is NOT scoped to a requesting user: it returns the complete
-	// access list of every path it is given, to whoever asks. That is what the endpoints
-	// built on it need -- they report who a path is shared with -- but it means the
-	// caller owns the authorisation check. Handlers must confirm the requesting user may
-	// see a path before handing it here, or they will disclose its ACL.
+	// PermsForItems returns the full access list of each path and is NOT scoped to a user.
+	// Callers must confirm the requester may see a path first, or they will disclose its ACL.
 	PermsForItems(ctx context.Context, paths []string) ([]Perm, error)
 }
 
@@ -165,10 +147,8 @@ func Open(cfg Config) (*PGStore, error) {
 	}
 
 	db.SetMaxOpenConns(cfg.MaxOpenConns)
-	// Without this the idle limit stays at Go's default of two, so a burst of bulk
-	// queries opens ten connections and immediately tears eight of them down -- including
-	// the TLS handshake when sslmode is not disable. Keeping the two limits equal means
-	// the pool actually holds what it was sized for.
+	// Go's default idle limit of two would close most connections after every burst, only
+	// to reopen them (with a TLS handshake) on the next.
 	db.SetMaxIdleConns(cfg.MaxOpenConns)
 	db.SetConnMaxIdleTime(cfg.ConnMaxIdleTime)
 
@@ -203,11 +183,8 @@ func (s *PGStore) Ping(ctx context.Context) error { return s.db.PingContext(ctx)
 // Close releases the connection pool.
 func (s *PGStore) Close() error { return s.db.Close() }
 
-// WithTx runs fn inside a read-only transaction, rolling back on error.
-//
-// Read-only is not decoration. This service never writes to the catalog -- iRODS owns it,
-// and writing behind the server's back would corrupt its own caches -- so the transaction
-// declares that and lets PostgreSQL enforce it.
+// WithTx runs fn inside a read-only transaction, rolling back on error. iRODS owns the
+// catalog and caches it, so PostgreSQL is asked to enforce that this service never writes.
 func (s *PGStore) WithTx(ctx context.Context, fn func(Tx) error) error {
 	tx, err := s.db.BeginTxx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {

@@ -3,8 +3,7 @@
 // Integration tests against a live iRODS catalog database.
 //
 // Excluded from `go test ./...` by the build tag and skipped unless the connection URI is
-// set. Every query here is read-only, and the transaction they run in is declared read-only
-// so the database enforces it.
+// set.
 //
 //	DATA_INFO_IT_ICAT_URI=postgres://... DATA_INFO_IT_ICAT_ZONE=cyverse \
 //	DATA_INFO_IT_ICAT_USER=de-irods go test -tags=integration ./internal/icat/
@@ -88,8 +87,7 @@ func TestIntegrationUserGroupIDs(t *testing.T) {
 	t.Logf("%s#%s belongs to %d groups", user, zone, len(ids))
 }
 
-// TestIntegrationGetItems exercises the batched item query, which is the one that replaced
-// a per-path round trip.
+// TestIntegrationGetItems exercises the batched item query.
 func TestIntegrationGetItems(t *testing.T) {
 	store := itStore(t)
 	ctx := itContext(t)
@@ -205,12 +203,8 @@ func TestIntegrationReadOnlyTransaction(t *testing.T) {
 	}
 }
 
-// TestIntegrationBatchScales is the measurement this package exists for.
-//
-// Over the iRODS protocol a stat costs about 10ms per path and an access list about 20ms,
-// so a request carrying the endpoint limit of a thousand paths would spend seconds on round
-// trips. One query should answer the same set in well under a second, and that difference
-// is the reason bulk reads stay in the catalog rather than moving to the protocol.
+// TestIntegrationBatchScales checks that a thousand-path batch answers in well under the
+// ~10s (stat) and ~20s (access list) the protocol would need.
 func TestIntegrationBatchScales(t *testing.T) {
 	store := itStore(t)
 	ctx := itContext(t)
@@ -218,8 +212,7 @@ func TestIntegrationBatchScales(t *testing.T) {
 
 	const batch = 1000
 
-	// Mostly paths that do not exist, which is the honest shape: the cost is in the joins
-	// and the permission filter, not in how many rows come back.
+	// Mostly missing paths: the cost is in the joins and permission filter, not the rows.
 	paths := make([]string, 0, batch)
 	paths = append(paths, "/"+zone+"/home", "/"+zone+"/home/"+user)
 	for i := len(paths); i < batch; i++ {
@@ -243,9 +236,7 @@ func TestIntegrationBatchScales(t *testing.T) {
 	t.Logf("%d paths: GetItems %s (%d rows), PermsForItems %s (%d rows)",
 		batch, itemsElapsed, len(rows), permsElapsed, len(perms))
 
-	// Generous, because this runs against a shared server over a network. The protocol
-	// equivalents would be roughly 10s and 20s, so anything in this range still makes the
-	// point decisively.
+	// Generous for a shared server over a network; still far below the protocol's cost.
 	const budget = 5 * time.Second
 	if itemsElapsed > budget {
 		t.Errorf("GetItems over %d paths took %s, want under %s", batch, itemsElapsed, budget)

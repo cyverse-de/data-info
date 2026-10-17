@@ -7,12 +7,8 @@ import (
 	"github.com/cyverse-de/data-info/internal/paths"
 )
 
-// ListingEntry is one row of a folder listing.
-//
-// This is a different vocabulary from Stat for the same underlying facts: camel-cased
-// dateCreated rather than hyphenated date-created, name rather than label, size rather than
-// file-size. Both are wire contracts and the difference is not tidied, because callers parse
-// each shape where it appears.
+// ListingEntry is one row of a folder listing. Its keys differ from Stat's (dateCreated vs
+// date-created, name vs label), and both shapes are wire contracts.
 type ListingEntry struct {
 	ID           string `json:"id"`
 	DateCreated  int64  `json:"dateCreated"`
@@ -25,39 +21,28 @@ type ListingEntry struct {
 	Size         int64  `json:"size"`
 }
 
-// Listing is a folder's own entry with a page of its contents alongside.
-//
-// The folder describes itself with the same fields as one of its entries -- id, name, path,
-// permission, dates, badName, infoType, size -- and the page is merged in at the top level
-// rather than nested. A caller reads one object, not a wrapper around two.
+// Listing is a folder's own entry with a page of its contents merged in at the top level.
 type Listing struct {
 	ListingEntry
 
 	Files   []ListingEntry `json:"files"`
 	Folders []ListingEntry `json:"folders"`
 
-	// Total is how many entries the folder holds in all, which is not the length of this
-	// page. It is null when it was not computed.
+	// Total is how many entries the folder holds in all, or null when not computed.
 	Total *int64 `json:"total"`
 
-	// TotalBad is always zero. The Clojure service computes nothing for it and reports it
-	// regardless, so it is carried rather than dropped.
+	// TotalBad is always zero; it is kept because callers expect the field.
 	TotalBad int64 `json:"totalBad"`
 
-	// Readme is the README under this folder, or false when there is none. The field is
-	// deliberately untyped: the Clojure service emits an entry object or the boolean false.
+	// Readme is the folder's README entry, or false when there is none.
 	Readme any `json:"readme"`
 }
 
-// ReadmeNames are the files a listing looks for, in the order the Clojure service checks
-// them.
+// ReadmeNames are the files a listing looks for, in the Clojure service's priority order.
 var ReadmeNames = []string{"README.md", "README.txt", "README", "readme.md", "readme.txt", "readme"}
 
-// BadNameRule decides which entries a client should flag as unrenderable.
-//
-// The client asks for this rather than the service deciding: a caller passes the characters,
-// names and paths it cannot display, and the listing marks matching entries so they can be
-// shown differently. None of it filters anything out.
+// BadNameRule is the client's description of names it cannot display; matching entries are
+// flagged, not filtered out.
 type BadNameRule struct {
 	// Chars are characters that make a name bad if it contains any of them.
 	Chars string
@@ -90,8 +75,7 @@ func (r BadNameRule) Matches(path, name string) bool {
 // UnknownInfoType is what a data object nothing has typed yet reports.
 const UnknownInfoType = "unknown"
 
-// FileInfoType reports a data object's info type, substituting UnknownInfoType for none, as
-// clj-icat-direct's fmt-info-type did for every listing and stat the Clojure service served.
+// FileInfoType reports a data object's info type, or UnknownInfoType when it has none.
 func FileInfoType(infoType string) string {
 	if infoType == "" {
 		return UnknownInfoType
@@ -125,8 +109,7 @@ func EntryOf(row icat.ListingRow, rule BadNameRule) ListingEntry {
 
 // ListingOf builds a listing from the folder's own entry and a page of its children.
 func ListingOf(self ListingEntry, rows []icat.ListingRow, rule BadNameRule) Listing {
-	// Non-nil slices: the response carries empty arrays rather than nulls, and a caller
-	// iterating the result should not have to distinguish the two.
+	// Non-nil slices, so the response carries empty arrays rather than nulls.
 	out := Listing{
 		ListingEntry: self,
 		Files:        []ListingEntry{},
@@ -134,8 +117,7 @@ func ListingOf(self ListingEntry, rows []icat.ListingRow, rule BadNameRule) List
 		Readme:       false,
 	}
 
-	// A folder describes itself with no info type and no size, whatever the catalog holds
-	// for it. These set the embedded entry's fields.
+	// A folder describes itself with no info type and no size, whatever the catalog holds.
 	out.InfoType = nil
 	out.Size = 0
 
@@ -147,9 +129,7 @@ func ListingOf(self ListingEntry, rows []icat.ListingRow, rule BadNameRule) List
 			out.Files = append(out.Files, entry)
 		}
 
-		// COUNT(*) OVER () rides along on every row, so it is the same on all of them. A page
-		// with no rows carries no count, and the total is reported as null -- which is what
-		// the Clojure service does for an empty folder.
+		// COUNT(*) OVER () is the same on every row; an empty page has none, so Total stays null.
 		if row.TotalCount.Valid {
 			total := row.TotalCount.Int64
 			out.Total = &total

@@ -10,10 +10,8 @@ import (
 	"github.com/cyverse-de/data-info/internal/rods"
 )
 
-// PermissionStore is what repairing permissions after a move needs.
-//
-// It is deliberately narrower than the whole scope: this is the most delicate code in the
-// service and it should be obvious from the signature exactly what it can reach.
+// PermissionStore is the deliberately narrow surface that permission repair after a move
+// may touch.
 type PermissionStore interface {
 	ACL(ctx context.Context, path string) *lazy.Value[[]rods.ACLEntry]
 	ACLs(ctx context.Context, paths []string) *lazy.Value[map[string][]rods.ACLEntry]
@@ -40,15 +38,9 @@ type MoveContext struct {
 	Layout paths.Layout
 }
 
-// RepairPermissions puts the access lists right after something has been moved.
-//
-// iRODS moves an object's access list with it untouched, which is wrong in both directions:
-// people who could see it where it was should not necessarily see it where it now is, and
-// people who can see the new collection should. What has to happen depends on whether each
-// collection inherits, so there are four cases and they are not symmetric.
-//
-// Nothing is done when the move stayed inside one collection, which is the common case and
-// the reason an upload can stage through a temporary name for free.
+// RepairPermissions fixes access lists after a move, since iRODS carries an object's ACL
+// along unchanged. What it does depends on whether the source and destination collections
+// inherit; a move within one collection needs nothing.
 func RepairPermissions(ctx context.Context, store PermissionStore, move MoveContext) error {
 	sourceParent := paths.Dir(move.Source)
 	destinationParent := paths.Dir(move.Destination)
@@ -111,10 +103,8 @@ func clearAccess(ctx context.Context, store PermissionStore, move MoveContext) e
 	return nil
 }
 
-// grantParentAccess gives everyone who can see the destination collection the same access to
-// what has just been moved into it.
-//
-// This is what the inheritance flag would have done had the object been created there.
+// grantParentAccess gives the moved object the destination collection's access list, as
+// inheritance would have on creation.
 func grantParentAccess(ctx context.Context, store PermissionStore, move MoveContext) error {
 	parent := paths.Dir(move.Destination)
 
@@ -134,15 +124,9 @@ func grantParentAccess(ctx context.Context, store PermissionStore, move MoveCont
 	return nil
 }
 
-// grantAncestorAccess makes sure everyone who can see the moved object can reach it, by
-// granting read on each collection between it and the top of the tree.
-//
-// Read on an ancestor is not sharing that ancestor's contents -- iRODS grants access per
-// object -- it is what lets a client navigate to something already shared with them.
-//
-// Anyone who already holds write or own on an ancestor keeps it. iRODS access is a level
-// rather than a set of flags, so granting read to someone who could write would take their
-// write away.
+// grantAncestorAccess grants each sharee read on the collections above the moved object so
+// they can navigate to it. Existing write or own is kept, since iRODS access is a single level
+// and setting read would downgrade it.
 func grantAncestorAccess(ctx context.Context, store PermissionStore, move MoveContext) error {
 	sharees, err := shareesOf(ctx, store, move.Destination, move)
 	if err != nil {
@@ -296,12 +280,8 @@ func (m MoveContext) ignores(user string) bool {
 	return user == m.User || user == m.ProxyUser || m.AdminUsers[user]
 }
 
-// ancestorsOf lists the collections between a path and the point where stop says to halt,
-// nearest first.
-//
-// Where the walk stops differs by caller, which is why it is a parameter: granting access
-// climbs further than taking it away does. It always stops at the zone root as well, so that
-// a path outside the expected layout cannot walk out of the tree.
+// ancestorsOf lists the collections above path, nearest first, stopping before the first one
+// stop accepts or the zone root.
 func ancestorsOf(path string, stop func(string) bool) []string {
 	var out []string
 

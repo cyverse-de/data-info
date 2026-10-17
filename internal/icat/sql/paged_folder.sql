@@ -1,17 +1,9 @@
--- A sorted, paged listing of a collection's immediate children.
+-- AVUs are joined directly, with the attribute in the join condition, so the per-object
+-- lookups use the metamap's object_id index. A CTE of the AVUs is mis-estimated at one row
+-- and scanned once per object (1.1s vs 76ms for 5,000 objects). If a plan regresses, temporary
+-- tables with an ANALYZE each are the fallback.
 --
--- Ported from clj-icat-direct's mk-paged-folder, which ran this as four statements in a
--- transaction: two temporary tables with an ANALYZE each, then the listing. The temporary
--- tables existed to stop PostgreSQL mis-estimating a CTE's cardinality and choosing nested
--- loops over the catalog. That still happens: a CTE of the children's AVUs was estimated at
--- one row and scanned once per object, about 1.1s of a 1.2s page over 5,000 objects. So the
--- AVUs are joined directly, with the attribute in the join condition, where the per-object
--- lookups use the metamap's object_id index (76ms for the same page). If a plan regresses,
--- the temporary tables are the fallback.
---
--- Rows are ordered by type first so that folders precede files, then by the requested
--- column. The order is the contract -- it is what a sort-field request is asking for -- so
--- nothing downstream may reorder it.
+-- Folders sort before files, then by the requested column; callers must not reorder.
 --
 -- $1 parent collection path
 -- $2 username, $3 zone
@@ -21,8 +13,7 @@
 -- $7 limit, $8 offset
 -- $9 the AVU attribute holding an object's info type
 -- $10 entity type: any, file or folder
--- The sort column and direction are interpolated by the caller from a fixed table; they are
--- identifiers and cannot be parameters.
+-- The sort column and direction are interpolated by the caller from a fixed table.
 WITH groups AS (
     SELECT unnest($4::bigint[]) AS group_user_id
      WHERE $4::bigint[] IS NOT NULL
@@ -86,10 +77,7 @@ files AS (
              ON fmm.object_id = d.data_id
      WHERE $10 IN ('any', 'file')
        AND a.user_id IN (SELECT group_user_id FROM groups)
-       -- $6 says whether objects with no info type are kept. It is set independently of
-       -- $5, because asking for only untyped objects is a real request: the reference
-       -- spells it by naming "unknown" in the info-type list, and it must not be read as
-       -- "no filter at all".
+       -- $6 is independent of $5, so a request for only untyped objects is not read as no filter.
        AND (($5::text[] IS NULL AND NOT $6::boolean)
             OR ($5::text[] IS NOT NULL AND lower(COALESCE(f.meta_attr_value, '')) = ANY($5::text[]))
             OR ($6::boolean AND COALESCE(f.meta_attr_value, '') = ''))
@@ -99,6 +87,5 @@ files AS (
 SELECT t.*, COUNT(*) OVER () AS total_count
   FROM (SELECT * FROM folders UNION SELECT * FROM files) AS t
  ORDER BY type ASC, %s %s
- -- A null limit means every row, which the path-list endpoint needs: it walks a whole tree
- -- and a page boundary there would silently truncate the list it produces.
+ -- A null limit returns every row, for the path-list endpoint's whole-tree walk.
  LIMIT $7 OFFSET $8

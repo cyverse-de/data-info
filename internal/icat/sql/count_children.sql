@@ -1,11 +1,4 @@
--- How many files and subfolders a collection holds, for the file-count and dir-count fields
--- of a directory stat.
---
--- Ported from clj-icat-direct's count-files-in-folder and count-folders-in-folder, which
--- were separate queries. Combining them halves the round trips, and a directory stat always
--- wants both.
---
--- Counts only what the requesting user can see, which is what the separate queries did.
+-- Counts only what the requesting user can see.
 --
 -- $1 collection path, $2 username, $3 zone
 -- $4 group ids, or NULL to derive them from $2 and $3

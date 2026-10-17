@@ -8,7 +8,7 @@ import (
 // TestDecodeChunkDropsPartialCharacters covers the edges a positional read lands in the
 // middle of. A replacement character here would end up in the response as column data.
 func TestDecodeChunkDropsPartialCharacters(t *testing.T) {
-	// Three bytes: the U+00E9 sequence is two, the U+4E16 sequence is three.
+	// U+00E9 encodes as two bytes, U+4E16 as three.
 	eacute := []byte{0xC3, 0xA9}
 	world := []byte{0xE4, 0xB8, 0x96}
 
@@ -38,9 +38,8 @@ func TestDecodeChunkDropsPartialCharacters(t *testing.T) {
 	}
 }
 
-// TestPlanTabularPage pins the arithmetic, including the parts that look wrong. Beyond the
-// first page the read starts a page early and is twice as long, which is how a row split
-// across a page boundary is recovered.
+// TestPlanTabularPage pins the read arithmetic: beyond the first page the read starts a page
+// early and is twice as long, to recover a row split across the boundary.
 func TestPlanTabularPage(t *testing.T) {
 	tests := []struct {
 		name                   string
@@ -121,12 +120,8 @@ func TestTrimToWholeLines(t *testing.T) {
 	}
 }
 
-// TestParseDelimited covers the row shape, which is the wire contract: a map per row keyed
-// by the column number as a string.
-//
-// The blank-line cases are the ones worth keeping. encoding/csv skips an empty line and
-// opencsv reports one as a row of a single empty column, so without counting them back in,
-// every row after a blank line would come back under the wrong index.
+// TestParseDelimited pins the row shape (a map per row keyed by column number) and that blank
+// lines keep their rows, so later row indices do not shift.
 func TestParseDelimited(t *testing.T) {
 	blank := map[string]string{"0": ""}
 
@@ -197,9 +192,8 @@ func TestParseDelimited(t *testing.T) {
 	}
 }
 
-// TestParseDelimitedNeedsASeparatorOnlyWhenThereIsSomethingToParse pins where the Clojure
-// service puts that failure: read-csv short-circuits a blank chunk before reaching (.charAt
-// separator 0), so an empty separator is not an error until there is a row to split.
+// TestParseDelimitedNeedsASeparatorOnlyWhenThereIsSomethingToParse pins that an empty
+// separator is an error only when there is a row to split.
 func TestParseDelimitedNeedsASeparatorOnlyWhenThereIsSomethingToParse(t *testing.T) {
 	if _, err := ParseDelimited("   ", ""); err != nil {
 		t.Errorf("a blank chunk with no separator: %v, want no error", err)

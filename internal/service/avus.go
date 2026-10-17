@@ -15,13 +15,12 @@ const (
 	ReservedUnit = "ipc-reserved-unit"
 	SystemUnit   = "ipc-system-avu"
 
-	// InfoTypeUnit is what an info-type AVU carries. It is not SystemUnit: info-typer and the
-	// Clojure service both write this one, and every typed file in the data store has it.
+	// InfoTypeUnit is the unit info-typer writes on info-type AVUs; it is not SystemUnit.
 	InfoTypeUnit = "ipc-data-info"
 )
 
-// reservedAttributePrefix marks an attribute as the DE's rather than a user's. Matched
-// without regard to case, which is what the Clojure service's pattern does.
+// reservedAttributePrefix marks an attribute as the DE's rather than a user's; it is matched
+// case-insensitively.
 const reservedAttributePrefix = "ipc"
 
 // AVU is one metadata triple as the API reports it.
@@ -31,11 +30,8 @@ type AVU struct {
 	Unit      string `json:"unit"`
 }
 
-// IsReservedAVU reports whether an attribute belongs to the DE rather than to a user.
-//
-// The DE keeps its own bookkeeping in the same namespace users write to, so the only thing
-// separating them is this prefix. That is why it decides both what a listing hides and what a
-// caller may not write.
+// IsReservedAVU reports whether an attribute belongs to the DE rather than to a user. It
+// decides both what listings hide and what callers may not write.
 func IsReservedAVU(attribute string) bool {
 	return strings.HasPrefix(strings.ToLower(attribute), reservedAttributePrefix)
 }
@@ -50,11 +46,7 @@ func VisibleAVU(avu rods.AVU) AVU {
 	return AVU{Attribute: avu.Attribute, Value: avu.Value, Unit: unit}
 }
 
-// VisibleAVUs renders a path's AVUs.
-//
-// Without includeReserved the DE's own are dropped, which is what an ordinary caller sees:
-// they are not that caller's metadata and editing them is refused anyway, so listing them
-// would only invite it.
+// VisibleAVUs renders a path's AVUs, dropping the DE's own unless includeReserved is set.
 func VisibleAVUs(avus []rods.AVU, includeReserved bool) []AVU {
 	out := make([]AVU, 0, len(avus))
 	for _, avu := range avus {
@@ -76,10 +68,8 @@ func StoredAVU(avu AVU) rods.AVU {
 	return rods.AVU{Attribute: avu.Attribute, Value: avu.Value, Unit: unit}
 }
 
-// MetadataTargetType maps an object type onto the name the metadata service uses.
-//
-// It calls a collection a folder where iRODS calls it a dir. The two services were built at
-// different times and neither name is going to change.
+// MetadataTargetType maps an object type onto the name the metadata service uses, which calls
+// a collection a folder.
 func MetadataTargetType(kind rods.ObjectType) string {
 	if kind == rods.ObjectTypeDir {
 		return "folder"

@@ -45,13 +45,9 @@ type ShareRequest struct {
 	Layout paths.Layout
 }
 
-// Share gives a user access to a path, returning the reason it was skipped, or "" when it was
-// done.
-//
-// Sharing is more than one permission change. A user given access to something buried in
-// somebody else's tree cannot reach it without read access to every collection on the way, so
-// those are granted too -- and a shared collection gets its inherit bit set, so that what is
-// put into it later is shared as well rather than silently private.
+// Share gives a user access to a path, returning the reason it was skipped, or "" when done.
+// It also grants read on each collection up to the owner's home so the sharee can navigate
+// there, and sets inherit on a shared collection so later additions are shared too.
 func Share(ctx context.Context, store ShareStore, req ShareRequest) (string, error) {
 	if req.Owner == req.Sharee {
 		return SkipShareWithSelf, nil
@@ -95,17 +91,13 @@ func Share(ctx context.Context, store ShareStore, req ShareRequest) (string, err
 		return "", err
 	}
 	if stat.Type == rods.ObjectTypeDir {
-		// Without this, anything uploaded into a shared collection afterwards would be
-		// visible only to whoever put it there -- which looks like the share silently
-		// stopped working.
+		// Otherwise later uploads would be visible only to their uploader.
 		if err := store.SetInherit(ctx, req.Path, true, true); err != nil {
 			return "", fmt.Errorf("setting the inherit bit on %q: %w", req.Path, err)
 		}
 	}
 
-	// The owner's home itself, which the walk above deliberately stops short of. It is
-	// granted rather than walked because it is the one collection every share has to touch
-	// and the only one whose access is not specific to this path.
+	// The walk above stops short of the owner's home, so grant read on it here.
 	homeHeld, err := permissionOf(ctx, store, home, req.Sharee)
 	if err != nil {
 		return "", err
@@ -187,10 +179,7 @@ func Unshare(ctx context.Context, store ShareStore, req ShareRequest) (string, e
 }
 
 // clearInheritWhenUnshared turns the inherit bit off once a collection is not shared with
-// anyone.
-//
-// Left on, it would keep handing the owner's access list to new children of a collection
-// nobody else can see -- harmless today and confusing the next time it is shared.
+// anyone; left on, it would confuse the next share of that collection.
 func clearInheritWhenUnshared(ctx context.Context, store ShareStore, req ShareRequest) error {
 	entries, err := store.ACL(ctx, req.Path).Get(ctx)
 	if err != nil {
@@ -211,11 +200,8 @@ func clearInheritWhenUnshared(ctx context.Context, store ShareStore, req ShareRe
 	return nil
 }
 
-// ownerHomeOf names the home collection a shared path lives under.
-//
-// It is taken from the path rather than from the requesting user, because the two are not the
-// same: sharing something out of a collection somebody else owns still has to grant access to
-// that person's home, not to the sharer's.
+// ownerHomeOf names the home collection path lives under, taken from the path because the
+// sharer need not own it.
 func ownerHomeOf(path string) string {
 	parts := strings.Split(strings.TrimRight(path, "/"), "/")
 	if len(parts) < 4 {

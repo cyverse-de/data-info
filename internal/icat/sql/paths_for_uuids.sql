@@ -1,8 +1,4 @@
--- The paths carrying each of a set of ipc_UUID values, in one query.
---
--- Ported from clj-icat-direct's mk-paths-for-uuids. Unlike the item query this is not
--- scoped to a user: resolving an id to a path is a lookup, and the caller checks what the
--- user may do with the path afterwards.
+-- Not scoped to a user: callers check access to the resolved paths afterwards.
 --
 -- $1 the uuids to resolve
 WITH objid AS (

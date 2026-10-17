@@ -256,8 +256,6 @@ func TestUnshareSkips(t *testing.T) {
 	}
 }
 
-// The home a share has to reach through is the one the path lives under, not the requesting
-// user's -- sharing something out of somebody else's collection has to grant access to theirs.
 func TestOwnerHomeOf(t *testing.T) {
 	cases := []struct{ path, want string }{
 		{"/iplant/home/wregglej/a/b", "/iplant/home/wregglej"},

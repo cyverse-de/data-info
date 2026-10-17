@@ -28,8 +28,6 @@ func trashLayout() paths.Layout {
 	return paths.Layout{Zone: "iplant", Home: "/iplant/home", CommunityData: "/iplant/home/shared"}
 }
 
-// The suffix exists so that two things with the same name deleted from different collections
-// do not collide in the trash.
 func TestTrashPathFor(t *testing.T) {
 	layout := trashLayout()
 

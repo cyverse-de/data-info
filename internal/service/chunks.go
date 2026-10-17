@@ -9,25 +9,9 @@ import (
 	"strings"
 )
 
-// The tabular paging arithmetic, kept here rather than in the handler because it is where
-// the endpoint's surprises live and it is worth testing without an iRODS server.
-//
-// It is a faithful port of page_tabular.clj, oddities included. Two are worth naming
-// because they look like defects and are not this port's to fix (docs/deferred-fixes.md):
-// the page bound is inclusive, so a request one page past the end is accepted and answers
-// with whatever the read finds; and ERR_INVALID_PAGE reports the zero-based page number
-// while the response reports the one-based one.
-
-// DecodeChunk decodes a chunk of a file as UTF-8, dropping the partial characters at its
-// edges.
-//
-// A chunk is read at an arbitrary byte offset, so it may begin or end in the middle of a
-// multi-byte character. Those bytes are dropped rather than decoded, which is what
-// clj-jargon's read-at-position does: the alternative is a U+FFFD replacement character at
-// each edge, which then appears in the CSV as a column value.
-//
-// trimLeading is false only when the read started at the beginning of the file, where the
-// first byte cannot be a continuation of anything.
+// DecodeChunk decodes a chunk read at an arbitrary offset as UTF-8, dropping partial
+// characters at its edges rather than emitting U+FFFD into the CSV. trimLeading is false when
+// the read started at the beginning of the file.
 func DecodeChunk(buffer []byte, trimLeading bool) string {
 	if len(buffer) == 0 {
 		return ""
@@ -35,8 +19,7 @@ func DecodeChunk(buffer []byte, trimLeading bool) string {
 
 	start := 0
 	if trimLeading {
-		// At most three, because that is the longest a UTF-8 sequence can trail its lead
-		// byte by.
+		// A UTF-8 lead byte is followed by at most three continuation bytes.
 		for start < len(buffer) && start < 3 && isContinuationByte(buffer[start]) {
 			start++
 		}
@@ -98,11 +81,8 @@ type TabularPage struct {
 	LoadLength int64
 }
 
-// PlanTabularPage works out the read that covers a page of a tabular file.
-//
-// page is the one-based number the caller asked for, and size the page size they asked for.
-// Both are assumed positive; the endpoint rejects them before reaching here, with error
-// codes of its own.
+// PlanTabularPage works out the read that covers a page of a tabular file. page is
+// one-based; page and size must already be validated as positive.
 func PlanTabularPage(page, size, fileSize int64) TabularPage {
 	zeroBased := page - 1
 
@@ -136,13 +116,8 @@ func pageCount(size, fileSize int64) int64 {
 	return (fileSize + size - 1) / size
 }
 
-// TrimToWholeLines cuts a chunk back to the lines that belong to the page.
-//
-// The leading edge is moved forward to just after the last line ending at or before where
-// the page begins, and the trailing edge back to the last line ending in the chunk -- unless
-// this is the final page, which keeps everything to the end of the file. Partial rows must
-// not be parsed: a row cut in half is not a row, and the CSV reader would report its
-// fragments as columns.
+// TrimToWholeLines cuts a chunk to the whole lines belonging to the page (to EOF on the final
+// page), so the CSV reader never sees half a row.
 func TrimToWholeLines(chunk string, size int64, page TabularPage) string {
 	if chunk == "" {
 		return ""
@@ -168,12 +143,8 @@ func TrimToWholeLines(chunk string, size int64, page TabularPage) string {
 	return chunk[start:end]
 }
 
-// seekLineStart scans backwards from position for a line ending and returns the offset just
-// after it, or the start of the chunk when there is none.
-//
-// A position past the end of the chunk is a request the Clojure service answers with an
-// exception and a 500. Here it is clamped to the last byte, which turns a page read past the
-// end of a short file into an empty page rather than a crash.
+// seekLineStart returns the offset just after the last newline at or before position, or 0.
+// A position past the end is clamped, so a page past the end of a short file reads as empty.
 func seekLineStart(chunk string, position int64) int {
 	if position >= int64(len(chunk)) {
 		position = int64(len(chunk)) - 1
@@ -190,17 +161,9 @@ func seekLineStart(chunk string, position int64) int {
 	return 0
 }
 
-// ParseDelimited parses a chunk as delimited text, one map per row keyed by column number.
-//
-// The keys are the column indices as decimal strings, which is the wire format: the client
-// reads "0", "1" and so on. A blank chunk is one empty row rather than none, matching the
-// Clojure service -- the client renders a row count and zero rows is not the same answer as
-// one empty one.
-//
-// The separator is taken as a string rather than a rune, and an empty one is an error only
-// once there is something to parse. That is where the Clojure service puts it too: read-csv
-// short-circuits a blank chunk before it ever reaches (.charAt separator 0), so an empty
-// separator against an empty file is not a failure there and is not one here.
+// ParseDelimited parses a chunk as delimited text, one map per row keyed by decimal column
+// index (the wire format). As in the Clojure service, a blank chunk is one empty row and an
+// empty separator is an error only when there is something to parse.
 func ParseDelimited(chunk, separator string) ([]map[string]string, error) {
 	if strings.TrimSpace(chunk) == "" {
 		return []map[string]string{{}}, nil
@@ -232,12 +195,9 @@ func ParseDelimited(chunk, separator string) ([]map[string]string, error) {
 			return nil, err
 		}
 
-		// encoding/csv skips an empty line; opencsv reports one as a row holding a single
-		// empty column. A blank line in a data file is ordinary, and dropping it would
-		// shift the index of every row after it -- so they are counted back in from the
-		// bytes between the previous record and this one. Only the *leading* blank lines
-		// of that span count, which is what keeps a newline inside a quoted field from
-		// being mistaken for one.
+		// encoding/csv skips empty lines, which would shift every later row's index, so
+		// restore them from the bytes since the previous record. Only the span's leading
+		// blank lines count, so a newline inside a quoted field is not mistaken for one.
 		offset := reader.InputOffset()
 		out = append(out, blankRows(chunk[consumed:offset])...)
 		consumed = offset
@@ -253,12 +213,12 @@ func ParseDelimited(chunk, separator string) ([]map[string]string, error) {
 	return append(out, blankRows(chunk[consumed:])...), nil
 }
 
-// blankRows is one row per empty line at the start of a span, in the shape opencsv gives an
-// empty line: a single column holding an empty string.
+// blankRows returns one row per empty line at the start of span, holding a single empty
+// column as the Clojure service's CSV parser reported it.
 func blankRows(span string) []map[string]string {
 	lines := strings.Split(span, "\n")
-	// The final element is whatever followed the last newline, which is not a line yet.
 	var out []map[string]string
+	// The final element is whatever followed the last newline, which is not a line yet.
 	for _, line := range lines[:max(len(lines)-1, 0)] {
 		if strings.TrimSuffix(line, "\r") != "" {
 			break

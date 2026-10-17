@@ -1,7 +1,4 @@
-// Package icattest provides an in-memory catalog for tests.
-//
-// It follows the convention the DE's newer Go services use of putting a fake next to the
-// client it stands in for, rather than reaching for a mocking framework.
+// Package icattest provides an in-memory icat.Store for tests.
 package icattest
 
 import (
@@ -50,8 +47,7 @@ type Fake struct {
 	// cannot saturate a semaphore, so it cannot surface a starvation deadlock.
 	Delay time.Duration
 
-	// Counters record how often each query ran, so a test can prove that a batched call
-	// really was one query and that memoized lookups really did not repeat.
+	// Counters record how often each query ran, so tests can check batching and memoization.
 	GetItemsCalls        atomic.Int64
 	PermsCalls           atomic.Int64
 	UserGroupIDsCalls    atomic.Int64
@@ -148,8 +144,7 @@ func (f *Fake) GetItems(ctx context.Context, q icat.ItemQuery) ([]icat.Row, erro
 
 	var out []icat.Row
 	for _, p := range q.Paths {
-		// Refuse exactly what the real store refuses. A fake that is more permissive than
-		// the thing it stands in for cannot catch the bugs it exists to catch.
+		// Validate paths exactly as the real store does.
 		if err := icat.CheckPath(p); err != nil {
 			return nil, fmt.Errorf("icattest: %w", err)
 		}
@@ -306,9 +301,8 @@ func (f *Fake) CountChildrenBatch(ctx context.Context, q icat.BatchChildCountQue
 	return out, nil
 }
 
-// PagedFolder implements icat.Reader, sorting and paging in memory so a test can check the
-// page and order an endpoint asked for. Unlike the real store, it does not support a
-// negative (unlimited) Limit.
+// PagedFolder implements icat.Reader, sorting and paging in memory. Unlike the real store,
+// it does not support a negative (unlimited) Limit.
 func (f *Fake) PagedFolder(ctx context.Context, q icat.ListingQuery) ([]icat.ListingRow, error) {
 	f.PagedFolderCalls.Add(1)
 	if err := f.wait(ctx); err != nil {
@@ -414,10 +408,7 @@ func (f *Fake) Ping(context.Context) error { return f.Err }
 // Close implements icat.Store.
 func (f *Fake) Close() error { return nil }
 
-// PagedUUIDs implements icat.Reader.
-//
-// Like PagedFolder it sorts and pages in memory, so a test can check the order and the page
-// boundary rather than only that something came back.
+// PagedUUIDs implements icat.Reader, sorting and paging in memory like PagedFolder.
 func (f *Fake) PagedUUIDs(ctx context.Context, q icat.UUIDListingQuery) ([]icat.ListingRow, error) {
 	f.PagedUUIDsCalls.Add(1)
 

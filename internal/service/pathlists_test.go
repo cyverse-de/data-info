@@ -65,8 +65,6 @@ func TestBuildPathList(t *testing.T) {
 	}
 }
 
-// An empty path list is worse than a failure: an analysis given one runs over nothing and
-// reports success, which is far harder to notice.
 func TestBuildPathListRefusesToProduceAnEmptyList(t *testing.T) {
 	_, err := BuildPathList(
 		[]PathListEntry{entry("/z/home/u/a.txt", "a.txt", rods.ObjectTypeFile, "csv", rods.PermissionOwn)},
@@ -85,8 +83,6 @@ func TestBuildPathListRejectsABadPattern(t *testing.T) {
 	}
 }
 
-// A recursive listing has to see folders even when only files are wanted, because the folders
-// are how it reaches them.
 func TestListingEntityType(t *testing.T) {
 	cases := []struct {
 		name                   string

@@ -1,9 +1,6 @@
--- How many of a set of data ids name something the user can see: every collection, plus the
--- data objects whose info type passes the filter.
---
--- Ported from clj-icat-direct's mk-count-uuids-of-file-type. It is the total that goes
--- alongside a page from paged_uuid_listing.sql, so the two must agree about what counts --
--- which is why the id, access and info-type conditions are written the same way in both.
+-- The total for paged_uuid_listing.sql: every visible collection plus the visible data
+-- objects whose info type passes the filter. Keep its id, access and info-type conditions
+-- identical to that query's.
 --
 -- $1 data ids
 -- $2 username, $3 zone

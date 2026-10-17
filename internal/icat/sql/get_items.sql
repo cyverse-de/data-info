@@ -1,9 +1,3 @@
--- Catalog rows for a set of absolute paths, in one query.
---
--- Ported from clj-icat-direct's mk-get-item, which answered a single path. Batching is the
--- point: the bulk endpoints accept up to a thousand paths, and one round trip each costs
--- seconds where this costs milliseconds.
---
 -- $1 dirnames, $2 basenames -- positionally paired, so targets reassembles the paths
 -- $3 username, $4 zone
 -- $5 group ids, or NULL to derive them from $3 and $4

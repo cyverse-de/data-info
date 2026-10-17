@@ -15,19 +15,14 @@ import (
 // itself.
 const TrashOriginAttribute = "ipc-trash-origin"
 
-// trashSuffixLength is how many characters are appended to a name in the trash. Two things
-// with the same name deleted from different collections would otherwise collide.
+// trashSuffixLength is how many characters are appended to a name in the trash.
 const trashSuffixLength = 7
 
-// trashSuffixAlphabet is what those characters are drawn from. The Clojure service uses the
-// alphanumerics and nothing else, and the value ends up in a path, so it stays that way.
+// trashSuffixAlphabet is alphanumeric because the suffix becomes part of a path.
 const trashSuffixAlphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
-// TrashPathFor names where something will land in a user's trash.
-//
-// The suffix makes the name unique rather than meaningful: two files called results.csv
-// deleted from two collections both want to be results.csv in the trash, and only one of
-// them can be.
+// TrashPathFor names where something will land in a user's trash; a random suffix keeps
+// same-named items from different collections from colliding.
 func TrashPathFor(layout paths.Layout, user, path string) (string, error) {
 	suffix, err := randomSuffix()
 	if err != nil {
@@ -36,11 +31,8 @@ func TrashPathFor(layout paths.Layout, user, path string) (string, error) {
 	return paths.Join(layout.UserTrash(user), paths.Base(path)+"."+suffix), nil
 }
 
-// randomSuffix returns the characters appended to a trashed name.
-//
-// From crypto/rand rather than math/rand. Not because this is a secret, but because two
-// replicas deleting at the same moment must not produce the same suffix, and a
-// seeded-from-the-clock generator in two processes can.
+// randomSuffix returns the characters appended to a trashed name, from crypto/rand so
+// replicas deleting at the same moment cannot produce the same suffix.
 func randomSuffix() (string, error) {
 	buf := make([]byte, trashSuffixLength)
 	if _, err := rand.Read(buf); err != nil {
@@ -60,9 +52,8 @@ type RestorePlan struct {
 	// RestoredPath is where it will end up.
 	RestoredPath string `json:"restored-path"`
 
-	// PartialRestore is true when it could not go back where it came from and is going to
-	// the user's home instead. The DE tells the user, because it is not what they asked
-	// for.
+	// PartialRestore is true when it is going to the user's home instead of where it came
+	// from.
 	PartialRestore bool `json:"partial-restore"`
 }
 
@@ -72,19 +63,10 @@ type RestoreStore interface {
 	AVUs(ctx context.Context, path string) *lazy.Value[[]rods.AVU]
 }
 
-// PlanRestore decides where a trashed item goes back to.
-//
-// It goes back where it came from when that is still possible. It is not possible when the
-// origin was never recorded, or when the collection it came from still exists but the user
-// can no longer write to it -- which happens when something was shared with them and then
-// unshared. In those cases it goes to their home instead, and the plan says so.
-//
-// A name already in use is not a conflict: a number is appended until one is free, so
-// restoring never overwrites.
-//
-// view acts as the user and admin as the service account. Whether something exists is asked
-// of admin, as the Clojure service did, so a collection or name the user cannot see still
-// counts: otherwise an unshared parent would look absent and the restore would target it.
+// PlanRestore decides where a trashed item goes back to: its recorded origin, or the user's
+// home when no origin was recorded or the user can no longer write to the origin's parent,
+// with a number appended if the name is taken. view acts as the user and admin as the
+// service account; existence is checked as admin so paths the user cannot see still count.
 func PlanRestore(ctx context.Context, view, admin RestoreStore, layout paths.Layout, user, path string) (RestorePlan, error) {
 	origin, err := trashOrigin(ctx, view, path)
 	if err != nil {
@@ -154,9 +136,7 @@ func firstFreeName(ctx context.Context, store RestoreStore, path string) (string
 		return path, nil
 	}
 
-	// Unbounded in the Clojure service too. A collection holding thousands of restores of the
-	// same name would be pathological, and stopping early would mean failing a restore that
-	// could have succeeded.
+	// Unbounded: stopping early would fail a restore that could have succeeded.
 	for attempt := 0; ; attempt++ {
 		candidate := fmt.Sprintf("%s.%d", path, attempt)
 

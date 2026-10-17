@@ -43,17 +43,12 @@ type PathListEntry struct {
 	Permission rods.Permission
 }
 
-// ErrNoMatchingPaths is returned when the filters leave nothing.
-//
-// An empty path list is not a useful file: an analysis given one would run over nothing and
-// report success, which is harder to notice than a failure here.
+// ErrNoMatchingPaths is returned when the filters leave nothing. An analysis given an empty
+// path list would run over nothing and report success, which is harder to notice.
 var ErrNoMatchingPaths = fmt.Errorf("no paths matched the request")
 
-// BuildPathList renders the contents of a path list file.
-//
-// The paths given are not themselves included. A folder in the request contributes what is
-// inside it; a file contributes itself. That asymmetry is the point of the endpoint: a user
-// selects folders and gets the files in them.
+// BuildPathList renders a path list file: the identifier line, then each entry that passes
+// the filters.
 func BuildPathList(entries []PathListEntry, q PathListQuery) (string, error) {
 	pattern, err := compilePattern(q.NamePattern)
 	if err != nil {
@@ -112,8 +107,7 @@ func compilePattern(pattern string) (*regexp.Regexp, error) {
 		return nil, nil
 	}
 
-	// A partial match, not an anchored one: the Clojure service uses re-find, so a pattern
-	// matching anywhere in the name keeps the entry.
+	// Unanchored: a pattern matching anywhere in the name keeps the entry.
 	compiled, err := regexp.Compile(pattern)
 	if err != nil {
 		return nil, fmt.Errorf("the name pattern is not a valid regular expression: %w", err)
@@ -121,10 +115,8 @@ func compilePattern(pattern string) (*regexp.Regexp, error) {
 	return compiled, nil
 }
 
-// ListingEntityType decides what a folder walk asks the catalog for.
-//
-// A recursive listing has to see folders as well as files even when only files are wanted,
-// because the folders are how it reaches them.
+// ListingEntityType decides what a folder walk asks the catalog for. A recursive walk needs
+// folders even when only files are wanted, to reach the files inside them.
 func ListingEntityType(recursive, foldersOnly bool) icat.EntityType {
 	switch {
 	case recursive && !foldersOnly:

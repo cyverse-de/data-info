@@ -1,9 +1,3 @@
--- How many files and subfolders each of a set of collections holds, in one query.
---
--- A directory stat reports both counts, and the bulk endpoints accept a thousand paths, so
--- counting one collection at a time would reintroduce exactly the round-trip-per-path cost
--- the batched item query exists to avoid.
---
 -- Counts only what the requesting user can see.
 --
 -- $1 collection paths, $2 username, $3 zone

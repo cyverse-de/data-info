@@ -16,10 +16,6 @@ var sqlPagedUUIDs string
 var sqlCountUUIDs string
 
 // UUIDListingQuery selects a page of the items carrying a set of data ids.
-//
-// It is deliberately not ListingQuery: that one is scoped by a parent collection and this
-// one by a set of ids, and the two have no path in common. Sharing a type would leave a
-// field on each that the other must never set.
 type UUIDListingQuery struct {
 	UUIDs []string
 	User  string
@@ -27,9 +23,8 @@ type UUIDListingQuery struct {
 
 	GroupIDs []int64
 
-	// InfoTypes filters data objects by info type, and IncludeUnknownInfoType keeps those
-	// that have none. They are independent for the same reason as in ListingQuery: asking
-	// for only untyped objects is a real request.
+	// InfoTypes filters data objects by info type; IncludeUnknownInfoType independently keeps
+	// those with none, as in ListingQuery.
 	InfoTypes              []string
 	IncludeUnknownInfoType bool
 
@@ -53,8 +48,7 @@ func (t *pgTx) PagedUUIDs(ctx context.Context, q UUIDListingQuery) ([]ListingRow
 }
 
 func pagedUUIDs(ctx context.Context, qr queryer, q UUIDListingQuery) ([]ListingRow, error) {
-	// An empty set is answered without a query, as the Clojure service does. The statement
-	// would return nothing anyway, but only after the catalog had built the union.
+	// Skip the query: the catalog would build the whole union only to return nothing.
 	if len(q.UUIDs) == 0 {
 		return nil, nil
 	}
@@ -72,9 +66,7 @@ func pagedUUIDs(ctx context.Context, qr queryer, q UUIDListingQuery) ([]ListingR
 	if column == "" {
 		column = DefaultSortColumn
 	}
-	// Guard the interpolation, as pagedFolder does: the sort column and direction are
-	// identifiers and cannot be parameters, so a value that did not come from the fixed
-	// table must never reach the statement.
+	// The sort column and direction are interpolated identifiers; see pagedFolder.
 	if !isKnownSortColumn(column) {
 		return nil, fmt.Errorf("icat: %q is not a sortable column", column)
 	}

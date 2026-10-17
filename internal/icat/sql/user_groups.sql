@@ -1,14 +1,8 @@
--- The names of the groups a user belongs to.
+-- Read from the catalog so the read path needs no protocol connection, which a busy zone may
+-- not have free.
 --
--- The reference asks iRODS over the protocol. Asking the catalog instead removes the last
--- protocol round trip from the read path, which matters because a zone may grant this
--- service very few concurrent connections -- a read that needed one would fail whenever
--- request traffic already held it.
---
--- r_user_group maps a member to the groups containing them, and a group is itself a row in
--- r_user_main. iRODS also records every user as a group of one containing themselves; the
--- reference does not report that, so it is excluded here. Verified against the running
--- service, which lists only the real groups.
+-- iRODS records each user as a group of one containing themselves. The Clojure service's
+-- group listing never included that self-group, so it is excluded.
 --
 -- $1 username, $2 zone
 SELECT g.user_name

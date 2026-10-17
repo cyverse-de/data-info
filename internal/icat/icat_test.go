@@ -70,9 +70,8 @@ func TestPermissionOf(t *testing.T) {
 		{"own", AccessOwn, PermissionOwn},
 		{"null", 1000, PermissionNone},
 
-		// The DE has never exposed the levels between the named ones, and clj-jargon's
-		// fmt-perm matches by equality, so these report as no permission even though
-		// delete_object sits above write. Reproduced deliberately.
+		// Intermediate levels report as no permission, even delete_object above write; see
+		// PermissionOf.
 		{"execute", 1010, PermissionNone},
 		{"read metadata", 1040, PermissionNone},
 		{"create object", 1110, PermissionNone},
@@ -100,9 +99,7 @@ func TestTimestampConversion(t *testing.T) {
 		{"unparseable", "not a number", 0},
 		{"empty", "", 0},
 
-		// iRODS timestamps are whole seconds in a text column. The Clojure service parsed
-		// them with a 32-bit parse in two of the three places it read them, which stops
-		// working in 2038; this must not.
+		// Parsed at 64 bits, so timestamps past 2038 survive.
 		{"beyond 2038", "02147483648", 2147483648000},
 		{"far future", "04102444800", 4102444800000},
 	}
@@ -203,9 +200,8 @@ func TestSplitPathsRejectsNonAbsolutePaths(t *testing.T) {
 	}
 }
 
-// TestInfoTypeAttributeIsConfigurable guards against the attribute being baked back into
-// the query. It is a deployment setting, and hardcoding it means a deployment that changed
-// it gets a null info type on every row with no error to explain why.
+// TestInfoTypeAttributeIsConfigurable guards against hardcoding the configurable info-type
+// attribute in the query.
 func TestInfoTypeAttributeIsConfigurable(t *testing.T) {
 	if got := (ItemQuery{}).infoTypeAttribute(); got != DefaultInfoTypeAttribute {
 		t.Errorf("default attribute = %q, want %q", got, DefaultInfoTypeAttribute)

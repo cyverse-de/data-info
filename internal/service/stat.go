@@ -44,12 +44,8 @@ type StatOptions struct {
 	PermsFilter map[string]bool
 }
 
-// StatOf builds the status information for one path.
-//
-// Fields are computed only when they are needed. That is not an optimisation detail: a
-// directory's file and folder counts each cost a catalog query, and a share count costs an
-// access list, so producing them for a caller that asked for a path and a type would make
-// every listing far more expensive than it needs to be.
+// StatOf builds the status information for one path, computing only the requested fields,
+// since child counts and share counts each cost a query.
 func StatOf(ctx context.Context, view rods.View, user, path string, opts StatOptions) (Stat, error) {
 	fields := opts.Fields
 
@@ -102,8 +98,7 @@ func StatOf(ctx context.Context, view rods.View, user, path string, opts StatOpt
 		}
 	}
 
-	// A share count is only meaningful to someone who owns the path, and the Clojure
-	// service omits it otherwise rather than reporting zero.
+	// Share counts are reported only to owners; others get no field rather than zero.
 	if fields.Has(FieldShareCount) && base.Permission == rods.PermissionOwn {
 		acl, err := view.ACL(ctx, base.Path).Get(ctx)
 		if err != nil {
@@ -145,10 +140,7 @@ func countShares(acl []rods.ACLEntry, user string, filter map[string]bool) int64
 }
 
 // StatsOf builds status information for many paths, resolving them in one catalog query.
-//
-// Handlers serving a bulk request must use this rather than calling StatOf in a loop: the
-// difference at the thousand-path limit those endpoints allow is milliseconds against tens
-// of seconds.
+// Bulk handlers must use this rather than calling StatOf in a loop.
 func StatsOf(ctx context.Context, view rods.View, user string, paths []string, opts StatOptions) (map[string]Stat, error) {
 	if len(paths) == 0 {
 		return map[string]Stat{}, nil
@@ -163,21 +155,15 @@ func StatsOf(ctx context.Context, view rods.View, user string, paths []string, o
 	return StatsOfLoaded(ctx, view, user, paths, opts)
 }
 
-// StatsOfLoaded is StatsOf for paths the view has already resolved.
-//
-// A page of a listing arrives with its rows, so asking the catalog for them a second time
-// would be a round trip for something already in hand. Everything else -- the access lists
-// and child counts a decorated stat may need -- is still batched.
+// StatsOfLoaded is StatsOf for paths the view has already resolved, such as a listing
+// page's rows.
 func StatsOfLoaded(ctx context.Context, view rods.View, user string, paths []string, opts StatOptions) (map[string]Stat, error) {
 	if len(paths) == 0 {
 		return map[string]Stat{}, nil
 	}
 
-	// Access lists and child counts are only fetched when something asks for them, and
-	// then in one query rather than per path. Without the batch here each collection's
-	// counts would cost a query of their own, which for an unfiltered request over a
-	// thousand paths is exactly the round-trip-per-path cost the rest of the layer exists
-	// to avoid.
+	// Prefetch requested access lists and child counts in one query each, so StatOf below
+	// does not query per path.
 	if opts.Fields.Has(FieldShareCount) {
 		if _, err := view.ACLs(ctx, paths).Get(ctx); err != nil {
 			return nil, err
