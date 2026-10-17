@@ -31,9 +31,9 @@ const (
 // waiting only delays that.
 const fetchTimeout = 10 * time.Second
 
-// terminalDeadline caps the terminal-status retries; without it, terminalRetries attempts each
+// defaultTerminalDeadline caps the terminal-status retries; without it, terminalRetries attempts each
 // waiting out an HTTP timeout could block shutdown for most of an hour.
-const terminalDeadline = 2 * time.Minute
+const defaultTerminalDeadline = 2 * time.Minute
 
 // progressBuffer is how many progress updates may queue before new ones are dropped, so a job
 // over a large tree never runs at the speed of an HTTP round trip.
@@ -108,6 +108,7 @@ type Runner struct {
 
 	heartbeatInterval   time.Duration
 	heartbeatMaxSilence time.Duration
+	terminalDeadline    time.Duration
 }
 
 // Option configures a Runner.
@@ -134,6 +135,7 @@ func NewRunner(tasks Tasks, log *logrus.Entry, instance string, opts ...Option) 
 		cancel:              cancel,
 		heartbeatInterval:   DefaultHeartbeatInterval,
 		heartbeatMaxSilence: DefaultHeartbeatMaxSilence,
+		terminalDeadline:    defaultTerminalDeadline,
 	}
 	for _, opt := range opts {
 		opt(r)

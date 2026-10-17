@@ -11,6 +11,7 @@ import (
 
 	"github.com/cyverse-de/data-info/internal/clients/asynctasks"
 	"github.com/sirupsen/logrus"
+	logtest "github.com/sirupsen/logrus/hooks/test"
 )
 
 // fakeTasks records what a runner posted, and can be made to fail a fixed number of times.
@@ -272,6 +273,32 @@ func TestTerminalStatusIsRetriedPastAFailure(t *testing.T) {
 
 	if terminal := tasks.terminal(); len(terminal) != 1 {
 		t.Fatalf("terminal statuses = %d, want exactly one after the retries", len(terminal))
+	}
+}
+
+// A terminal status that can't be recorded before the deadline is still reported, since the
+// deadline, not the retry count, is what normally ends those retries.
+func TestTerminalStatusGivingUpIsLogged(t *testing.T) {
+	tasks := &fakeTasks{failuresLeft: 1 << 30}
+	logger, hook := logtest.NewNullLogger()
+	runner := NewRunner(tasks, logrus.NewEntry(logger), "test-instance")
+	runner.terminalDeadline = 50 * time.Millisecond
+
+	if err := runner.Start("/tasks/abc", "move", JobFunc(
+		func(context.Context, *asynctasks.Task, Progress) error { return nil },
+	)); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	shutdown(t, runner)
+
+	var logged int
+	for _, e := range hook.AllEntries() {
+		if e.Level == logrus.ErrorLevel && strings.Contains(e.Message, "final status") {
+			logged++
+		}
+	}
+	if logged != 1 {
+		t.Errorf("final-status errors logged = %d, want 1", logged)
 	}
 }
 

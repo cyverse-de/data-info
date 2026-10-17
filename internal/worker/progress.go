@@ -173,17 +173,20 @@ func (r *Runner) post(log *logrus.Entry, taskID string, status asynctasks.Status
 	ctx := r.ctx
 	if terminal {
 		var release context.CancelFunc
-		ctx, release = context.WithTimeout(context.WithoutCancel(r.ctx), terminalDeadline)
+		ctx, release = context.WithTimeout(context.WithoutCancel(r.ctx), r.terminalDeadline)
 		defer release()
 	}
 
 	var err error
+retries:
 	for attempt := range attempts {
 		if attempt > 0 {
 			select {
 			case <-ctx.Done():
-				// Shutdown cancelled a non-terminal post, or a terminal one ran past terminalDeadline.
-				return
+				if !terminal {
+					return // shutdown cancelled a progress post, which nothing depends on
+				}
+				break retries
 			case <-time.After(retryPause):
 			}
 		}
@@ -200,7 +203,7 @@ func (r *Runner) post(log *logrus.Entry, taskID string, status asynctasks.Status
 
 	entry := log.WithError(err).WithField("status", status.Status)
 	if terminal {
-		entry.Error("could not record the task's final status after every retry; " +
+		entry.Error("could not record the task's final status before giving up; " +
 			"the task has no end date, so its paths stay locked until the async-tasks stall timeout " +
 			"completes it, about ten minutes; this usually means async-tasks was unreachable")
 		return
