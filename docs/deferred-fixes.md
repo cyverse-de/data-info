@@ -444,3 +444,33 @@ with the request. Every query failure in `internal/icat` is an `icat.QueryError`
 **Not reproduced on purpose.** Nothing can branch on the text of an unchecked exception, and
 the database's internals should not reach a caller. iRODS errors are passed through as before;
 they are what Jargon's messages amounted to, and they say what went wrong in iRODS's terms.
+
+## 28. An unknown path's JSON body is labelled `text/html`
+
+An unknown path answers 404 with `{"success":false,"reason":"unrecognized service path"}`
+and `Content-Type: text/html;charset=utf-8`, as the Clojure service did. The body is JSON,
+so the label should be `application/json`. Reproduced in `internal/apierror/handler.go`
+(`unrecognizedPathContentType`) and pinned by `TestUnrecognizedPathIsLabelledHTML`.
+
+**Blocked on:** nothing known. A search of terrain, apps and sonora found nothing that reads
+this body or its content type. Raised in slr71's review of #106 as a follow-up.
+
+## 29. A wrong method answers 404, not 405
+
+A request to a known path with a method the route does not take answers the unknown-path 404
+above, because that is what the Clojure service answered. It should be a 405 with an `Allow`
+header. Reproduced in `internal/apierror/handler.go` and pinned by
+`TestWrongMethodIsAnUnrecognizedPath`.
+
+**Blocked on:** confirming no caller sends a wrong method and keys on the 404. Terrain's
+data-info client already treats a 405 as a client error (`terrain.clients.data-info`), and no
+code in apps or sonora was found depending on either status. Raised in slr71's review of #106.
+
+## 30. Metadata copy stats each destination twice
+
+`POST /data/{data-id}/metadata/copy` stats every destination to resolve its type, then
+`requireAllWriteable` stats the same paths again, in one batch, to check write access. Checking
+the permissions on the stats already in hand would save that second lookup.
+
+**Not a behavior difference**, and not worth doing unless copies to many destinations turn out
+to be slow. Raised in slr71's review of #106.
