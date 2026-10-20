@@ -1,0 +1,141 @@
+package irodsclient
+
+import (
+	"container/list"
+	"time"
+)
+
+// evictLocked unlinks least-recently-used sessions that are over MaxSessions or idle past
+// IdleTimeout. A session in use is never evicted: its next caller would open a second one
+// beside it, and a second admin session is a service-account connection QA refuses.
+func (p *Pool) evictLocked() {
+	cutoff := time.Now().Add(-p.cfg.IdleTimeout)
+
+	for el := p.lru.Back(); el != nil; {
+		prev := el.Prev()
+		e := el.Value.(*entry)
+
+		if e.inUse == 0 && (p.lru.Len() > p.cfg.MaxSessions || e.lastUsed.Before(cutoff)) {
+			p.unlinkLocked(el, e)
+		}
+		el = prev
+	}
+}
+
+// unlinkLocked removes an entry from the pool and releases its FileSystem if nobody is
+// holding it. Callers must hold p.mu.
+func (p *Pool) unlinkLocked(el *list.Element, e *entry) {
+	p.lru.Remove(el)
+	delete(p.entries, e.user)
+	e.dead = true
+
+	if e.inUse == 0 {
+		p.releaseFSLocked(e)
+	}
+}
+
+// releaseFSLocked tears an entry's FileSystem down off the caller's goroutine, since
+// Release closes connections and can block. The FileSystem stays tracked until Release
+// returns, so its connections count against MaxTotalConnections until they are gone.
+// Callers must hold p.mu.
+func (p *Pool) releaseFSLocked(e *entry) {
+	if e.fs == nil {
+		return
+	}
+	fsys := e.fs
+	e.fs = nil
+	go func() {
+		fsys.Release()
+
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		delete(p.tracked, e)
+		p.signalLocked()
+	}()
+}
+
+// release returns a session to the pool, discarding a poisoned one: abandoned mid-protocol,
+// or failed to connect or authenticate, which go-irodsclient makes sticky.
+func (p *Pool) release(e *entry, poisoned bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	e.inUse--
+	e.lastUsed = time.Now()
+
+	if poisoned && !e.dead {
+		if el, ok := p.entries[e.user]; ok && el.Value.(*entry) == e {
+			p.unlinkLocked(el, e)
+			return
+		}
+		// Already gone from the pool; fall through to the last-holder check.
+		e.dead = true
+	}
+
+	if e.dead {
+		if e.inUse <= 0 {
+			p.releaseFSLocked(e)
+		}
+		return
+	}
+
+	if p.closed {
+		if e.inUse <= 0 {
+			e.dead = true
+			p.releaseFSLocked(e)
+		}
+		return
+	}
+
+	p.evictLocked()
+}
+
+// startSweeper runs idle eviction in the background, so a service that goes quiet does not
+// hold its sessions, and the iRODS agents behind them, indefinitely.
+func (p *Pool) startSweeper() {
+	interval := p.cfg.IdleTimeout / 2
+	if interval < time.Second {
+		interval = time.Second
+	}
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	defer close(p.sweeperDone)
+
+	for {
+		select {
+		case <-p.sweeperStop:
+			return
+		case <-ticker.C:
+			p.mu.Lock()
+			if !p.closed {
+				p.evictLocked()
+			}
+			p.mu.Unlock()
+
+			p.flushWaits()
+		}
+	}
+}
+
+// Close tears down the pool. Sessions still in use are unlinked and released by their last
+// holder rather than pulled out from under an in-flight call.
+func (p *Pool) Close() {
+	p.mu.Lock()
+	if p.closed {
+		p.mu.Unlock()
+		return
+	}
+	p.closed = true
+	p.signalLocked()
+
+	for el := p.lru.Front(); el != nil; {
+		next := el.Next()
+		p.unlinkLocked(el, el.Value.(*entry))
+		el = next
+	}
+	p.mu.Unlock()
+
+	close(p.sweeperStop)
+	<-p.sweeperDone
+}

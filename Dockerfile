@@ -1,39 +1,29 @@
-FROM clojure:temurin-25-lein-trixie
+FROM golang:1.26 AS build
 
-WORKDIR /usr/src/app
+WORKDIR /src
 
-RUN apt-get update && \
-    apt-get install -y git && \
-    rm -rf /var/lib/apt/lists/*
+# The module graph first, so a source-only change reuses the download layer.
+COPY go.mod go.sum ./
+RUN go mod download
 
-RUN ln -s "/opt/java/openjdk/bin/java" "/bin/data-info"
+COPY . .
 
-COPY project.clj /usr/src/app/
-RUN lein deps
+# Static: the runtime image has no libc, and nothing here needs cgo. The version is a constant
+# in cmd/data-info/main.go, so there is no -X stamping.
+RUN CGO_ENABLED=0 go build \
+      -trimpath \
+      -ldflags "-s -w" \
+      -o /out/data-info \
+      ./cmd/data-info
 
-COPY conf/main/logback.xml /usr/src/app/
-COPY . /usr/src/app
+# Distroless: no shell, so less to reach the iRODS and catalog credentials with. Its
+# /etc/mime.types disagrees with the DE's types (.vcf is text/vcard, not text/x-vcard), which
+# is why internal/mediatype carries its own table.
+FROM gcr.io/distroless/static-debian12:nonroot
 
-RUN lein do clean, uberjar && \
-    cp target/data-info-standalone.jar .
+COPY --from=build /out/data-info /bin/data-info
 
-# Pre-load the class metadata data-info needs at startup into an AOT cache, roughly halving startup
-# time. shutdown-agents is needed because loading the config namespace shells out for the hostname,
-# and the agent pool's non-daemon threads would otherwise hold the JVM open for their 60s keepalive,
-# adding a minute to every build. It makes no difference to the long-running service.
-RUN data-info -XX:AOTCacheOutput=/usr/src/app/data-info.aot \
-      -Dlogback.configurationFile=/usr/src/app/logback.xml \
-      -cp data-info-standalone.jar \
-      clojure.main -e "(require 'data-info.core 'data-info.routes) (shutdown-agents)"
-
-# Only the jar belongs on the classpath. This image builds in place, so the working directory is the
-# whole source tree; nothing in it is needed at runtime. logback is configured by absolute path
-# above, data_info.core takes its config from --config, and the resources that ship under nexml/ and
-# scripts/ are packaged into the jar. Keeping the working directory off the classpath is also what
-# lets the AOT cache load: the dumper refuses a non-empty directory, and a runtime classpath that
-# differs from the dumped one is rejected. A missing or rejected cache only logs an error; data-info
-# still starts.
-ENTRYPOINT ["data-info", "-Dlogback.configurationFile=/usr/src/app/logback.xml", "-XX:AOTCache=/usr/src/app/data-info.aot", "-cp", "data-info-standalone.jar", "data_info.core"]
+ENTRYPOINT ["/bin/data-info"]
 CMD ["--help"]
 
 ARG git_commit=unknown
