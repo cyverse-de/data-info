@@ -361,6 +361,7 @@ func irodsPoolConfig(cfg *config.Config, log *logrus.Entry) irodsclient.Config {
 		MaxRetries:           cfg.IRODS.MaxRetries,
 		RetrySleep:           cfg.IRODS.RetrySleep,
 		Log:                  log,
+		LibraryLog:           newLibraryLogger(log.Logger.GetLevel()),
 	}
 }
 

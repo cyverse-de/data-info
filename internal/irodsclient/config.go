@@ -59,6 +59,9 @@ type Config struct {
 	// Log receives reports of calls that had to wait for a connection. Nil discards them.
 	Log *logrus.Entry
 
+	// LibraryLog receives go-irodsclient's own logging. Nil leaves it on logrus's global logger.
+	LibraryLog *logrus.Entry
+
 	// OperationTimeout and LongOperationTimeout become socket deadlines on the metadata
 	// connection. They bound how long an orphaned call can hold a connection after its
 	// caller has given up, so neither should be generous.

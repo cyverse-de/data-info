@@ -201,6 +201,7 @@ func (p *Pool) newFileSystem(clientUser string) (*irodsfs.FileSystem, error) {
 	}
 
 	fsc := irodsfs.NewFileSystemConfig(p.cfg.AppName)
+	fsc.LogEntry = p.cfg.LibraryLog
 
 	// Caching stays off: a pooled FileSystem outlives its request, and other replicas and
 	// info-typer change the catalog behind it, so cached stats and listings go stale.

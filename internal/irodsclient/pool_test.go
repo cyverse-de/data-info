@@ -7,6 +7,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/sirupsen/logrus"
 )
 
 func testPool(t *testing.T, mutate func(*Config)) *Pool {
@@ -375,6 +377,21 @@ func TestConfigDefaults(t *testing.T) {
 				t.Errorf("got %v, want %v", tt.got, tt.want)
 			}
 		})
+	}
+}
+
+func TestFileSystemsLogToTheLibraryLog(t *testing.T) {
+	lib := logrus.NewEntry(logrus.New())
+	pool := testPool(t, func(c *Config) { c.LibraryLog = lib })
+
+	fsys, err := pool.newFileSystem("")
+	if err != nil {
+		t.Fatalf("newFileSystem: %v", err)
+	}
+	defer fsys.Release()
+
+	if got := fsys.GetLogger().Logger; got != lib.Logger {
+		t.Error("the FileSystem does not log through LibraryLog")
 	}
 }
 

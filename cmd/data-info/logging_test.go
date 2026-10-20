@@ -190,7 +190,7 @@ func TestNewLogger(t *testing.T) {
 	}
 }
 
-func TestConfigureLibraryLogger(t *testing.T) {
+func TestNewLibraryLogger(t *testing.T) {
 	tests := []struct {
 		service logrus.Level
 		want    logrus.Level
@@ -203,21 +203,23 @@ func TestConfigureLibraryLogger(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.service.String(), func(t *testing.T) {
-			lib := logrus.New()
-			configureLibraryLogger(lib, tt.service)
-			if got := lib.GetLevel(); got != tt.want {
+			lib := newLibraryLogger(tt.service)
+			if got := lib.Logger.GetLevel(); got != tt.want {
 				t.Errorf("level = %v, want %v", got, tt.want)
+			}
+			if lib.Logger == logrus.StandardLogger() {
+				t.Fatal("the library logger is logrus's global one")
 			}
 
 			var buf bytes.Buffer
-			lib.SetOutput(&buf)
-			lib.WithField("service", "kept").Error("from the library")
+			lib.Logger.SetOutput(&buf)
+			lib.WithField("fs_id", "x").Error("from the library")
 
 			var got map[string]any
 			if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
 				t.Fatalf("log line is not JSON: %v (%s)", err, buf.String())
 			}
-			for key, want := range map[string]any{"msg": "from the library", "project": "discoenv", "service": "kept"} {
+			for key, want := range map[string]any{"msg": "from the library", "project": "discoenv", "service": "data-info", "fs_id": "x"} {
 				if got[key] != want {
 					t.Errorf("%s = %v, want %v", key, got[key], want)
 				}
