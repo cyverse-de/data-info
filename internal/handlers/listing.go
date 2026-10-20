@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"context"
+
 	"github.com/cyverse-de/data-info/internal/apierror"
 	"github.com/cyverse-de/data-info/internal/icat"
 	"github.com/cyverse-de/data-info/internal/paths"
@@ -151,7 +153,7 @@ func (h *Listings) FolderListing(c echo.Context) error {
 		return schemaError(err.Error())
 	}
 
-	rows, err := scope.Listing(ctx, rods.ListingQuery{
+	query := rods.ListingQuery{
 		Path:                   path,
 		EntityType:             entityType,
 		SortColumn:             column,
@@ -160,7 +162,8 @@ func (h *Listings) FolderListing(c echo.Context) error {
 		Offset:                 offset,
 		InfoTypes:              infoTypes,
 		IncludeUnknownInfoType: includeUnknown,
-	}).Get(ctx)
+	}
+	rows, err := scope.Listing(ctx, query).Get(ctx)
 	if err != nil {
 		return err
 	}
@@ -179,6 +182,13 @@ func (h *Listings) FolderListing(c echo.Context) error {
 	}
 
 	listing := service.ListingOf(self, rows, rule)
+	if listing.Total == nil {
+		total, err := emptyPageTotal(ctx, scope, query)
+		if err != nil {
+			return err
+		}
+		listing.Total = &total
+	}
 
 	readme, err := h.findReadme(ctx, scope, path, rule)
 	if err != nil {
@@ -189,4 +199,19 @@ func (h *Listings) FolderListing(c echo.Context) error {
 	}
 
 	return writeJSONOK(c, listing)
+}
+
+// emptyPageTotal counts a folder whose requested page came back empty, which carries no
+// COUNT(*) OVER () to read. Clojure counted separately, so it reported 0 for an empty folder and
+// the real count for a page past the end, and Sonora pages by that figure.
+func emptyPageTotal(ctx context.Context, scope *rods.Scope, q rods.ListingQuery) (int64, error) {
+	if q.Offset == 0 {
+		return 0, nil
+	}
+	q.Offset, q.Limit = 0, 1
+	rows, err := scope.Listing(ctx, q).Get(ctx)
+	if err != nil || len(rows) == 0 {
+		return 0, err
+	}
+	return rows[0].TotalCount.Int64, nil
 }

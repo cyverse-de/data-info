@@ -69,6 +69,49 @@ func TestFolderListing(t *testing.T) {
 	}
 }
 
+// TestListingTotalOfAnEmptyPage checks a page with no rows still reports how many entries the
+// folder holds, as the Clojure service did; Sonora hides its paginator without it.
+func TestListingTotalOfAnEmptyPage(t *testing.T) {
+	deps, fake := testDeps(t)
+	fake.AddDataObject(testHome+"/b.txt", 200, icat.AccessRead)
+	fake.AddCollection(testHome+"/sub", icat.AccessOwn)
+	fake.AddCollection(testHome+"/empty", icat.AccessOwn)
+	listings := NewListings(deps)
+
+	tests := []struct {
+		name        string
+		target      string
+		wantEntries int
+		wantTotal   int64
+	}{
+		{"a page with rows", "/data/path/iplant/home/wregglej?limit=50", 4, 4},
+		{"an empty folder", "/data/path/iplant/home/wregglej/empty?limit=50", 0, 0},
+		{"a page past the end", "/data/path/iplant/home/wregglej?limit=50&offset=10", 0, 4},
+		{"a page past the end of a filter", "/data/path/iplant/home/wregglej?limit=50&offset=2&entity-type=folder", 0, 2},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := serveRoute(t, apierror.StyleTrap, http.MethodGet, "/data/path/:zone/*",
+				tt.target+"&user="+testUser, listings.FolderListing)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200 (%s)", rec.Code, rec.Body.String())
+			}
+
+			var listing service.Listing
+			if err := json.Unmarshal(rec.Body.Bytes(), &listing); err != nil {
+				t.Fatalf("decoding: %v (%s)", err, rec.Body.String())
+			}
+			if got := len(listing.Files) + len(listing.Folders); got != tt.wantEntries {
+				t.Errorf("entries = %d, want %d", got, tt.wantEntries)
+			}
+			if listing.Total == nil || *listing.Total != tt.wantTotal {
+				t.Errorf("total = %v, want %d (%s)", listing.Total, tt.wantTotal, rec.Body.String())
+			}
+		})
+	}
+}
+
 // TestListingSortOrderIsPassedThrough matters because the order is the contract: a
 // sort-field request is asking for exactly it.
 func TestListingSortOrderIsPassedThrough(t *testing.T) {

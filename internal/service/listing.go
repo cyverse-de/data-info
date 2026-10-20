@@ -129,7 +129,7 @@ func ListingOf(self ListingEntry, rows []icat.ListingRow, rule BadNameRule) List
 			out.Files = append(out.Files, entry)
 		}
 
-		// COUNT(*) OVER () is the same on every row; an empty page has none, so Total stays null.
+		// COUNT(*) OVER () is the same on every row; an empty page has none, so Total stays nil.
 		if row.TotalCount.Valid {
 			total := row.TotalCount.Int64
 			out.Total = &total
