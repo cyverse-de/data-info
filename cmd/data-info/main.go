@@ -20,7 +20,6 @@ import (
 	"github.com/cyverse-de/data-info/internal/icat"
 	"github.com/cyverse-de/data-info/internal/irodsclient"
 	"github.com/cyverse-de/data-info/internal/worker"
-	"github.com/sirupsen/logrus"
 )
 
 // version is what GET / and --version report.
@@ -71,7 +70,6 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	configureLibraryLogger(logrus.StandardLogger(), log.Logger.GetLevel())
 
 	cfg, err := config.Load(config.Settings{
 		ConfigPath: *configPath,
@@ -85,7 +83,7 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	pool, err := irodsclient.NewPool(irodsPoolConfig(cfg, log))
+	pool, err := irodsclient.NewPool(irodsPoolConfig(cfg, log, newLibraryLogger(log.Logger.GetLevel())))
 	if err != nil {
 		return fmt.Errorf("building the iRODS client: %w", err)
 	}
