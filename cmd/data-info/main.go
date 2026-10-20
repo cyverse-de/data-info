@@ -83,7 +83,7 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	pool, err := irodsclient.NewPool(irodsPoolConfig(cfg, log, newLibraryLogger(log.Logger.GetLevel())))
+	pool, err := irodsclient.NewPool(irodsPoolConfig(cfg, log))
 	if err != nil {
 		return fmt.Errorf("building the iRODS client: %w", err)
 	}
