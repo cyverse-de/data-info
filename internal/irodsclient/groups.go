@@ -2,6 +2,7 @@ package irodsclient
 
 import (
 	"context"
+	"slices"
 
 	irodsfs "github.com/cyverse/go-irodsclient/fs"
 	"github.com/cyverse/go-irodsclient/irods/types"
@@ -42,7 +43,17 @@ func RemoveGroupMember(ctx context.Context, s *Session, group, user, zone string
 
 // ListGroupMembers returns the names of a group's members.
 func ListGroupMembers(ctx context.Context, s *Session, group, zone string) ([]string, error) {
-	return Do(ctx, s, func(fsys *irodsfs.FileSystem) ([]string, error) {
+	members, err := Do(ctx, s, func(fsys *irodsfs.FileSystem) ([]string, error) {
 		return fsys.ListGroupMemberNames(zone, group)
 	})
+	if err != nil {
+		return nil, err
+	}
+	return withoutGroup(members, group), nil
+}
+
+// withoutGroup drops the group's own row: iRODS records every group as a member of itself, and
+// a group update would otherwise try to remove the group from itself, which iRODS refuses.
+func withoutGroup(members []string, group string) []string {
+	return slices.DeleteFunc(slices.Clone(members), func(member string) bool { return member == group })
 }
