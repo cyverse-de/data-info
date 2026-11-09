@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"net"
 	"net/http"
 	"net/http/pprof"
 	"os"
@@ -39,7 +40,7 @@ func applyMemoryLimit(log *logrus.Entry, readFile func(string) ([]byte, error)) 
 		}
 		limit, ok := parseCgroupLimit(string(contents))
 		if !ok {
-			return
+			continue
 		}
 		soft := limit / 100 * memoryLimitPercent
 		debug.SetMemoryLimit(soft)
@@ -47,6 +48,9 @@ func applyMemoryLimit(log *logrus.Entry, readFile func(string) ([]byte, error)) 
 			Info("set the Go runtime's memory limit from the container's")
 		return
 	}
+
+	log.Info("found no container memory limit, so the Go runtime has no soft limit; this is " +
+		"expected outside a container, and otherwise means the cgroup files are not where they were looked for")
 }
 
 // parseCgroupLimit reads a cgroup memory limit, reporting false when there is none: cgroup v2
@@ -59,9 +63,10 @@ func parseCgroupLimit(contents string) (int64, bool) {
 	return limit, true
 }
 
-// startProfiler serves net/http/pprof on its own listener, reached with kubectl port-forward.
-// The configuration only accepts a loopback address, since the endpoints have no authentication.
-func startProfiler(addr string, log *logrus.Entry) {
+// startProfiler serves net/http/pprof on its own listener, reached with kubectl port-forward,
+// and returns its server, or nil when the port could not be bound. The configuration only
+// accepts a loopback address, since the endpoints have no authentication.
+func startProfiler(addr string, log *logrus.Entry) *http.Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/debug/pprof/", pprof.Index)
 	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
@@ -69,11 +74,22 @@ func startProfiler(addr string, log *logrus.Entry) {
 	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
 	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
 
-	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+	// Bind before returning, so that a taken port is reported at startup rather than later.
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		log.WithError(err).WithField("addr", addr).Error("could not serve pprof; this usually means " +
+			"another process in the pod holds the port. The service runs on without profiling")
+		return nil
+	}
+
+	// No WriteTimeout: the CPU profile and the trace stream for as many seconds as are asked for.
+	srv := &http.Server{Addr: ln.Addr().String(), Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+	log.WithField("addr", srv.Addr).Info("serving pprof")
 	go func() {
-		log.WithField("addr", addr).Info("serving pprof")
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.WithError(err).Error("the pprof listener stopped; profiles are unavailable until a restart")
+		if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.WithError(err).Error("the pprof listener stopped accepting connections; " +
+				"profiles are unavailable until a restart")
 		}
 	}()
+	return srv
 }

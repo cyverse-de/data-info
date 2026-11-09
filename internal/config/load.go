@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/cyverse-de/data-info/internal/icat"
@@ -149,8 +150,14 @@ func (c *Config) Validate() error {
 	if c.Port < 1 || c.Port > 65535 {
 		add("port must be between 1 and 65535, got %d", c.Port)
 	}
-	if c.PprofAddr != "" && !isLoopbackAddr(c.PprofAddr) {
-		add("pprofaddr must be a loopback host:port, since pprof has no authentication; got %q", c.PprofAddr)
+	if c.PprofAddr != "" {
+		pprofPort, ok := loopbackPort(c.PprofAddr)
+		switch {
+		case !ok:
+			add("pprofaddr must be a loopback host:port, since pprof has no authentication; got %q", c.PprofAddr)
+		case pprofPort == c.Port:
+			add("pprofaddr must not use the service's own port %d", c.Port)
+		}
 	}
 	if c.Timeouts.Request <= 0 {
 		add("timeouts.request must be positive, got %s", c.Timeouts.Request)
@@ -312,15 +319,20 @@ func (c *Config) ICATConnectionString() string {
 	return u.String()
 }
 
-// isLoopbackAddr reports whether addr is a host:port whose host is loopback.
-func isLoopbackAddr(addr string) bool {
-	host, _, err := net.SplitHostPort(addr)
+// loopbackPort returns the port of addr, reporting false unless addr is a host:port whose host
+// is loopback and whose port is a number between 1 and 65535.
+func loopbackPort(addr string) (int, bool) {
+	host, portText, err := net.SplitHostPort(addr)
 	if err != nil {
-		return false
+		return 0, false
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil || port < 1 || port > 65535 {
+		return 0, false
 	}
 	if host == "localhost" {
-		return true
+		return port, true
 	}
 	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
+	return port, ip != nil && ip.IsLoopback()
 }

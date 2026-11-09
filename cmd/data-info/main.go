@@ -82,7 +82,13 @@ func run() error {
 	}
 
 	if cfg.PprofAddr != "" {
-		startProfiler(cfg.PprofAddr, log)
+		if profiler := startProfiler(cfg.PprofAddr, log); profiler != nil {
+			defer func() {
+				if err := profiler.Close(); err != nil {
+					log.WithError(err).Error("closing the pprof listener")
+				}
+			}()
+		}
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

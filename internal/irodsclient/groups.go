@@ -55,5 +55,6 @@ func ListGroupMembers(ctx context.Context, s *Session, group, zone string) ([]st
 // withoutGroup drops the group's own row: iRODS records every group as a member of itself, and
 // a group update would otherwise try to remove the group from itself, which iRODS refuses.
 func withoutGroup(members []string, group string) []string {
+	// Cloned: DeleteFunc edits in place, and with caching on, members is the library's cached slice.
 	return slices.DeleteFunc(slices.Clone(members), func(member string) bool { return member == group })
 }

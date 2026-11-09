@@ -222,6 +222,10 @@ func TestValidateRejectsBadValues(t *testing.T) {
 		{"wildcard pprof address", "pprofaddr: \":6060\"", "pprofaddr must be a loopback host:port"},
 		{"pod-reachable pprof address", "pprofaddr: 10.42.0.5:6060", "pprofaddr must be a loopback host:port"},
 		{"pprof address without a port", "pprofaddr: 127.0.0.1", "pprofaddr must be a loopback host:port"},
+		{"pprof address with an empty port", "pprofaddr: \"127.0.0.1:\"", "pprofaddr must be a loopback host:port"},
+		{"pprof address with a named port", "pprofaddr: 127.0.0.1:http", "pprofaddr must be a loopback host:port"},
+		{"out of range pprof port", "pprofaddr: 127.0.0.1:70000", "pprofaddr must be a loopback host:port"},
+		{"pprof on the service's port", "pprofaddr: 127.0.0.1:60000", "pprofaddr must not use the service's own port"},
 	}
 
 	for _, tt := range tests {
