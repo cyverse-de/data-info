@@ -70,6 +70,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	applyMemoryLimit(log, os.ReadFile)
 
 	cfg, err := config.Load(config.Settings{
 		ConfigPath: *configPath,
@@ -78,6 +79,10 @@ func run() error {
 	})
 	if err != nil {
 		return fmt.Errorf("configuration is not usable: %w", err)
+	}
+
+	if cfg.PprofAddr != "" {
+		startProfiler(cfg.PprofAddr, log)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

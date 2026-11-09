@@ -219,6 +219,9 @@ func TestValidateRejectsBadValues(t *testing.T) {
 		{"out of range irods port", "irods:\n  port: 70000", "irods.port must be between 1 and 65535"},
 		{"connection cap with no room for a transfer", "irods:\n  maxtotalconnections: 1", "irods.maxtotalconnections must be at least 2"},
 		{"empty icat password", "icat:\n  password: \"\"", "icat.password must not be empty"},
+		{"wildcard pprof address", "pprofaddr: \":6060\"", "pprofaddr must be a loopback host:port"},
+		{"pod-reachable pprof address", "pprofaddr: 10.42.0.5:6060", "pprofaddr must be a loopback host:port"},
+		{"pprof address without a port", "pprofaddr: 127.0.0.1", "pprofaddr must be a loopback host:port"},
 	}
 
 	for _, tt := range tests {
@@ -389,4 +392,15 @@ func TestICATSSLMode(t *testing.T) {
 			t.Errorf("expected a validation error naming the bad sslmode, got: %v", err)
 		}
 	})
+}
+
+func TestPprofAddrAcceptsLoopback(t *testing.T) {
+	for _, addr := range []string{"127.0.0.1:6060", "[::1]:6060", "localhost:6060"} {
+		t.Run(addr, func(t *testing.T) {
+			c := mustLoadYAML(t, withRequired(t, "pprofaddr: \""+addr+"\""))
+			if c.PprofAddr != addr {
+				t.Errorf("pprofaddr = %q, want %q", c.PprofAddr, addr)
+			}
+		})
+	}
 }

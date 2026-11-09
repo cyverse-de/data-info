@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"strings"
 
@@ -147,6 +148,9 @@ func (c *Config) Validate() error {
 
 	if c.Port < 1 || c.Port > 65535 {
 		add("port must be between 1 and 65535, got %d", c.Port)
+	}
+	if c.PprofAddr != "" && !isLoopbackAddr(c.PprofAddr) {
+		add("pprofaddr must be a loopback host:port, since pprof has no authentication; got %q", c.PprofAddr)
 	}
 	if c.Timeouts.Request <= 0 {
 		add("timeouts.request must be positive, got %s", c.Timeouts.Request)
@@ -306,4 +310,17 @@ func (c *Config) ICATConnectionString() string {
 	q.Set("sslmode", c.ICAT.SSLMode)
 	u.RawQuery = q.Encode()
 	return u.String()
+}
+
+// isLoopbackAddr reports whether addr is a host:port whose host is loopback.
+func isLoopbackAddr(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
