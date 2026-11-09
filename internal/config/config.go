@@ -73,6 +73,10 @@ func DefaultIRODSAdminUsers() []string { return []string{"rods", "rodsadmin"} }
 type Config struct {
 	Port int `koanf:"port"`
 
+	// PprofAddr, when set, serves net/http/pprof on that address, which must be loopback
+	// because the endpoints have no authentication. Empty disables it.
+	PprofAddr string `koanf:"pprofaddr"`
+
 	// Timeouts.Upload applies only to POST /data and PUT /data/{data-id}, which stream whole
 	// files; Timeouts.Request applies to everything else.
 	Timeouts Timeouts `koanf:"timeouts"`

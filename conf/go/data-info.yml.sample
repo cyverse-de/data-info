@@ -11,6 +11,10 @@
 
 port: 60000
 
+# Serves net/http/pprof on this address when set; reach it with kubectl port-forward. It must
+# be loopback, since the endpoints have no authentication.
+# pprofaddr: 127.0.0.1:6060
+
 # Idle budgets. upload applies only to POST /data and PUT /data/{data-id}, which stream
 # whole files; everything else gets request.
 timeouts:
