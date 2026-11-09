@@ -67,6 +67,14 @@ type Reader interface {
 	// PermsForItems returns the full access list of each path and is NOT scoped to a user.
 	// Callers must confirm the requester may see a path first, or they will disclose its ACL.
 	PermsForItems(ctx context.Context, paths []string) ([]Perm, error)
+
+	// TicketsOnPaths returns the tickets issued on the given paths, and with Descendants on
+	// anything inside them. It is NOT scoped to a user.
+	TicketsOnPaths(ctx context.Context, q TicketQuery) ([]Ticket, error)
+
+	// TicketByName returns a ticket by its string, or nil when there is none. It is NOT
+	// scoped to a user.
+	TicketByName(ctx context.Context, name string) (*Ticket, error)
 }
 
 // Store is a connection to the catalog.

@@ -40,6 +40,9 @@ type Fake struct {
 	// Groups maps an account name onto the groups it belongs to.
 	Groups map[string][]string
 
+	// Tickets are the tickets in the catalog, each on the path it names.
+	Tickets []icat.Ticket
+
 	// Err, when set, is returned by every query.
 	Err error
 
@@ -56,6 +59,7 @@ type Fake struct {
 	FoldersInFolderCalls atomic.Int64
 	PagedUUIDsCalls      atomic.Int64
 	CountUUIDsCalls      atomic.Int64
+	TicketCalls          atomic.Int64
 	PathsPerGetItems     []int
 }
 
@@ -173,6 +177,59 @@ func (f *Fake) PermsForItems(ctx context.Context, paths []string) ([]icat.Perm, 
 		out = append(out, f.Perms[p]...)
 	}
 	return out, nil
+}
+
+// AddTicket records a ticket on a path.
+func (f *Fake) AddTicket(name, p string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.Tickets = append(f.Tickets, icat.Ticket{Name: name, Type: "read", Path: p})
+}
+
+// TicketsOnPaths implements icat.Reader.
+func (f *Fake) TicketsOnPaths(ctx context.Context, q icat.TicketQuery) ([]icat.Ticket, error) {
+	f.TicketCalls.Add(1)
+	if err := f.wait(ctx); err != nil {
+		return nil, err
+	}
+	if f.Err != nil {
+		return nil, f.Err
+	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	var out []icat.Ticket
+	for _, ticket := range f.Tickets {
+		for _, p := range q.Paths {
+			if ticket.Path == p || (q.Descendants && strings.HasPrefix(ticket.Path, p+"/")) {
+				out = append(out, ticket)
+				break
+			}
+		}
+	}
+	return out, nil
+}
+
+// TicketByName implements icat.Reader.
+func (f *Fake) TicketByName(ctx context.Context, name string) (*icat.Ticket, error) {
+	f.TicketCalls.Add(1)
+	if err := f.wait(ctx); err != nil {
+		return nil, err
+	}
+	if f.Err != nil {
+		return nil, f.Err
+	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	for _, ticket := range f.Tickets {
+		if ticket.Name == name {
+			return &ticket, nil
+		}
+	}
+	return nil, nil
 }
 
 // wait simulates query latency, so tests can saturate the caller's concurrency limits.

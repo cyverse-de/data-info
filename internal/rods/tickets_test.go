@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestTicketsUnder(t *testing.T) {
+func TestTicketsWithin(t *testing.T) {
 	all := []Ticket{
 		{Name: "on-dir", Path: "/z/home/u/dir"},
 		{Name: "inside", Path: "/z/home/u/dir/f.txt"},
@@ -29,11 +29,11 @@ func TestTicketsUnder(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var got []string
-			for _, ticket := range TicketsUnder(all, tt.path) {
+			for _, ticket := range TicketsWithin(all, tt.path) {
 				got = append(got, ticket.Name)
 			}
 			if !slices.Equal(got, tt.want) {
-				t.Errorf("TicketsUnder(%q) = %v, want %v", tt.path, got, tt.want)
+				t.Errorf("TicketsWithin(%q) = %v, want %v", tt.path, got, tt.want)
 			}
 		})
 	}

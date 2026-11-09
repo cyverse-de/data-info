@@ -1,8 +1,10 @@
 package icat
 
 import (
+	"database/sql"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestSplitPaths(t *testing.T) {
@@ -121,9 +123,11 @@ func TestTimestampConversion(t *testing.T) {
 // string literals.
 func TestQueriesAreParameterised(t *testing.T) {
 	queries := map[string]string{
-		"user_group_ids":  sqlUserGroupIDs,
-		"get_items":       sqlGetItems,
-		"perms_for_items": sqlPermsForItems,
+		"user_group_ids":   sqlUserGroupIDs,
+		"get_items":        sqlGetItems,
+		"perms_for_items":  sqlPermsForItems,
+		"tickets_on_paths": sqlTicketsOnPaths,
+		"ticket_by_name":   sqlTicketByName,
 	}
 
 	for name, query := range queries {
@@ -137,11 +141,11 @@ func TestQueriesAreParameterised(t *testing.T) {
 					continue
 				}
 				// The only string literals any of these need are the fixed AVU
-				// attribute names, the two object type labels, and the separators
-				// used to reassemble a path.
+				// attribute names, the object type labels (tickets call a data object
+				// "data"), and the separators used to reassemble a path.
 				for _, literal := range extractLiterals(trimmed) {
 					switch literal {
-					case "ipc_UUID", "ipc-filetype", "collection", "dataobject", ".*/", "/", "":
+					case "ipc_UUID", "ipc-filetype", "collection", "dataobject", "data", ".*/", "/", "":
 					default:
 						t.Errorf("unexpected string literal %q in: %s", literal, trimmed)
 					}
@@ -243,6 +247,28 @@ func TestParseTimestampReportsFailure(t *testing.T) {
 			got, ok := ParseTimestamp(tt.ts)
 			if got != tt.want || ok != tt.wantK {
 				t.Errorf("ParseTimestamp(%q) = %d, %v; want %d, %v", tt.ts, got, ok, tt.want, tt.wantK)
+			}
+		})
+	}
+}
+
+func TestTicketExpires(t *testing.T) {
+	tests := []struct {
+		name   string
+		expiry sql.NullString
+		want   time.Time
+	}{
+		{"never, as NULL", sql.NullString{}, time.Time{}},
+		{"never, as empty", sql.NullString{String: "", Valid: true}, time.Time{}},
+		{"never, as zero", sql.NullString{String: "0", Valid: true}, time.Time{}},
+		{"zero-padded epoch seconds", sql.NullString{String: "01700000000", Valid: true}, time.Unix(1700000000, 0).UTC()},
+		{"garbled", sql.NullString{String: "soon", Valid: true}, time.Time{}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := (Ticket{ExpiryTS: tt.expiry}).Expires(); !got.Equal(tt.want) {
+				t.Errorf("Expires() = %v, want %v", got, tt.want)
 			}
 		})
 	}
