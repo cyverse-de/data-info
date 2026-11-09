@@ -64,9 +64,12 @@ func buildServer(cfg *config.Config, version string, log *logrus.Entry, deps Dep
 	e.HidePort = true
 	e.HTTPErrorHandler = apierror.HTTPErrorHandler(errorLogger(log))
 
-	// Pre runs before routing, which is required: this rewrites the query string.
+	// Pre runs before routing, which both of these need: they rewrite the query string and
+	// the path the router matches against.
 	e.Pre(dimw.LowercaseQueryParams())
+	e.Pre(dimw.RouteOnEscapedPath())
 
+	e.Use(dimw.DecodePathParams())
 	// The logger wraps Recover so that a request that panicked still gets its line.
 	e.Use(requestLogger(log))
 	e.Use(recoverer(log))
