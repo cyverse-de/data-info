@@ -13,6 +13,7 @@ import (
 	"context"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -185,6 +186,37 @@ func TestIntegrationPermsForItems(t *testing.T) {
 		}
 	}
 	t.Logf("%d access entries over %d distinct users", len(perms), len(seen))
+}
+
+// TestIntegrationTicketQueries runs both ticket queries against a real catalog schema. It
+// cannot assume any tickets exist, so it checks that each query runs and that whatever comes
+// back lies on or under the paths asked for.
+func TestIntegrationTicketQueries(t *testing.T) {
+	store := itStore(t)
+	ctx := itContext(t)
+	user, zone := itUser(t)
+
+	home := "/" + zone + "/home/" + user
+	for _, descendants := range []bool{false, true} {
+		tickets, err := store.TicketsOnPaths(ctx, TicketQuery{Paths: []string{home}, Descendants: descendants})
+		if err != nil {
+			t.Fatalf("TicketsOnPaths(descendants=%v): %v", descendants, err)
+		}
+		for _, ticket := range tickets {
+			if ticket.Path != home && !(descendants && strings.HasPrefix(ticket.Path, home+"/")) {
+				t.Errorf("ticket %q is on %q, outside %s", ticket.Name, ticket.Path, home)
+			}
+		}
+		t.Logf("descendants=%v: %d ticket(s)", descendants, len(tickets))
+	}
+
+	ticket, err := store.TicketByName(ctx, "no-such-ticket-"+strconv.FormatInt(time.Now().UnixNano(), 10))
+	if err != nil {
+		t.Fatalf("TicketByName: %v", err)
+	}
+	if ticket != nil {
+		t.Errorf("TicketByName found %+v for a name nobody issued", ticket)
+	}
 }
 
 // TestIntegrationReadOnlyTransaction checks that a query runs inside WithTx's read-only

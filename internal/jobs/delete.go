@@ -80,9 +80,11 @@ func (d Delete) delete(
 ) error {
 	progress(pathsetDeleted, actionBegin)
 
-	// Listed once rather than per path: iRODS cannot list one path's tickets, so every listing
-	// returns every ticket the account can see.
-	var tickets []rods.Ticket
+	// Listed in one query for every path, then split per path below.
+	tickets, err := scope.TicketsUnder(ctx, requested)
+	if err != nil {
+		return fmt.Errorf("listing the tickets on the paths being deleted: %w", err)
+	}
 	ticketsDeleted := make(map[string]bool)
 
 	for i, path := range requested {
@@ -92,14 +94,7 @@ func (d Delete) delete(
 
 		progress(path, actionBeginDelete)
 
-		if tickets == nil {
-			listed, err := scope.Tickets(ctx)
-			if err != nil {
-				return fmt.Errorf("listing the tickets on %q: %w", path, err)
-			}
-			tickets = append(make([]rods.Ticket, 0, len(listed)), listed...)
-		}
-		if err := deleteTickets(ctx, scope, rods.TicketsUnder(tickets, path), ticketsDeleted, path); err != nil {
+		if err := deleteTickets(ctx, scope, rods.TicketsWithin(tickets, path), ticketsDeleted, path); err != nil {
 			return err
 		}
 		progress(path, actionDeletedTickets)

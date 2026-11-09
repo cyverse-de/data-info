@@ -24,26 +24,6 @@ type Ticket struct {
 	WriteByteCount int64
 }
 
-// ListTickets returns every ticket the connected account can see. iRODS cannot list one
-// path's tickets, so callers filter this.
-func ListTickets(ctx context.Context, s *Session) ([]Ticket, error) {
-	found, err := Do(ctx, s, func(fsys *irodsfs.FileSystem) ([]*types.IRODSTicket, error) {
-		return fsys.ListTickets()
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	out := make([]Ticket, 0, len(found))
-	for _, ticket := range found {
-		if ticket == nil {
-			continue
-		}
-		out = append(out, convertTicket(ticket))
-	}
-	return out, nil
-}
-
 // DeleteTicket removes a ticket by name.
 func DeleteTicket(ctx context.Context, s *Session, name string) error {
 	_, err := Do(ctx, s, func(fsys *irodsfs.FileSystem) (struct{}, error) {
@@ -84,22 +64,4 @@ func AddTicketGroup(ctx context.Context, s *Session, name, group string) error {
 		return struct{}{}, fsys.AddTicketAllowedGroup(name, group)
 	})
 	return err
-}
-
-// convertTicket maps a go-irodsclient ticket onto ours.
-func convertTicket(t *types.IRODSTicket) Ticket {
-	return Ticket{
-		ID:             t.ID,
-		Name:           t.Name,
-		Type:           string(t.Type),
-		Owner:          t.Owner,
-		Path:           t.Path,
-		ExpiresAt:      t.ExpirationTime,
-		UsesLimit:      t.UsesLimit,
-		UsesCount:      t.UsesCount,
-		WriteFileLimit: t.WriteFileLimit,
-		WriteFileCount: t.WriteFileCount,
-		WriteByteLimit: t.WriteByteLimit,
-		WriteByteCount: t.WriteByteCount,
-	}
 }
