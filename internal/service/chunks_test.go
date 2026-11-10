@@ -177,6 +177,37 @@ func TestParseDelimited(t *testing.T) {
 			chunk: "\"a\n\nb\",c\n", separator: ",",
 			want: []map[string]string{{"0": "a\n\nb", "1": "c"}},
 		},
+		{
+			name:      "a newline separator, as a path list sends, makes each line one column",
+			chunk:     "# application/vnd.de.path-list+csv; version=1\n/iplant/home/u/a,b.txt\n/iplant/home/u/c.txt\n",
+			separator: "\n",
+			want: []map[string]string{
+				{"0": "# application/vnd.de.path-list+csv; version=1"},
+				{"0": "/iplant/home/u/a,b.txt"},
+				{"0": "/iplant/home/u/c.txt"},
+			},
+		},
+		{
+			name: "a newline separator keeps blank lines and drops carriage returns", separator: "\n",
+			chunk: "\r\n/a\r\n\r\n/b\r\n\r\n",
+			want:  []map[string]string{blank, {"0": "/a"}, blank, {"0": "/b"}, blank},
+		},
+		{
+			name: "a newline separator keeps a last line with no newline", chunk: "/a\n/b", separator: "\n",
+			want: []map[string]string{{"0": "/a"}, {"0": "/b"}},
+		},
+		{
+			name: "a newline separator ends lines at a lone carriage return", chunk: "/a\r/b\r\r/c\r", separator: "\n",
+			want: []map[string]string{{"0": "/a"}, {"0": "/b"}, blank, {"0": "/c"}},
+		},
+		{
+			name: "a newline separator leaves quotes in a path", chunk: "\"/a,b\"\n/c\"d\n", separator: "\n",
+			want: []map[string]string{{"0": "\"/a,b\""}, {"0": "/c\"d"}},
+		},
+		{
+			name: "a carriage-return separator also makes each line one column", chunk: "/a\r\n/b\r\n", separator: "\r\n",
+			want: []map[string]string{{"0": "/a"}, {"0": "/b"}},
+		},
 	}
 
 	for _, tt := range tests {
