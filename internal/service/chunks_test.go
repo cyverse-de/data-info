@@ -196,6 +196,18 @@ func TestParseDelimited(t *testing.T) {
 			name: "a newline separator keeps a last line with no newline", chunk: "/a\n/b", separator: "\n",
 			want: []map[string]string{{"0": "/a"}, {"0": "/b"}},
 		},
+		{
+			name: "a newline separator ends lines at a lone carriage return", chunk: "/a\r/b\r\r/c\r", separator: "\n",
+			want: []map[string]string{{"0": "/a"}, {"0": "/b"}, blank, {"0": "/c"}},
+		},
+		{
+			name: "a newline separator leaves quotes in a path", chunk: "\"/a,b\"\n/c\"d\n", separator: "\n",
+			want: []map[string]string{{"0": "\"/a,b\""}, {"0": "/c\"d"}},
+		},
+		{
+			name: "a carriage-return separator also makes each line one column", chunk: "/a\r\n/b\r\n", separator: "\r\n",
+			want: []map[string]string{{"0": "/a"}, {"0": "/b"}},
+		},
 	}
 
 	for _, tt := range tests {

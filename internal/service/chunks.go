@@ -174,8 +174,9 @@ func ParseDelimited(chunk, separator string) ([]map[string]string, error) {
 		return nil, fmt.Errorf("a separator is required to parse delimited text")
 	}
 
-	// Path lists are previewed with a newline separator, which encoding/csv refuses.
-	if delimiters[0] == '\n' {
+	// Path lists are previewed with a newline separator, and encoding/csv refuses either line
+	// ending as its delimiter.
+	if delimiters[0] == '\n' || delimiters[0] == '\r' {
 		return lineRows(chunk), nil
 	}
 
@@ -218,16 +219,21 @@ func ParseDelimited(chunk, separator string) ([]map[string]string, error) {
 	return append(out, blankRows(chunk[consumed:])...), nil
 }
 
-// lineRows returns one single-column row per line, which is what the Clojure service's CSV
-// parser produced for a newline separator, since it never saw a separator inside a line.
+// lineRows returns one single-column row per line, ending lines at \n, \r\n or a lone \r as
+// the Clojure service's reader did. Unlike that reader it leaves quotes alone: the DE writes
+// path lists unquoted, so a quote is part of the path.
 func lineRows(chunk string) []map[string]string {
-	lines := strings.Split(strings.TrimSuffix(chunk, "\n"), "\n")
+	normalized := lineEndings.Replace(chunk)
+	lines := strings.Split(strings.TrimSuffix(normalized, "\n"), "\n")
 	rows := make([]map[string]string, 0, len(lines))
 	for _, line := range lines {
-		rows = append(rows, map[string]string{"0": strings.TrimSuffix(line, "\r")})
+		rows = append(rows, map[string]string{"0": line})
 	}
 	return rows
 }
+
+// lineEndings rewrites every line ending as \n; \r\n comes first so it is not read as two.
+var lineEndings = strings.NewReplacer("\r\n", "\n", "\r", "\n")
 
 // blankRows returns one row per empty line at the start of span, holding a single empty
 // column as the Clojure service's CSV parser reported it.
