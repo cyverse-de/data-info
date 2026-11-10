@@ -195,6 +195,7 @@ func TestTabularSeparatorMayBeWhitespace(t *testing.T) {
 		{"a space", "%20"},
 		{"a comma, the ordinary case", "%2C"},
 		{"a doubly-encoded tab, which is decoded twice", "%2509"},
+		{"a doubly-encoded newline, which a path-list preview sends", "%250A"},
 	}
 
 	for _, tt := range tests {

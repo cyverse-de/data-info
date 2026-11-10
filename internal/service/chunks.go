@@ -174,6 +174,11 @@ func ParseDelimited(chunk, separator string) ([]map[string]string, error) {
 		return nil, fmt.Errorf("a separator is required to parse delimited text")
 	}
 
+	// Path lists are previewed with a newline separator, which encoding/csv refuses.
+	if delimiters[0] == '\n' {
+		return lineRows(chunk), nil
+	}
+
 	reader := csv.NewReader(strings.NewReader(chunk))
 	reader.Comma = delimiters[0]
 	// Rows of differing width are ordinary here: the file is whatever a user uploaded, and
@@ -211,6 +216,17 @@ func ParseDelimited(chunk, separator string) ([]map[string]string, error) {
 
 	// Blank lines after the last record have no following record to be found in front of.
 	return append(out, blankRows(chunk[consumed:])...), nil
+}
+
+// lineRows returns one single-column row per line, which is what the Clojure service's CSV
+// parser produced for a newline separator, since it never saw a separator inside a line.
+func lineRows(chunk string) []map[string]string {
+	lines := strings.Split(strings.TrimSuffix(chunk, "\n"), "\n")
+	rows := make([]map[string]string, 0, len(lines))
+	for _, line := range lines {
+		rows = append(rows, map[string]string{"0": strings.TrimSuffix(line, "\r")})
+	}
+	return rows
 }
 
 // blankRows returns one row per empty line at the start of span, holding a single empty
