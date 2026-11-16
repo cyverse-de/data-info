@@ -8,6 +8,6 @@ on:
 
 jobs:
   test:
-    uses: cyverse-de/github-workflows/.github/workflows/go-test.yml@v0.3.1
+    uses: cyverse-de/github-workflows/.github/workflows/go-test.yml@v0.4.4
     with:
-      go-version: 1.26
+      go-version: "1.27"
