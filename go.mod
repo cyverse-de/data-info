@@ -3,7 +3,7 @@ module github.com/cyverse-de/data-info
 go 1.27
 
 require (
-	github.com/cyverse-de/go-mod/cfg v0.0.3
+	github.com/cyverse-de/go-mod/cfg v0.0.4
 	github.com/cyverse/go-irodsclient v0.21.7
 	github.com/google/uuid v1.6.0
 	github.com/jmoiron/sqlx v1.4.0
@@ -11,7 +11,7 @@ require (
 	github.com/labstack/echo/v4 v4.16.5
 	github.com/lib/pq v1.12.3
 	github.com/mitchellh/mapstructure v1.5.0
-	github.com/rabbitmq/amqp091-go v1.16.0
+	github.com/rabbitmq/amqp091-go v1.17.0
 	github.com/sirupsen/logrus v1.10.2
 	golang.org/x/sync v0.25.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -51,7 +51,7 @@ require (
 	github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb // indirect
 	go.uber.org/atomic v1.12.0 // indirect
 	golang.org/x/crypto v0.59.0 // indirect
-	golang.org/x/net v0.62.0 // indirect
+	golang.org/x/net v0.63.0 // indirect
 	golang.org/x/sys v0.50.0 // indirect
 	golang.org/x/term v0.48.0 // indirect
 	golang.org/x/text v0.44.0 // indirect
